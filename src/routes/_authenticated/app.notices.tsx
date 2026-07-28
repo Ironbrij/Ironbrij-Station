@@ -30,6 +30,7 @@ import {
   PartyPopper,
 } from "lucide-react";
 import { format } from "date-fns";
+import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 
 export const Route = createFileRoute("/_authenticated/app/notices")({
   head: () => ({
@@ -127,9 +128,20 @@ function UserNoticesPage() {
   // Filter notices relevant to this employee
   const allUserNotices = useMemo(() => {
     return notices
+      .filter((notice) => isNoticePublished(notice, now))
       .filter((n) => {
         if (!n.targetType || n.targetType === "all") return true;
-        if (n.targetType === "dept" && employee?.deptId && n.targetDeptId === employee.deptId)
+        if (
+          n.targetType === "dept" &&
+          employee?.deptId &&
+          (n.targetDeptId === employee.deptId || n.targetDeptIds?.includes(employee.deptId))
+        )
+          return true;
+        if (
+          n.targetType === "states" &&
+          employee &&
+          n.targetStateCodes?.includes(employee.state?.trim() || "N/A")
+        )
           return true;
         if (
           n.targetType === "employee" &&
@@ -141,8 +153,8 @@ function UserNoticesPage() {
           return true;
         return false;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [notices, employee]);
+      .sort((a, b) => getNoticeDeliveryTime(b).getTime() - getNoticeDeliveryTime(a).getTime());
+  }, [notices, employee, now]);
 
   // Default: Filter to past 4 days only
   const visibleNotices = useMemo(() => {
@@ -153,8 +165,8 @@ function UserNoticesPage() {
 
     return allUserNotices.filter((n) => {
       if (!n.createdAt) return false;
-      const createdMs = new Date(n.createdAt).getTime();
-      return nowMs - createdMs <= fourDaysMs;
+      const deliveredMs = getNoticeDeliveryTime(n).getTime();
+      return nowMs - deliveredMs <= fourDaysMs;
     });
   }, [allUserNotices, showAllHistory]);
 

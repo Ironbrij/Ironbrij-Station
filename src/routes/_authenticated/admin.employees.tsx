@@ -20,6 +20,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
+import { getStateOptions, normalizeState } from "@/lib/states";
 import {
   ATTENDANCE_TIMEZONES,
   DEFAULT_SHIFT_TIMEZONE,
@@ -277,6 +278,7 @@ function EmployeesPage() {
                     >
                       <span>{COUNTRY_TIMEZONES[e.country ?? "NP"]?.flag || "🇳🇵"}</span>
                       <span>{COUNTRY_TIMEZONES[e.country ?? "NP"]?.name || "Nepal"}</span>
+                      <span className="text-muted-foreground">· {normalizeState(e.state)}</span>
                     </span>
                   </td>
                   <td className="p-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
@@ -421,6 +423,9 @@ function PromoteModal({
   const [jobTitle, setJobTitle] = useState(emp.jobTitle ?? "");
   const [deptId, setDeptId] = useState(emp.deptId ?? "");
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
+  const [state, setState] = useState(
+    normalizeState(emp.state ?? depts.find((department) => department.id === emp.deptId)?.state),
+  );
   const [shiftTimezone, setShiftTimezone] = useState(emp.shiftTimezone || DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState(emp.shiftStartTime ?? "09:00");
   const [shiftEndTime, setShiftEndTime] = useState(emp.shiftEndTime ?? "17:00");
@@ -435,6 +440,7 @@ function PromoteModal({
         jobTitle: jobTitle.trim() || emp.jobTitle,
         deptId,
         country,
+        state,
         timezone: COUNTRY_TIMEZONES[country].timezone,
         shiftTimezone,
         shiftStartTime: shiftStartTime || "09:00",
@@ -467,7 +473,13 @@ function PromoteModal({
           <label className="text-sm font-medium">Department</label>
           <select
             value={deptId}
-            onChange={(e) => setDeptId(e.target.value)}
+            onChange={(e) => {
+              setDeptId(e.target.value);
+              const departmentState = depts.find(
+                (department) => department.id === e.target.value,
+              )?.state;
+              if (departmentState) setState(normalizeState(departmentState));
+            }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           >
             <option value="">Select department</option>
@@ -482,12 +494,29 @@ function PromoteModal({
           <label className="text-sm font-medium">Employee location</label>
           <select
             value={country}
-            onChange={(e) => setCountry(e.target.value as CountryCode)}
+            onChange={(e) => {
+              setCountry(e.target.value as CountryCode);
+              setState("N/A");
+            }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           >
             <option value="NP">Nepal (Asia/Kathmandu)</option>
             <option value="AU">Australia (Australia/Sydney)</option>
             <option value="PH">Philippines (Asia/Manila)</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">State / province / region (optional)</label>
+          <select
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+          >
+            {getStateOptions(country).map((option) => (
+              <option key={option} value={option}>
+                {option === "N/A" ? "N/A — no state" : option}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -549,6 +578,9 @@ function NewEmployeeForm({
   const [jobTitle, setJobTitle] = useState("");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
   const [country, setCountry] = useState<CountryCode>("NP");
+  const [state, setState] = useState(
+    normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
+  );
   const [shiftTimezone, setShiftTimezone] = useState(DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState("09:00");
   const [shiftEndTime, setShiftEndTime] = useState("17:00");
@@ -580,6 +612,7 @@ function NewEmployeeForm({
           shiftEndTime,
           shiftTimezone,
           country,
+          state,
           timezone: COUNTRY_TIMEZONES[country].timezone,
           status: "active",
           inviteStatus: "pending",
@@ -662,7 +695,14 @@ function NewEmployeeForm({
             <select
               required
               value={deptId}
-              onChange={(e) => setDeptId(e.target.value)}
+              onChange={(e) => {
+                setDeptId(e.target.value);
+                setState(
+                  normalizeState(
+                    departments.find((department) => department.id === e.target.value)?.state,
+                  ),
+                );
+              }}
               className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
             >
               <option value="">Select department</option>
@@ -677,12 +717,29 @@ function NewEmployeeForm({
             <label className="text-sm font-medium">Employee location</label>
             <select
               value={country}
-              onChange={(e) => setCountry(e.target.value as CountryCode)}
+              onChange={(e) => {
+                setCountry(e.target.value as CountryCode);
+                setState("N/A");
+              }}
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
             >
               <option value="NP">Nepal (Asia/Kathmandu)</option>
               <option value="AU">Australia (Australia/Sydney)</option>
               <option value="PH">Philippines (Asia/Manila)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium">State / province / region (optional)</label>
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+            >
+              {getStateOptions(country).map((option) => (
+                <option key={option} value={option}>
+                  {option === "N/A" ? "N/A — no state" : option}
+                </option>
+              ))}
             </select>
           </div>
           <div>

@@ -37,6 +37,7 @@ import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
+import { getStateOptions, normalizeState } from "@/lib/states";
 
 export const Route = createFileRoute("/_authenticated/admin/departments")({
   head: () => ({
@@ -62,6 +63,7 @@ function DepartmentsPage() {
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [name, setName] = useState("");
+  const [departmentState, setDepartmentState] = useState("N/A");
   const [saving, setSaving] = useState(false);
   const [expandedDeptId, setExpandedDeptId] = useState<string | null>(null);
   const [reportDaysMap, setReportDaysMap] = useState<Record<string, number>>({});
@@ -129,6 +131,7 @@ function DepartmentsPage() {
       await setDoc(deptRef, {
         companyId: COMPANY_ID,
         name: cleanName,
+        state: departmentState,
         createdAt: new Date().toISOString(),
       });
 
@@ -136,10 +139,12 @@ function DepartmentsPage() {
         id: deptId,
         companyId: COMPANY_ID,
         name: cleanName,
+        state: departmentState,
       };
 
       setDepts((prev) => [...prev.filter((d) => d.id !== deptId), newDept]);
       setName("");
+      setDepartmentState("N/A");
       toast.success(`Department "${cleanName}" created!`);
     } catch (err) {
       console.error(err);
@@ -156,6 +161,15 @@ function DepartmentsPage() {
       toast.success("Department renamed");
     } catch (err) {
       toast.error("Failed to rename: " + (err as Error).message);
+    }
+  }
+
+  async function updateDepartmentState(id: string, state: string) {
+    try {
+      await updateDoc(doc(db(), "departments", id), { state });
+      toast.success("Department default state updated");
+    } catch (err) {
+      toast.error("Failed to update state: " + (err as Error).message);
     }
   }
 
@@ -489,13 +503,28 @@ function DepartmentsPage() {
           selected
         </div>
       </section>
-      <form onSubmit={add} className="flex gap-2 bg-card p-4 rounded-xl border shadow-lift">
+      <form
+        onSubmit={add}
+        className="grid gap-2 bg-card p-4 rounded-xl border shadow-lift sm:grid-cols-[1fr_220px_auto]"
+      >
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New department name (e.g. IT, Engineering, Sales)"
           className="flex-1 rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
         />
+        <select
+          value={departmentState}
+          onChange={(event) => setDepartmentState(event.target.value)}
+          className="rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
+          aria-label="Department default state"
+        >
+          {getStateOptions().map((state) => (
+            <option key={state} value={state}>
+              {state === "N/A" ? "N/A — no default state" : state}
+            </option>
+          ))}
+        </select>
         <button
           disabled={saving}
           className="btn-lift rounded-md bg-primary text-primary-foreground px-5 py-2 text-sm font-bold"
@@ -531,6 +560,18 @@ function DepartmentsPage() {
                     onBlur={(e) => rename(d.id, e.target.value)}
                     className="font-extrabold text-lg bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:bg-background px-2 py-1 rounded outline-none transition-colors text-primary"
                   />
+                  <select
+                    value={normalizeState(d.state)}
+                    onChange={(event) => updateDepartmentState(d.id, event.target.value)}
+                    className="rounded-md border bg-background px-2 py-1 text-xs font-semibold"
+                    aria-label={`${d.name} default state`}
+                  >
+                    {getStateOptions().map((state) => (
+                      <option key={state} value={state}>
+                        {state === "N/A" ? "State: N/A" : `State: ${state}`}
+                      </option>
+                    ))}
+                  </select>
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20 shrink-0">
                     <Users className="h-3.5 w-3.5" />
                     {deptEmployees.length} {deptEmployees.length === 1 ? "User" : "Users"}
@@ -639,6 +680,7 @@ function DepartmentsPage() {
                               <div className="flex items-center gap-1.5 font-semibold text-foreground">
                                 <span>{countryInfo.flag}</span>
                                 <span>{countryInfo.name}</span>
+                                <span>· {normalizeState(e.state)}</span>
                               </div>
                               <div className="flex items-center gap-1 font-mono font-bold text-primary">
                                 <Clock className="h-3.5 w-3.5" />

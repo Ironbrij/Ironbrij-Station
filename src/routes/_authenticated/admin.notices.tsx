@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
-import { AlertTriangle, Megaphone, Trash2, UserX } from "lucide-react";
+import { AlertTriangle, CalendarClock, Megaphone, Trash2, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import type { CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
@@ -15,6 +15,8 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
+import { getNoticeDeliveryTime } from "@/lib/notices";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
   head: () => ({ meta: [{ title: "Notifications — Time Station Admin" }] }),
@@ -33,7 +35,10 @@ function NotificationsPage() {
   const [priority, setPriority] = useState<CompanyNotice["priority"]>("info");
   const [targetType, setTargetType] = useState<CompanyNotice["targetType"]>("all");
   const [targetId, setTargetId] = useState("");
+  const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [deliveryMode, setDeliveryMode] = useState<"instant" | "scheduled">("instant");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
   const { company, user } = useAuth();
 
@@ -113,11 +118,33 @@ function NotificationsPage() {
     [employees, punches, leaves, now, company],
   );
 
+  const availableStates = useMemo(
+    () =>
+      [...new Set(employees.map((employee) => normalizeState(employee.state)))]
+        .filter((state) => state !== STATE_NOT_APPLICABLE)
+        .sort(),
+    [employees],
+  );
+
   function recipientLabel(notice: CompanyNotice) {
     if (!notice.targetType || notice.targetType === "all") return "Everyone";
     if (notice.targetType === "dept") {
-      const department = departments.find((item) => item.id === notice.targetDeptId);
-      return department ? `${department.name} department` : "Selected department";
+      const departmentIds = notice.targetDeptIds?.length
+        ? notice.targetDeptIds
+        : notice.targetDeptId
+          ? [notice.targetDeptId]
+          : [];
+      const names = departments
+        .filter((item) => departmentIds.includes(item.id))
+        .map((item) => item.name);
+      return names.length
+        ? `${names.join(", ")} department${names.length === 1 ? "" : "s"}`
+        : "Selected department";
+    }
+    if (notice.targetType === "states") {
+      return notice.targetStateCodes?.length
+        ? notice.targetStateCodes.join(", ")
+        : "Selected states";
     }
     const recipientIds = notice.targetEmployeeIds?.length
       ? notice.targetEmployeeIds
@@ -136,8 +163,22 @@ function NotificationsPage() {
       toast.error("Select a department.");
       return;
     }
+    if (targetType === "states" && selectedStateCodes.length === 0) {
+      toast.error("Select at least one state.");
+      return;
+    }
     if (targetType === "employee" && selectedEmployeeIds.length === 0) {
       toast.error("Select at least one employee.");
+      return;
+    }
+    if (deliveryMode === "scheduled" && !scheduledAt) {
+      toast.error("Choose the notification date and time.");
+      return;
+    }
+    const publishAt =
+      deliveryMode === "scheduled" ? new Date(scheduledAt).toISOString() : new Date().toISOString();
+    if (deliveryMode === "scheduled" && new Date(publishAt).getTime() <= Date.now()) {
+      toast.error("Scheduled notification time must be in the future.");
       return;
     }
     setBusy(true);
@@ -148,6 +189,7 @@ function NotificationsPage() {
         priority,
         targetType,
         ...(targetType === "dept" ? { targetDeptId: targetId } : {}),
+        ...(targetType === "states" ? { targetStateCodes: selectedStateCodes } : {}),
         ...(targetType === "employee"
           ? {
               targetEmployeeIds: selectedEmployeeIds,
@@ -157,16 +199,22 @@ function NotificationsPage() {
             }
           : {}),
         createdAt: new Date().toISOString(),
+        publishAt,
         authorName: user?.displayName || user?.email || "Admin",
       });
       setTitle("");
       setMessage("");
       setTargetId("");
+      setSelectedStateCodes([]);
       setSelectedEmployeeIds([]);
+      setDeliveryMode("instant");
+      setScheduledAt("");
       toast.success(
-        targetType === "employee"
-          ? `Notification sent to ${selectedEmployeeIds.length} employees`
-          : "Notification published",
+        deliveryMode === "scheduled"
+          ? `Notification scheduled for ${new Date(publishAt).toLocaleString()}`
+          : targetType === "employee"
+            ? `Notification sent to ${selectedEmployeeIds.length} employees`
+            : "Notification published",
       );
     } catch (error) {
       toast.error("Could not publish: " + (error as Error).message);
@@ -279,16 +327,56 @@ function NotificationsPage() {
                 onChange={(event) => {
                   setTargetType(event.target.value as CompanyNotice["targetType"]);
                   setTargetId("");
+                  setSelectedStateCodes([]);
                   setSelectedEmployeeIds([]);
                 }}
                 className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
               >
                 <option value="all">Everyone</option>
                 <option value="dept">Department</option>
+                <option value="states">One or more states</option>
                 <option value="employee">Specific employees</option>
               </select>
             </label>
           </div>
+          <fieldset className="space-y-2 rounded-lg border p-3">
+            <legend className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+              <CalendarClock className="h-3.5 w-3.5" /> Delivery time
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDeliveryMode("instant")}
+                className={`rounded-md border px-3 py-2 text-xs font-bold ${
+                  deliveryMode === "instant" ? "border-primary bg-primary/10 text-primary" : ""
+                }`}
+              >
+                Send instantly
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeliveryMode("scheduled")}
+                className={`rounded-md border px-3 py-2 text-xs font-bold ${
+                  deliveryMode === "scheduled" ? "border-primary bg-primary/10 text-primary" : ""
+                }`}
+              >
+                Schedule
+              </button>
+            </div>
+            {deliveryMode === "scheduled" && (
+              <label className="block text-xs font-bold text-muted-foreground">
+                Calendar and clock
+                <input
+                  required
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(event) => setScheduledAt(event.target.value)}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+                />
+                <span className="mt-1 block font-normal">Uses your current device timezone.</span>
+              </label>
+            )}
+          </fieldset>
           {targetType === "dept" && (
             <label className="block text-xs font-bold text-muted-foreground">
               Department
@@ -306,6 +394,57 @@ function NotificationsPage() {
                 ))}
               </select>
             </label>
+          )}
+          {targetType === "states" && (
+            <fieldset className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <legend className="text-xs font-bold text-muted-foreground">
+                  States ({selectedStateCodes.length} selected)
+                </legend>
+                <div className="flex gap-2 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStateCodes(availableStates)}
+                    className="text-primary hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStateCodes([])}
+                    className="text-muted-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {availableStates.map((state) => (
+                  <label
+                    key={state}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedStateCodes.includes(state)}
+                      onChange={(event) =>
+                        setSelectedStateCodes((current) =>
+                          event.target.checked
+                            ? [...current, state]
+                            : current.filter((item) => item !== state),
+                        )
+                      }
+                    />
+                    <span className="font-semibold">{state}</span>
+                  </label>
+                ))}
+                {availableStates.length === 0 && (
+                  <span className="text-xs italic text-muted-foreground">
+                    No employee states have been assigned yet.
+                  </span>
+                )}
+              </div>
+            </fieldset>
           )}
           {targetType === "employee" && (
             <fieldset className="space-y-2 rounded-lg border p-3">
@@ -391,7 +530,9 @@ function NotificationsPage() {
                   </div>
                   <div className="mt-2 text-[10px] uppercase font-bold text-muted-foreground">
                     {notice.priority} · Sent to: {recipientLabel(notice)} ·{" "}
-                    {new Date(notice.createdAt).toLocaleString()}
+                    {notice.publishAt && getNoticeDeliveryTime(notice).getTime() > now.getTime()
+                      ? `Scheduled for ${getNoticeDeliveryTime(notice).toLocaleString()}`
+                      : `Sent ${getNoticeDeliveryTime(notice).toLocaleString()}`}
                   </div>
                 </div>
                 <button

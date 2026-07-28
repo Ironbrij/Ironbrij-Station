@@ -38,6 +38,7 @@ import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
 import { PartyPopper, Lock, Megaphone, X } from "lucide-react";
 import { format } from "date-fns";
+import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -213,11 +214,22 @@ function PunchPage() {
     return notices.filter((n) => {
       if (dismissedNoticeIds.includes(n.id)) return false;
       if (!n.createdAt) return false;
-      const createdMs = new Date(n.createdAt).getTime();
-      if (nowMs - createdMs > twentyFourHoursMs) return false;
+      if (!isNoticePublished(n, new Date(now))) return false;
+      const deliveredMs = getNoticeDeliveryTime(n).getTime();
+      if (nowMs - deliveredMs > twentyFourHoursMs) return false;
 
       if (!n.targetType || n.targetType === "all") return true;
-      if (n.targetType === "dept" && employee?.deptId && n.targetDeptId === employee.deptId)
+      if (
+        n.targetType === "dept" &&
+        employee?.deptId &&
+        (n.targetDeptId === employee.deptId || n.targetDeptIds?.includes(employee.deptId))
+      )
+        return true;
+      if (
+        n.targetType === "states" &&
+        employee &&
+        n.targetStateCodes?.includes(employee.state?.trim() || "N/A")
+      )
         return true;
       if (
         n.targetType === "employee" &&
@@ -229,7 +241,7 @@ function PunchPage() {
         return true;
       return false;
     });
-  }, [notices, employee, dismissedNoticeIds]);
+  }, [notices, employee, dismissedNoticeIds, now]);
 
   // Auto punch-out reconciliation if employee is on leave/holiday while punched in
   useEffect(() => {

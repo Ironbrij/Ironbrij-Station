@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth-context";
 import { ShieldCheck, UserCheck, Crown } from "lucide-react";
+import { getStateOptions, normalizeState } from "@/lib/states";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
@@ -332,6 +333,9 @@ function MakeEmployeeModal({
   const [jobTitle, setJobTitle] = useState("Team Member");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
   const [country, setCountry] = useState<CountryCode>("NP");
+  const [state, setState] = useState(
+    normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
+  );
   const [shiftTimezone, setShiftTimezone] = useState(DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState("09:00");
   const [shiftEndTime, setShiftEndTime] = useState("17:00");
@@ -357,6 +361,7 @@ function MakeEmployeeModal({
         shiftStartTime: shiftStartTime || "09:00",
         shiftEndTime: shiftEndTime || "17:00",
         country,
+        state,
         timezone: COUNTRY_TIMEZONES[country].timezone,
         shiftTimezone,
         status: "active",
@@ -401,7 +406,14 @@ function MakeEmployeeModal({
             </label>
             <select
               value={deptId}
-              onChange={(e) => setDeptId(e.target.value)}
+              onChange={(e) => {
+                setDeptId(e.target.value);
+                setState(
+                  normalizeState(
+                    departments.find((department) => department.id === e.target.value)?.state,
+                  ),
+                );
+              }}
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="">Select Department...</option>
@@ -418,12 +430,31 @@ function MakeEmployeeModal({
             </label>
             <select
               value={country}
-              onChange={(e) => setCountry(e.target.value as CountryCode)}
+              onChange={(e) => {
+                setCountry(e.target.value as CountryCode);
+                setState("N/A");
+              }}
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
             >
               <option value="NP">🇳🇵 Nepal (NPT, UTC+5:45)</option>
               <option value="AU">🇦🇺 Australia (AEST, UTC+10:00)</option>
               <option value="PH">🇵🇭 Philippines (PST, UTC+8:00)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-muted-foreground">
+              State / Province / Region
+            </label>
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              {getStateOptions(country).map((option) => (
+                <option key={option} value={option}>
+                  {option === "N/A" ? "N/A — no state" : option}
+                </option>
+              ))}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">

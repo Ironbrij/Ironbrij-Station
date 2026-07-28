@@ -2,7 +2,7 @@ import type { Timestamp } from "firebase/firestore";
 
 export type PunchType = "in" | "out" | "extra_in" | "extra_out";
 
-export type HolidayTargetType = "all" | "departments" | "employees";
+export type HolidayTargetType = "all" | "departments" | "states" | "employees";
 
 export interface CompanyHoliday {
   id: string;
@@ -10,6 +10,7 @@ export interface CompanyHoliday {
   name?: string;
   targetType: HolidayTargetType;
   departmentIds?: string[];
+  stateCodes?: string[];
   employeeIds?: string[];
 }
 
@@ -27,6 +28,7 @@ export interface Department {
   id: string;
   companyId: string;
   name: string;
+  state?: string;
 }
 
 export type EmployeeStatus = "active" | "inactive";
@@ -48,6 +50,7 @@ export interface Employee {
   shiftStartTime?: string; // e.g. "09:00"
   shiftEndTime?: string; // e.g. "17:00"
   country?: CountryCode; // "NP" = Nepal, "AU" = Australia, "PH" = Philippines
+  state?: string; // Optional state/province/region; "N/A" means not assigned
   timezone?: string; // employee local timezone
   shiftTimezone?: string; // timezone used to interpret shift start/end
 }
@@ -99,11 +102,14 @@ export interface CompanyNotice {
   title: string;
   message: string;
   priority: "info" | "warning" | "urgent";
-  targetType: "all" | "dept" | "employee";
+  targetType: "all" | "dept" | "states" | "employee";
   targetDeptId?: string;
+  targetDeptIds?: string[];
+  targetStateCodes?: string[];
   targetEmployeeId?: string;
   targetEmployeeIds?: string[];
   createdAt: string;
+  publishAt?: string;
   authorName: string;
 }
 

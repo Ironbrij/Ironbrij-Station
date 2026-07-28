@@ -147,11 +147,15 @@ export function getActiveEmployeeLeave(
 
 export function isHolidayAssignedToEmployee(
   holiday: CompanyHoliday,
-  employee: Pick<Employee, "id" | "authUid" | "deptId">,
+  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state">,
 ): boolean {
   if (holiday.targetType === "all") return true;
   if (holiday.targetType === "departments")
     return Boolean(employee.deptId && holiday.departmentIds?.includes(employee.deptId));
+  if (holiday.targetType === "states") {
+    const employeeState = employee.state?.trim() || "N/A";
+    return employeeState !== "N/A" && Boolean(holiday.stateCodes?.includes(employeeState));
+  }
 
   const employeeIds = [employee.id, employee.authUid].filter(Boolean) as string[];
   return employeeIds.some((id) => holiday.employeeIds?.includes(id));
@@ -159,7 +163,7 @@ export function isHolidayAssignedToEmployee(
 
 export function getEmployeeHoliday(
   company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
-  employee: Pick<Employee, "id" | "authUid" | "deptId"> | null | undefined,
+  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state"> | null | undefined,
   dateKey: string,
 ): CompanyHoliday | null {
   if (!company || !employee) return null;
@@ -180,7 +184,7 @@ export function getEmployeeHoliday(
 
 export function getEmployeeHolidayDates(
   company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
-  employee: Pick<Employee, "id" | "authUid" | "deptId">,
+  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state">,
 ): string[] {
   const dates = new Set(company?.holidays ?? []);
   for (const holiday of company?.holidayAssignments ?? []) {

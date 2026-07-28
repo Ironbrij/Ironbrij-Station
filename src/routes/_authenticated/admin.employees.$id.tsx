@@ -24,6 +24,7 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { normalizeState } from "@/lib/states";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
   head: () => ({ meta: [{ title: "Employee Attendance — Time Station Admin" }] }),
@@ -326,7 +327,7 @@ function EmployeeDetail() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {employee.jobTitle} · {department}
+            {employee.jobTitle} · {department} · State: {normalizeState(employee.state)}
           </p>
           <p className="text-xs text-muted-foreground">
             {employee.email} · {timezone}
