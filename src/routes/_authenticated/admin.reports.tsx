@@ -11,11 +11,14 @@ import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getShiftTimezone,
   isEmployeeOnApprovedLeave,
   zonedDateKey,
 } from "@/lib/attendance";
+import { useAuth } from "@/lib/auth-context";
 
 type AttendanceRow = {
   key: string;
@@ -42,6 +45,7 @@ function monthBounds(month: string) {
 }
 
 function ReportsPage() {
+  const { company } = useAuth();
   const currentMonth = new Date().toISOString().slice(0, 7);
   const initialBounds = monthBounds(currentMonth);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -116,6 +120,9 @@ function ReportsPage() {
         if (!groups.has(date)) groups.set(date, []);
         groups.get(date)!.push(punch);
       }
+      for (const date of getEmployeeHolidayDates(company, employee)) {
+        if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
+      }
       for (const [date, dayPunches] of groups) {
         const sorted = [...dayPunches].sort(
           (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
@@ -124,6 +131,7 @@ function ReportsPage() {
         const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
         const calculation = computeDay(sorted);
         const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, date);
+        const holiday = getEmployeeHoliday(company, employee, date);
         const late = firstIn
           ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, 1)
           : null;
@@ -137,20 +145,22 @@ function ReportsPage() {
           firstIn,
           lastOut,
           hours: calculation.regularHours + calculation.overtimeHours,
-          status: onApprovedLeave
-            ? "On leave"
-            : !firstIn
-              ? "No punch in"
-              : !lastOut
-                ? "Still punched in"
-                : isAutoPunchOut
-                  ? late?.isLate
-                    ? "Auto punched out · Late"
-                    : "Auto punched out"
-                  : late?.isLate
-                    ? "Late"
-                    : "On time",
-          minutesLate: !onApprovedLeave && late?.isLate ? late.minutes : 0,
+          status: holiday
+            ? "Holiday"
+            : onApprovedLeave
+              ? "On leave"
+              : !firstIn
+                ? "No punch in"
+                : !lastOut
+                  ? "Still punched in"
+                  : isAutoPunchOut
+                    ? late?.isLate
+                      ? "Auto punched out · Late"
+                      : "Auto punched out"
+                    : late?.isLate
+                      ? "Late"
+                      : "On time",
+          minutesLate: !holiday && !onApprovedLeave && late?.isLate ? late.minutes : 0,
           isAutoPunchOut,
         });
       }
@@ -158,7 +168,7 @@ function ReportsPage() {
     return output.sort(
       (a, b) => b.date.localeCompare(a.date) || a.employee.name.localeCompare(b.employee.name),
     );
-  }, [filteredEmployees, punches, leaves, departments, from, to]);
+  }, [filteredEmployees, punches, leaves, departments, from, to, company]);
 
   const exportData = useMemo(
     () =>

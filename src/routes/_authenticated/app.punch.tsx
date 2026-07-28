@@ -4,7 +4,6 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -25,6 +24,8 @@ import {
   computeEmployeeLateness,
   computeRegularWorkedMsForDay,
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getShiftConversions,
@@ -103,7 +104,7 @@ function PunchPage() {
   }, []);
 
   useEffect(() => {
-    getDoc(doc(db(), "companies", COMPANY_ID)).then((s) => {
+    const unsubCompany = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
       if (s.exists()) setCompany(s.data() as Company);
     });
     const u1 = onSnapshot(collection(db(), "departments"), (s) =>
@@ -113,6 +114,7 @@ function PunchPage() {
       setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
     );
     return () => {
+      unsubCompany();
       u1();
       u2();
     };
@@ -185,10 +187,10 @@ function PunchPage() {
             new Date(now),
             company?.lateGraceMinutes ?? 1,
             company?.workingDays,
-            company?.holidays ?? [],
+            getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, allPunches, now, company?.lateGraceMinutes, company?.workingDays, company?.holidays],
+    [employee, allPunches, now, company],
   );
 
   const shiftConversions = useMemo(
@@ -229,8 +231,8 @@ function PunchPage() {
   // Auto punch-out reconciliation if employee is on leave/holiday while punched in
   useEffect(() => {
     if (!employee || !isPunchedIn) return;
-    const todayStr = ymd(new Date());
-    const isHolidayStr = company?.holidays?.includes(todayStr);
+    const todayStr = zonedDateKey(new Date(), getEmployeeTimezone(employee));
+    const isHolidayStr = Boolean(getEmployeeHoliday(company, employee, todayStr));
 
     if (isHolidayStr || onLeaveToday) {
       addDoc(collection(db(), "punches"), {
@@ -241,7 +243,7 @@ function PunchPage() {
         timestamp: serverTimestamp(),
         source: "auto",
         isAuto: true,
-        autoReason: "approved_leave",
+        autoReason: isHolidayStr ? "company_holiday" : "approved_leave",
       }).catch((e) => console.error("Auto punch-out on leave failed:", e));
     }
   }, [employee, isPunchedIn, onLeaveToday, company]);
@@ -290,7 +292,7 @@ function PunchPage() {
           new Date(),
           company?.lateGraceMinutes ?? 1,
           company?.workingDays,
-          company?.holidays ?? [],
+          getEmployeeHolidayDates(company, employee),
         );
         const lateness = computeEmployeeLateness(
           new Date(),
@@ -359,8 +361,9 @@ function PunchPage() {
     );
   }
 
-  const todayStr = ymd(new Date());
-  const isHoliday = company?.holidays?.includes(todayStr);
+  const todayStr = zonedDateKey(new Date(), getEmployeeTimezone(employee));
+  const holiday = getEmployeeHoliday(company, employee, todayStr);
+  const isHoliday = Boolean(holiday);
 
   // Allow viewing page & activities even on holiday
 
@@ -402,7 +405,7 @@ function PunchPage() {
                 Active! 🥳
               </div>
               <h2 className="text-2xl font-black text-primary tracking-tight">
-                Happy Holidays, {employee.name}! 🎉
+                {holiday?.name || "Happy Holidays"}, {employee.name}! 🎉
               </h2>
               <p className="text-sm text-muted-foreground font-medium max-w-lg leading-relaxed">
                 Regular shift is off today! Enjoy your well-deserved day off to relax, unwind, and
@@ -629,7 +632,12 @@ function PunchPage() {
                 <span className="h-px bg-border flex-1" />
               </div>
 
-              {isPunchedIn && lastIn ? (
+              {isHoliday ? (
+                <div className="rounded-xl bg-purple-500/10 text-purple-800 dark:text-purple-200 font-bold p-5 border border-purple-500/30 shadow-sm">
+                  <div className="text-2xl font-black">Holiday</div>
+                  <div className="text-xs mt-1">{holiday?.name || "Company Holiday"}</div>
+                </div>
+              ) : isPunchedIn && lastIn ? (
                 <div className="rounded-xl bg-lime-400 text-slate-900 font-bold p-5 border border-lime-500 shadow-sm space-y-1">
                   <div className="text-2xl font-black">In at {format(lastIn, "h:mm a")}</div>
                   <div className="text-base font-bold">On {format(lastIn, "dd/MM/yyyy")}</div>

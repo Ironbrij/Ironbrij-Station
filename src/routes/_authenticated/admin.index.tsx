@@ -7,6 +7,8 @@ import { StatusDot } from "@/components/StatusDot";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getShiftTimezone,
@@ -127,6 +129,17 @@ function AdminHome() {
 
   function getEmpTodayStatus(emp: Employee) {
     const employeeToday = zonedDateKey(now, getEmployeeTimezone(emp));
+    const holiday = getEmployeeHoliday(company, emp, employeeToday);
+    if (holiday) {
+      return {
+        type: "holiday" as const,
+        label: holiday.name || "Holiday",
+        isLate: false,
+        minutesLate: 0,
+        punchTimeStr: "",
+        isAutoPunchOut: false,
+      };
+    }
     const isOnLeave = leaves.some(
       (leave) =>
         (leave.employeeId === emp.id || leave.employeeId === emp.authUid) &&
@@ -154,7 +167,7 @@ function AdminHome() {
       now,
       company?.lateGraceMinutes ?? 1,
       company?.workingDays,
-      company?.holidays ?? [],
+      getEmployeeHolidayDates(company, emp),
     );
     const localTimezone = getEmployeeTimezone(emp);
     const latestDate = status.latest?.timestamp?.toDate();
@@ -249,6 +262,7 @@ function AdminHome() {
               className="bg-transparent outline-none font-bold text-primary cursor-pointer"
             >
               <option value="all">All Statuses</option>
+              <option value="holiday">Holiday</option>
               <option value="in">🟢 Punched In Today</option>
               <option value="out">🔴 Punched Out Today</option>
               <option value="late">⚠️ Late Arrivals Today</option>
@@ -289,6 +303,7 @@ function AdminHome() {
               const status = getEmpTodayStatus(m);
               if (filterStatus === "in") return status.type === "in";
               if (filterStatus === "out") return status.type === "out";
+              if (filterStatus === "holiday") return status.type === "holiday";
               if (filterStatus === "late") return status.isLate;
               return true;
             });

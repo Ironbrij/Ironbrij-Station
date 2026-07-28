@@ -12,6 +12,8 @@ import {
 } from "@/lib/types";
 import {
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   isEmployeeOnApprovedLeave,
@@ -108,23 +110,14 @@ function UserNoticesPage() {
             now,
             company?.lateGraceMinutes ?? 1,
             company?.workingDays,
-            company?.holidays ?? [],
+            getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [
-      employee,
-      punches,
-      leaves,
-      todayStr,
-      now,
-      company?.lateGraceMinutes,
-      company?.workingDays,
-      company?.holidays,
-    ],
+    [employee, punches, leaves, todayStr, now, company],
   );
   const isHoliday = useMemo(() => {
-    return company?.holidays?.includes(todayStr) ?? false;
-  }, [company, todayStr]);
+    return Boolean(getEmployeeHoliday(company, employee, todayStr));
+  }, [company, employee, todayStr]);
 
   // Filter notices relevant to this employee
   const allUserNotices = useMemo(() => {

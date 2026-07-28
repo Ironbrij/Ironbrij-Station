@@ -7,6 +7,8 @@ import { db } from "@/lib/firebase";
 import type { CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   isEmployeeOnApprovedLeave,
@@ -90,6 +92,14 @@ function NotificationsPage() {
               zonedDateKey(now, getEmployeeTimezone(employee)),
             ),
         )
+        .filter(
+          (employee) =>
+            !getEmployeeHoliday(
+              company,
+              employee,
+              zonedDateKey(now, getEmployeeTimezone(employee)),
+            ),
+        )
         .map((employee) => {
           const ids = new Set([employee.id, employee.authUid].filter(Boolean));
           const list = punches.filter((punch) => ids.has(punch.employeeId));
@@ -101,21 +111,13 @@ function NotificationsPage() {
               now,
               company?.lateGraceMinutes ?? 1,
               company?.workingDays,
-              company?.holidays ?? [],
+              getEmployeeHolidayDates(company, employee),
             ),
           };
         })
         .filter((item) => item.status.isLate)
         .sort((a, b) => b.status.minutesLate - a.status.minutesLate),
-    [
-      employees,
-      punches,
-      leaves,
-      now,
-      company?.lateGraceMinutes,
-      company?.workingDays,
-      company?.holidays,
-    ],
+    [employees, punches, leaves, now, company],
   );
 
   function recipientLabel(notice: CompanyNotice) {

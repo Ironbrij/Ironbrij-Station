@@ -7,6 +7,8 @@ import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getShiftTimezone,
@@ -104,6 +106,7 @@ function LateArrivalsPage() {
       }
       for (const [dateKey, punch] of firstByShiftDate) {
         if (isEmployeeOnApprovedLeave(employee, leaves, dateKey)) continue;
+        if (getEmployeeHoliday(company, employee, dateKey)) continue;
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
         if (!late.isLate) continue;
         result.push({
@@ -127,7 +130,7 @@ function LateArrivalsPage() {
         now,
         graceMinutes,
         company?.workingDays,
-        company?.holidays ?? [],
+        getEmployeeHolidayDates(company, employee),
       );
       if (!onLeave && status.isMissingLate) {
         result.push({
@@ -141,15 +144,7 @@ function LateArrivalsPage() {
       }
     }
     return result.sort((a, b) => (b.punchedAt || now).getTime() - (a.punchedAt || now).getTime());
-  }, [
-    employees,
-    employeePunches,
-    leaves,
-    now,
-    graceMinutes,
-    company?.workingDays,
-    company?.holidays,
-  ]);
+  }, [employees, employeePunches, leaves, now, graceMinutes, company]);
 
   const filtered = useMemo(
     () =>

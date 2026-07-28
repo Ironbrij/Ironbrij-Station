@@ -1,4 +1,4 @@
-import type { Employee, LeaveRequest, Punch } from "./types";
+import type { Company, CompanyHoliday, Employee, LeaveRequest, Punch } from "./types";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -54,6 +54,50 @@ export function isEmployeeOnApprovedLeave(
       leave.dateFrom <= dateKey &&
       leave.dateTo >= dateKey,
   );
+}
+
+export function isHolidayAssignedToEmployee(
+  holiday: CompanyHoliday,
+  employee: Pick<Employee, "id" | "authUid" | "deptId">,
+): boolean {
+  if (holiday.targetType === "all") return true;
+  if (holiday.targetType === "departments")
+    return Boolean(employee.deptId && holiday.departmentIds?.includes(employee.deptId));
+
+  const employeeIds = [employee.id, employee.authUid].filter(Boolean) as string[];
+  return employeeIds.some((id) => holiday.employeeIds?.includes(id));
+}
+
+export function getEmployeeHoliday(
+  company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
+  employee: Pick<Employee, "id" | "authUid" | "deptId"> | null | undefined,
+  dateKey: string,
+): CompanyHoliday | null {
+  if (!company || !employee) return null;
+  if (company.holidays?.includes(dateKey)) {
+    return {
+      id: `legacy-${dateKey}`,
+      date: dateKey,
+      name: "Company Holiday",
+      targetType: "all",
+    };
+  }
+  return (
+    company.holidayAssignments?.find(
+      (holiday) => holiday.date === dateKey && isHolidayAssignedToEmployee(holiday, employee),
+    ) ?? null
+  );
+}
+
+export function getEmployeeHolidayDates(
+  company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
+  employee: Pick<Employee, "id" | "authUid" | "deptId">,
+): string[] {
+  const dates = new Set(company?.holidays ?? []);
+  for (const holiday of company?.holidayAssignments ?? []) {
+    if (isHolidayAssignedToEmployee(holiday, employee)) dates.add(holiday.date);
+  }
+  return [...dates];
 }
 export function getZonedParts(value: Date, timezone: string): ZonedParts {
   const parts = new Intl.DateTimeFormat("en-CA", {

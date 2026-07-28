@@ -16,6 +16,7 @@ import { ymd } from "@/lib/time";
 import { toast } from "sonner";
 import { Clock, ShieldAlert, CheckCircle2, Lock, PartyPopper } from "lucide-react";
 import { format } from "date-fns";
+import { getEmployeeHoliday, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 
 export const Route = createFileRoute("/_authenticated/app/extra")({
   head: () => ({
@@ -36,7 +37,9 @@ function ExtraPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const todayStr = ymd(new Date());
+  const todayStr = employee
+    ? zonedDateKey(new Date(), getEmployeeTimezone(employee))
+    : ymd(new Date());
 
   useEffect(() => {
     const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
@@ -68,8 +71,8 @@ function ExtraPage() {
   }, [employee]);
 
   const isHoliday = useMemo(() => {
-    return company?.holidays?.includes(todayStr) ?? false;
-  }, [company, todayStr]);
+    return Boolean(getEmployeeHoliday(company, employee, todayStr));
+  }, [company, employee, todayStr]);
 
   const onLeaveToday = useMemo(() => {
     return leaves.some(

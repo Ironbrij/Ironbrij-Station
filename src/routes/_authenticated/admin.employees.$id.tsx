@@ -11,6 +11,8 @@ import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getShiftConversions,
@@ -103,6 +105,9 @@ function EmployeeDetail() {
       if (!groups.has(date)) groups.set(date, []);
       groups.get(date)!.push(punch);
     }
+    for (const date of getEmployeeHolidayDates(company, employee)) {
+      if (date.startsWith(month) && !groups.has(date)) groups.set(date, []);
+    }
     const output: DayRow[] = [];
     for (const [date, dayPunches] of groups) {
       const sorted = [...dayPunches].sort(
@@ -113,6 +118,7 @@ function EmployeeDetail() {
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const hours = computeDay(sorted).regularHours + computeDay(sorted).overtimeHours;
       const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, date);
+      const holiday = getEmployeeHoliday(company, employee, date);
       const lateness = firstIn
         ? computeEmployeeLateness(
             firstIn.timestamp.toDate(),
@@ -126,25 +132,27 @@ function EmployeeDetail() {
         firstIn,
         lastOut,
         hours,
-        minutesLate: !onApprovedLeave && lateness?.isLate ? lateness.minutes : 0,
+        minutesLate: !holiday && !onApprovedLeave && lateness?.isLate ? lateness.minutes : 0,
         isAutoPunchOut,
-        status: onApprovedLeave
-          ? "On leave"
-          : !firstIn
-            ? "No punch in"
-            : !lastOut
-              ? "Still punched in"
-              : lastOut.isAuto
-                ? lateness?.isLate
-                  ? "Auto punched out · Late"
-                  : "Auto punched out"
-                : lateness?.isLate
-                  ? "Late"
-                  : "On time",
+        status: holiday
+          ? "Holiday"
+          : onApprovedLeave
+            ? "On leave"
+            : !firstIn
+              ? "No punch in"
+              : !lastOut
+                ? "Still punched in"
+                : lastOut.isAuto
+                  ? lateness?.isLate
+                    ? "Auto punched out · Late"
+                    : "Auto punched out"
+                  : lateness?.isLate
+                    ? "Late"
+                    : "On time",
       });
     }
     return output.sort((a, b) => b.date.localeCompare(a.date));
-  }, [employee, punches, leaves, month, company?.lateGraceMinutes]);
+  }, [employee, punches, leaves, month, company]);
 
   const liveStatus = useMemo(
     () =>
@@ -155,10 +163,10 @@ function EmployeeDetail() {
             now,
             company?.lateGraceMinutes ?? 1,
             company?.workingDays,
-            company?.holidays ?? [],
+            getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, punches, now, company?.lateGraceMinutes, company?.workingDays, company?.holidays],
+    [employee, punches, now, company],
   );
   const onLeaveToday = useMemo(
     () =>
@@ -170,6 +178,15 @@ function EmployeeDetail() {
           )
         : false,
     [employee, leaves, now],
+  );
+  const onHolidayToday = useMemo(
+    () =>
+      employee
+        ? Boolean(
+            getEmployeeHoliday(company, employee, zonedDateKey(now, getEmployeeTimezone(employee))),
+          )
+        : false,
+    [company, employee, now],
   );
   const shiftConversions = useMemo(
     () => (employee ? getShiftConversions(employee, now) : []),
@@ -294,9 +311,15 @@ function EmployeeDetail() {
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-bold ${liveStatus?.isPunchedIn ? "bg-emerald-500/10 text-emerald-700" : "bg-slate-500/10 text-slate-600"}`}
             >
-              {onLeaveToday ? "On leave" : liveStatus?.isPunchedIn ? "Punched in" : "Punched out"}
+              {onHolidayToday
+                ? "Holiday"
+                : onLeaveToday
+                  ? "On leave"
+                  : liveStatus?.isPunchedIn
+                    ? "Punched in"
+                    : "Punched out"}
             </span>
-            {!onLeaveToday && liveStatus?.isLate && (
+            {!onHolidayToday && !onLeaveToday && liveStatus?.isLate && (
               <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
                 {liveStatus.minutesLate}m late
               </span>

@@ -2,11 +2,23 @@ import type { Timestamp } from "firebase/firestore";
 
 export type PunchType = "in" | "out" | "extra_in" | "extra_out";
 
+export type HolidayTargetType = "all" | "departments" | "employees";
+
+export interface CompanyHoliday {
+  id: string;
+  date: string; // YYYY-MM-DD
+  name?: string;
+  targetType: HolidayTargetType;
+  departmentIds?: string[];
+  employeeIds?: string[];
+}
+
 export interface Company {
   name: string;
   logoUrl?: string;
   defaultShiftHours: number;
-  holidays: string[]; // YYYY-MM-DD
+  holidays: string[]; // Legacy company-wide YYYY-MM-DD dates
+  holidayAssignments?: CompanyHoliday[];
   workingDays: number[]; // 0=Sun..6=Sat
   lateGraceMinutes?: number;
 }
@@ -50,7 +62,7 @@ export interface Punch {
   source: "app" | "auto";
   isEarly?: boolean;
   isAuto?: boolean;
-  autoReason?: "suspension" | "approved_leave" | "shift_timeout";
+  autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout";
 }
 
 export interface LeaveRequest {

@@ -13,6 +13,8 @@ import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeHoliday,
+  getEmployeeHolidayDates,
   getEmployeeTimezone,
   getShiftTimezone,
   isEmployeeOnApprovedLeave,
@@ -207,6 +209,12 @@ function DepartmentsPage() {
         if (!empDays.has(dateStr)) empDays.set(dateStr, []);
         empDays.get(dateStr)!.push(p);
       }
+      const shiftTimezone = getShiftTimezone(emp);
+      const startKey = zonedDateKey(start, shiftTimezone);
+      const endKey = zonedDateKey(end, shiftTimezone);
+      for (const date of getEmployeeHolidayDates(company, emp)) {
+        if (date >= startKey && date <= endKey && !empDays.has(date)) empDays.set(date, []);
+      }
 
       const countryData = COUNTRY_TIMEZONES[emp.country ?? "NP"] || COUNTRY_TIMEZONES.NP;
 
@@ -224,8 +232,9 @@ function DepartmentsPage() {
           : new Date(dateStr + "T00:00:00");
         const dayCalc = computeDay(sorted);
 
-        let latenessText = "On Time";
-        if (firstIn) {
+        const holiday = getEmployeeHoliday(company, emp, dateStr);
+        let latenessText = holiday ? "Holiday" : "On Time";
+        if (firstIn && !holiday) {
           const lateness = computeEmployeeLateness(
             firstIn.timestamp.toDate(),
             emp,
@@ -333,6 +342,11 @@ function DepartmentsPage() {
         const dateKey = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
         days.set(dateKey, [...(days.get(dateKey) || []), punch]);
       }
+      const startKey = zonedDateKey(start, shiftTimezone);
+      const endKey = zonedDateKey(end, shiftTimezone);
+      for (const date of getEmployeeHolidayDates(company, employee)) {
+        if (date >= startKey && date <= endKey && !days.has(date)) days.set(date, []);
+      }
 
       for (const [dateKey, dayPunches] of days) {
         const sorted = [...dayPunches].sort(
@@ -344,8 +358,9 @@ function DepartmentsPage() {
           .find((punch) => punch.type === "out" || punch.type === "extra_out");
         const day = computeDay(sorted);
         const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, dateKey);
+        const holiday = getEmployeeHoliday(company, employee, dateKey);
         const lateness =
-          firstIn && !onApprovedLeave
+          firstIn && !holiday && !onApprovedLeave
             ? computeEmployeeLateness(
                 firstIn.timestamp.toDate(),
                 employee,
@@ -362,13 +377,15 @@ function DepartmentsPage() {
             : firstIn
               ? "Still punched in"
               : "",
-          AttendanceStatus: onApprovedLeave
-            ? "On leave"
-            : lateness?.isLate
-              ? `Late (${lateness.minutes} min)`
-              : firstIn
-                ? "On time"
-                : "No punch in",
+          AttendanceStatus: holiday
+            ? "Holiday"
+            : onApprovedLeave
+              ? "On leave"
+              : lateness?.isLate
+                ? `Late (${lateness.minutes} min)`
+                : firstIn
+                  ? "On time"
+                  : "No punch in",
           RegularHours: day.regularHours.toFixed(2),
           OvertimeHours: day.overtimeHours.toFixed(2),
         });
