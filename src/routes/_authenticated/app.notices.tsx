@@ -12,11 +12,12 @@ import {
 } from "@/lib/types";
 import {
   formatInTimezone,
+  getActiveEmployeeLeave,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
-  isEmployeeOnApprovedLeave,
+  getLeaveLabel,
   zonedDateKey,
 } from "@/lib/attendance";
 import { ymd } from "@/lib/time";
@@ -103,7 +104,7 @@ function UserNoticesPage() {
 
   const attendanceStatus = useMemo(
     () =>
-      employee && !isEmployeeOnApprovedLeave(employee, leaves, todayStr)
+      employee && !getActiveEmployeeLeave(employee, leaves, now)
         ? getLiveAttendanceStatus(
             employee,
             punches,
@@ -113,11 +114,15 @@ function UserNoticesPage() {
             getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, punches, leaves, todayStr, now, company],
+    [employee, punches, leaves, now, company],
   );
   const isHoliday = useMemo(() => {
     return Boolean(getEmployeeHoliday(company, employee, todayStr));
   }, [company, employee, todayStr]);
+  const activeLeave = useMemo(
+    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
+    [employee, leaves, now],
+  );
 
   // Filter notices relevant to this employee
   const allUserNotices = useMemo(() => {
@@ -191,6 +196,17 @@ function UserNoticesPage() {
           </button>
         )}
       </div>
+
+      {activeLeave && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm">
+          <span className="font-extrabold text-amber-800 dark:text-amber-200">
+            {getLeaveLabel(activeLeave)}
+          </span>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Your attendance status is updated for this approved period.
+          </p>
+        </div>
+      )}
 
       {/* Holiday Fun Showcase Banner */}
       {isHoliday && (

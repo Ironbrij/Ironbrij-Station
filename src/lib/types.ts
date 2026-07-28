@@ -68,6 +68,10 @@ export interface Punch {
 export interface LeaveRequest {
   id: string;
   employeeId: string;
+  leaveType?: "full_day" | "half_day" | "timed_break";
+  halfDayPeriod?: "first_half" | "second_half";
+  startTime?: string; // HH:mm in the employee shift timezone
+  endTime?: string; // HH:mm in the employee shift timezone
   dateFrom: string; // YYYY-MM-DD
   dateTo: string;
   reason: string;

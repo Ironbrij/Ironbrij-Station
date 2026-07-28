@@ -11,11 +11,13 @@ import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeApprovedLeaveForDate,
+  getEmployeeApprovedLeaveDates,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getShiftTimezone,
-  isEmployeeOnApprovedLeave,
+  getLeaveLabel,
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
@@ -123,6 +125,9 @@ function ReportsPage() {
       for (const date of getEmployeeHolidayDates(company, employee)) {
         if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
       }
+      for (const date of getEmployeeApprovedLeaveDates(employee, leaves)) {
+        if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
+      }
       for (const [date, dayPunches] of groups) {
         const sorted = [...dayPunches].sort(
           (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
@@ -130,7 +135,7 @@ function ReportsPage() {
         const firstIn = sorted.find((punch) => punch.type === "in");
         const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
         const calculation = computeDay(sorted);
-        const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, date);
+        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, date);
         const holiday = getEmployeeHoliday(company, employee, date);
         const late = firstIn
           ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, 1)
@@ -147,8 +152,8 @@ function ReportsPage() {
           hours: calculation.regularHours + calculation.overtimeHours,
           status: holiday
             ? "Holiday"
-            : onApprovedLeave
-              ? "On leave"
+            : approvedLeave
+              ? getLeaveLabel(approvedLeave)
               : !firstIn
                 ? "No punch in"
                 : !lastOut
@@ -160,7 +165,7 @@ function ReportsPage() {
                     : late?.isLate
                       ? "Late"
                       : "On time",
-          minutesLate: !holiday && !onApprovedLeave && late?.isLate ? late.minutes : 0,
+          minutesLate: !holiday && !approvedLeave && late?.isLate ? late.minutes : 0,
           isAutoPunchOut,
         });
       }
@@ -403,7 +408,9 @@ function ReportsPage() {
                   <td className="p-3 font-mono text-xs">
                     {row.lastOut
                       ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone)
-                      : "Still in"}
+                      : row.firstIn
+                        ? "Still in"
+                        : "â€”"}
                   </td>
                   <td className="p-3 font-bold">{row.hours.toFixed(2)}</td>
                   <td className="p-3">

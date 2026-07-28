@@ -11,13 +11,16 @@ import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getActiveEmployeeLeave,
+  getEmployeeApprovedLeaveForDate,
+  getEmployeeApprovedLeaveDates,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
+  getLeaveLabel,
   getShiftConversions,
   getShiftTimezone,
-  isEmployeeOnApprovedLeave,
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
@@ -108,6 +111,9 @@ function EmployeeDetail() {
     for (const date of getEmployeeHolidayDates(company, employee)) {
       if (date.startsWith(month) && !groups.has(date)) groups.set(date, []);
     }
+    for (const date of getEmployeeApprovedLeaveDates(employee, leaves)) {
+      if (date.startsWith(month) && !groups.has(date)) groups.set(date, []);
+    }
     const output: DayRow[] = [];
     for (const [date, dayPunches] of groups) {
       const sorted = [...dayPunches].sort(
@@ -117,7 +123,7 @@ function EmployeeDetail() {
       const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const hours = computeDay(sorted).regularHours + computeDay(sorted).overtimeHours;
-      const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, date);
+      const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, date);
       const holiday = getEmployeeHoliday(company, employee, date);
       const lateness = firstIn
         ? computeEmployeeLateness(
@@ -132,12 +138,12 @@ function EmployeeDetail() {
         firstIn,
         lastOut,
         hours,
-        minutesLate: !holiday && !onApprovedLeave && lateness?.isLate ? lateness.minutes : 0,
+        minutesLate: !holiday && !approvedLeave && lateness?.isLate ? lateness.minutes : 0,
         isAutoPunchOut,
         status: holiday
           ? "Holiday"
-          : onApprovedLeave
-            ? "On leave"
+          : approvedLeave
+            ? getLeaveLabel(approvedLeave)
             : !firstIn
               ? "No punch in"
               : !lastOut
@@ -168,17 +174,11 @@ function EmployeeDetail() {
         : null,
     [employee, punches, now, company],
   );
-  const onLeaveToday = useMemo(
-    () =>
-      employee
-        ? isEmployeeOnApprovedLeave(
-            employee,
-            leaves,
-            zonedDateKey(now, getEmployeeTimezone(employee)),
-          )
-        : false,
+  const activeLeave = useMemo(
+    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
     [employee, leaves, now],
   );
+  const onLeaveToday = Boolean(activeLeave);
   const onHolidayToday = useMemo(
     () =>
       employee
@@ -314,7 +314,7 @@ function EmployeeDetail() {
               {onHolidayToday
                 ? "Holiday"
                 : onLeaveToday
-                  ? "On leave"
+                  ? getLeaveLabel(activeLeave)
                   : liveStatus?.isPunchedIn
                     ? "Punched in"
                     : "Punched out"}
@@ -418,7 +418,9 @@ function EmployeeDetail() {
                   <td className="p-3 font-mono text-xs">
                     {row.lastOut
                       ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone)
-                      : "Still in"}
+                      : row.firstIn
+                        ? "Still in"
+                        : "â€”"}
                   </td>
                   <td className="p-3 font-bold">{row.hours.toFixed(2)}</td>
                   <td className="p-3">

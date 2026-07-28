@@ -50,10 +50,99 @@ export function isEmployeeOnApprovedLeave(
   return leaves.some(
     (leave) =>
       leave.status === "approved" &&
+      (!leave.leaveType || leave.leaveType === "full_day") &&
       (leave.employeeId === employee.id || leave.employeeId === employee.authUid) &&
       leave.dateFrom <= dateKey &&
       leave.dateTo >= dateKey,
   );
+}
+
+function leaveMatchesEmployee(
+  leave: LeaveRequest,
+  employee: Pick<Employee, "id" | "authUid">,
+): boolean {
+  return leave.employeeId === employee.id || leave.employeeId === employee.authUid;
+}
+
+export function getEmployeeApprovedLeaveForDate(
+  employee: Pick<Employee, "id" | "authUid">,
+  leaves: LeaveRequest[],
+  dateKey: string,
+): LeaveRequest | null {
+  return (
+    leaves.find(
+      (leave) =>
+        leave.status === "approved" &&
+        leaveMatchesEmployee(leave, employee) &&
+        leave.dateFrom <= dateKey &&
+        leave.dateTo >= dateKey,
+    ) ?? null
+  );
+}
+
+export function getEmployeeApprovedLeaveDates(
+  employee: Pick<Employee, "id" | "authUid">,
+  leaves: LeaveRequest[],
+): string[] {
+  const dates = new Set<string>();
+  for (const leave of leaves) {
+    if (leave.status !== "approved" || !leaveMatchesEmployee(leave, employee)) continue;
+    let dateKey = leave.dateFrom;
+    while (dateKey <= leave.dateTo) {
+      dates.add(dateKey);
+      dateKey = addCalendarDays(dateKey, 1);
+    }
+  }
+  return [...dates];
+}
+
+export function getLeaveLabel(leave: LeaveRequest | null | undefined): string {
+  if (!leave?.leaveType || leave.leaveType === "full_day") return "On leave";
+  if (leave.leaveType === "half_day")
+    return leave.halfDayPeriod === "second_half"
+      ? "Half-day leave · second half"
+      : "Half-day leave · first half";
+  return `On break${leave.startTime && leave.endTime ? ` · ${leave.startTime}–${leave.endTime}` : ""}`;
+}
+
+export function getActiveEmployeeLeave(
+  employee: Employee,
+  leaves: LeaveRequest[],
+  instant = new Date(),
+): LeaveRequest | null {
+  const timezone = getShiftTimezone(employee);
+  const dateKey = zonedDateKey(instant, timezone);
+  const applicable = leaves.filter(
+    (leave) =>
+      leave.status === "approved" &&
+      leaveMatchesEmployee(leave, employee) &&
+      leave.dateFrom <= dateKey &&
+      leave.dateTo >= dateKey,
+  );
+
+  for (const leave of applicable) {
+    if (!leave.leaveType || leave.leaveType === "full_day") return leave;
+    if (leave.leaveType === "timed_break" && leave.startTime && leave.endTime) {
+      const start = zonedDateTimeToDate(dateKey, leave.startTime, timezone);
+      const end = zonedDateTimeToDate(dateKey, leave.endTime, timezone);
+      if (instant >= start && instant < end) return leave;
+    }
+    if (leave.leaveType === "half_day") {
+      const shift = getShiftWindow(
+        dateKey,
+        employee.shiftStartTime || "09:00",
+        employee.shiftEndTime || "17:00",
+        timezone,
+      );
+      const midpoint = new Date((shift.start.getTime() + shift.end.getTime()) / 2);
+      const isActive =
+        leave.halfDayPeriod === "second_half"
+          ? instant >= midpoint && instant < shift.end
+          : instant >= shift.start && instant < midpoint;
+      if (isActive) return leave;
+    }
+  }
+  return null;
 }
 
 export function isHolidayAssignedToEmployee(

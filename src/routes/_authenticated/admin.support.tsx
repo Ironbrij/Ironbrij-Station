@@ -31,7 +31,7 @@ function SupportPage() {
         />
         <FAQ
           q="How do approved leaves affect punching?"
-          a="An approved leave blocks punch-in on those dates. Revoking a leave re-enables punching."
+          a="A full-day leave blocks the whole date. Half-day leave blocks only the selected half of the employee's shift, and a scheduled break blocks only its approved start-to-end time."
         />
       </div>
       <p className="mt-6 text-sm text-muted-foreground">

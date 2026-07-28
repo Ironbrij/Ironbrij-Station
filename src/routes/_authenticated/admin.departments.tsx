@@ -13,11 +13,13 @@ import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEmployeeApprovedLeaveDates,
+  getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getShiftTimezone,
-  isEmployeeOnApprovedLeave,
+  getLeaveLabel,
   zonedDateKey,
 } from "@/lib/attendance";
 import { toast } from "sonner";
@@ -215,6 +217,9 @@ function DepartmentsPage() {
       for (const date of getEmployeeHolidayDates(company, emp)) {
         if (date >= startKey && date <= endKey && !empDays.has(date)) empDays.set(date, []);
       }
+      for (const date of getEmployeeApprovedLeaveDates(emp, leaves)) {
+        if (date >= startKey && date <= endKey && !empDays.has(date)) empDays.set(date, []);
+      }
 
       const countryData = COUNTRY_TIMEZONES[emp.country ?? "NP"] || COUNTRY_TIMEZONES.NP;
 
@@ -233,8 +238,13 @@ function DepartmentsPage() {
         const dayCalc = computeDay(sorted);
 
         const holiday = getEmployeeHoliday(company, emp, dateStr);
-        let latenessText = holiday ? "Holiday" : "On Time";
-        if (firstIn && !holiday) {
+        const approvedLeave = getEmployeeApprovedLeaveForDate(emp, leaves, dateStr);
+        let latenessText = holiday
+          ? "Holiday"
+          : approvedLeave
+            ? getLeaveLabel(approvedLeave)
+            : "On Time";
+        if (firstIn && !holiday && !approvedLeave) {
           const lateness = computeEmployeeLateness(
             firstIn.timestamp.toDate(),
             emp,
@@ -347,6 +357,9 @@ function DepartmentsPage() {
       for (const date of getEmployeeHolidayDates(company, employee)) {
         if (date >= startKey && date <= endKey && !days.has(date)) days.set(date, []);
       }
+      for (const date of getEmployeeApprovedLeaveDates(employee, leaves)) {
+        if (date >= startKey && date <= endKey && !days.has(date)) days.set(date, []);
+      }
 
       for (const [dateKey, dayPunches] of days) {
         const sorted = [...dayPunches].sort(
@@ -357,10 +370,10 @@ function DepartmentsPage() {
           .reverse()
           .find((punch) => punch.type === "out" || punch.type === "extra_out");
         const day = computeDay(sorted);
-        const onApprovedLeave = isEmployeeOnApprovedLeave(employee, leaves, dateKey);
+        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
         const holiday = getEmployeeHoliday(company, employee, dateKey);
         const lateness =
-          firstIn && !holiday && !onApprovedLeave
+          firstIn && !holiday && !approvedLeave
             ? computeEmployeeLateness(
                 firstIn.timestamp.toDate(),
                 employee,
@@ -379,8 +392,8 @@ function DepartmentsPage() {
               : "",
           AttendanceStatus: holiday
             ? "Holiday"
-            : onApprovedLeave
-              ? "On leave"
+            : approvedLeave
+              ? getLeaveLabel(approvedLeave)
               : lateness?.isLate
                 ? `Late (${lateness.minutes} min)`
                 : firstIn

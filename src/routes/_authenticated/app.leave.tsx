@@ -22,6 +22,11 @@ export const Route = createFileRoute("/_authenticated/app/leave")({
 
 function LeavePage() {
   const { employee, user } = useAuth();
+  const [leaveType, setLeaveType] = useState<NonNullable<LeaveRequest["leaveType"]>>("full_day");
+  const [halfDayPeriod, setHalfDayPeriod] =
+    useState<NonNullable<LeaveRequest["halfDayPeriod"]>>("first_half");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reason, setReason] = useState("");
@@ -51,9 +56,17 @@ function LeavePage() {
     if (!employee) return;
     setBusy(true);
     try {
-      const finalDateTo = dateTo || dateFrom;
+      if (leaveType === "timed_break" && (!startTime || !endTime || startTime >= endTime)) {
+        toast.error("Choose a valid break start and end time.");
+        setBusy(false);
+        return;
+      }
+      const finalDateTo = leaveType === "full_day" ? dateTo || dateFrom : dateFrom;
       const leaveRef = await addDoc(collection(db(), "leaveRequests"), {
         employeeId: employee.id,
+        leaveType,
+        ...(leaveType === "half_day" ? { halfDayPeriod } : {}),
+        ...(leaveType === "timed_break" ? { startTime, endTime } : {}),
         dateFrom,
         dateTo: finalDateTo,
         reason,
@@ -77,6 +90,10 @@ function LeavePage() {
               employeeEmail: employee.email,
               dateFrom,
               dateTo: finalDateTo,
+              leaveType,
+              halfDayPeriod: leaveType === "half_day" ? halfDayPeriod : undefined,
+              startTime: leaveType === "timed_break" ? startTime : undefined,
+              endTime: leaveType === "timed_break" ? endTime : undefined,
               reason,
             }),
           });
@@ -90,6 +107,8 @@ function LeavePage() {
       setDateFrom("");
       setDateTo("");
       setReason("");
+      setStartTime("");
+      setEndTime("");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -103,6 +122,20 @@ function LeavePage() {
     <div className="max-w-2xl mx-auto grid gap-6">
       <form onSubmit={submit} className="rounded-xl border bg-card p-6 shadow-lift">
         <h1 className="text-xl font-semibold text-primary">Request Leave</h1>
+        <div className="mt-4">
+          <label className="text-sm font-medium">Request type</label>
+          <select
+            value={leaveType}
+            onChange={(event) =>
+              setLeaveType(event.target.value as NonNullable<LeaveRequest["leaveType"]>)
+            }
+            className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
+          >
+            <option value="full_day">Full-day leave</option>
+            <option value="half_day">Half-day leave</option>
+            <option value="timed_break">Break at a specific time</option>
+          </select>
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
             <label className="text-sm font-medium">From</label>
@@ -114,16 +147,57 @@ function LeavePage() {
               className="mt-1 w-full rounded-md border px-3 py-2"
             />
           </div>
-          <div>
-            <label className="text-sm font-medium">To (optional)</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2"
-            />
-          </div>
+          {leaveType === "full_day" && (
+            <div>
+              <label className="text-sm font-medium">To (optional)</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+              />
+            </div>
+          )}
         </div>
+        {leaveType === "half_day" && (
+          <div className="mt-3">
+            <label className="text-sm font-medium">Which half?</label>
+            <select
+              value={halfDayPeriod}
+              onChange={(event) =>
+                setHalfDayPeriod(event.target.value as NonNullable<LeaveRequest["halfDayPeriod"]>)
+              }
+              className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
+            >
+              <option value="first_half">First half of shift</option>
+              <option value="second_half">Second half of shift</option>
+            </select>
+          </div>
+        )}
+        {leaveType === "timed_break" && (
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium">Break starts</label>
+              <input
+                type="time"
+                required
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Break ends</label>
+              <input
+                type="time"
+                required
+                value={endTime}
+                onChange={(event) => setEndTime(event.target.value)}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+              />
+            </div>
+          </div>
+        )}
         <div className="mt-3">
           <label className="text-sm font-medium">Reason</label>
           <textarea
@@ -183,6 +257,13 @@ function LeavePage() {
                       <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
                       {leave.dateFrom}
                       {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""}
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-primary">
+                      {!leave.leaveType || leave.leaveType === "full_day"
+                        ? "Full-day leave"
+                        : leave.leaveType === "half_day"
+                          ? `Half-day · ${leave.halfDayPeriod === "second_half" ? "second half" : "first half"}`
+                          : `Scheduled break · ${leave.startTime}–${leave.endTime}`}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">{leave.reason}</div>
                   </div>

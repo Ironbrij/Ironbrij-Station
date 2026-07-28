@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import type { CompanyNotice, Employee, LeaveRequest } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import { getLeaveLabel } from "@/lib/attendance";
 
 export const Route = createFileRoute("/_authenticated/admin/leaves")({
   head: () => ({
@@ -65,11 +66,12 @@ function LeavesPage() {
         const approved = status === "approved";
         const dateRange =
           leave.dateFrom === leave.dateTo ? leave.dateFrom : `${leave.dateFrom} to ${leave.dateTo}`;
+        const leaveLabel = getLeaveLabel(leave);
         const notice: Omit<CompanyNotice, "id"> = {
           title: approved ? "Leave request approved" : "Leave request rejected",
           message: approved
-            ? `Your leave request for ${dateRange} has been approved.`
-            : `Your leave request for ${dateRange} has been rejected. Your submitted reason was: ${leave.reason}`,
+            ? `Your ${leaveLabel.toLowerCase()} request for ${dateRange} has been approved.`
+            : `Your ${leaveLabel.toLowerCase()} request for ${dateRange} has been rejected. Your submitted reason was: ${leave.reason}`,
           priority: approved ? "info" : "warning",
           targetType: "employee",
           targetEmployeeId: employee.id,
@@ -106,6 +108,10 @@ function LeavesPage() {
             employeeEmail: employee.email,
             dateFrom: leave.dateFrom,
             dateTo: leave.dateTo,
+            leaveType: leave.leaveType || "full_day",
+            halfDayPeriod: leave.halfDayPeriod,
+            startTime: leave.startTime,
+            endTime: leave.endTime,
             reason: leave.reason,
             status,
           }),
@@ -151,6 +157,7 @@ function LeavesPage() {
                 {leave.dateFrom}
                 {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""} · {leave.reason}
               </div>
+              <div className="mt-1 text-xs font-semibold text-primary">{getLeaveLabel(leave)}</div>
               <div className="mt-1 text-xs capitalize text-muted-foreground">
                 Status: {leave.status}
               </div>

@@ -7,12 +7,13 @@ import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getActiveEmployeeLeave,
+  getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getShiftTimezone,
-  isEmployeeOnApprovedLeave,
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
@@ -105,7 +106,8 @@ function LateArrivalsPage() {
           firstByShiftDate.set(dateKey, punch);
       }
       for (const [dateKey, punch] of firstByShiftDate) {
-        if (isEmployeeOnApprovedLeave(employee, leaves, dateKey)) continue;
+        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
+        if (approvedLeave?.leaveType !== "timed_break") continue;
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
         if (!late.isLate) continue;
@@ -120,9 +122,7 @@ function LateArrivalsPage() {
         });
       }
 
-      const localToday = zonedDateKey(now, getEmployeeTimezone(employee));
-
-      const onLeave = isEmployeeOnApprovedLeave(employee, leaves, localToday);
+      const onLeave = Boolean(getActiveEmployeeLeave(employee, leaves, now));
 
       const status = getLiveAttendanceStatus(
         employee,

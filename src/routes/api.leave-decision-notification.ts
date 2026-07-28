@@ -7,6 +7,10 @@ type LeaveDecisionInput = {
   employeeEmail: string;
   dateFrom: string;
   dateTo: string;
+  leaveType?: "full_day" | "half_day" | "timed_break";
+  halfDayPeriod?: "first_half" | "second_half";
+  startTime?: string;
+  endTime?: string;
   reason: string;
   status: "approved" | "rejected";
 };
@@ -99,12 +103,18 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
         const approved = body.status === "approved";
         const dateRange =
           body.dateFrom === body.dateTo ? body.dateFrom : `${body.dateFrom} to ${body.dateTo}`;
+        const requestType =
+          body.leaveType === "timed_break"
+            ? `break from ${body.startTime} to ${body.endTime}`
+            : body.leaveType === "half_day"
+              ? `${body.halfDayPeriod === "second_half" ? "second" : "first"}-half leave`
+              : "full-day leave";
         const subject = approved
           ? "Your leave request was approved"
           : "Your leave request was rejected";
         const decisionText = approved
-          ? `Your leave request for ${dateRange} has been approved.`
-          : `Your leave request for ${dateRange} has been rejected.`;
+          ? `Your ${requestType} request for ${dateRange} has been approved.`
+          : `Your ${requestType} request for ${dateRange} has been rejected.`;
         const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open Time Station to view the updated status.`;
         const statusColor = approved ? "#047857" : "#be123c";
         const webhookResponse = await fetch(webhookUrl, {
@@ -118,6 +128,10 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
             employeeEmail: body.employeeEmail,
             dateFrom: body.dateFrom,
             dateTo: body.dateTo,
+            leaveType: body.leaveType || "full_day",
+            halfDayPeriod: body.halfDayPeriod,
+            startTime: body.startTime,
+            endTime: body.endTime,
             reason: body.reason,
             status: body.status,
             decidedAt: new Date().toISOString(),

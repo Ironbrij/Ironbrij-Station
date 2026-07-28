@@ -7,11 +7,11 @@ import { db } from "@/lib/firebase";
 import type { CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
   formatInTimezone,
+  getActiveEmployeeLeave,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
-  isEmployeeOnApprovedLeave,
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
@@ -84,14 +84,7 @@ function NotificationsPage() {
     () =>
       employees
         .filter((employee) => employee.status === "active" && employee.inviteStatus === "accepted")
-        .filter(
-          (employee) =>
-            !isEmployeeOnApprovedLeave(
-              employee,
-              leaves,
-              zonedDateKey(now, getEmployeeTimezone(employee)),
-            ),
-        )
+        .filter((employee) => !getActiveEmployeeLeave(employee, leaves, now))
         .filter(
           (employee) =>
             !getEmployeeHoliday(

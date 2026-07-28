@@ -19,15 +19,17 @@ import {
   type LeaveRequest,
   type Punch,
 } from "@/lib/types";
-import { formatDurationHMS, ymd } from "@/lib/time";
+import { formatDurationHMS } from "@/lib/time";
 import {
   computeEmployeeLateness,
   computeRegularWorkedMsForDay,
   formatInTimezone,
+  getActiveEmployeeLeave,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
+  getLeaveLabel,
   getShiftConversions,
   getShiftTimezone,
   zonedDateKey,
@@ -65,7 +67,7 @@ function PunchPage() {
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState(randomQuote());
-  const [onLeaveToday, setOnLeaveToday] = useState(false);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [confirmEarly, setConfirmEarly] = useState(false);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [gifIndex, setGifIndex] = useState(0);
@@ -139,25 +141,26 @@ function PunchPage() {
     );
   }, [employee]);
 
-  // Check approved leave requests for today
+  // Keep leave and scheduled break requests in sync.
   useEffect(() => {
     if (!employee) return;
-    const today = ymd(new Date());
     const q = query(collection(db(), "leaveRequests"), where("employeeId", "==", employee.id));
     return onSnapshot(
       q,
       (snap) => {
-        const active = snap.docs.some((d) => {
-          const l = d.data() as LeaveRequest;
-          return l.status === "approved" && l.dateFrom <= today && l.dateTo >= today;
-        });
-        setOnLeaveToday(active);
+        setLeaves(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, "id">) })));
       },
       (err) => {
         console.error("Leave snapshot error:", err);
       },
     );
   }, [employee]);
+
+  const activeLeave = useMemo(
+    () => (employee ? getActiveEmployeeLeave(employee, leaves, new Date(now)) : null),
+    [employee, leaves, now],
+  );
+  const onLeaveToday = Boolean(activeLeave);
 
   // Resolve department name
   const deptName = useMemo(() => {
@@ -447,16 +450,16 @@ function PunchPage() {
         </div>
       )}
 
-      {/* On Approved Leave Today Banner */}
+      {/* Active leave or scheduled break banner */}
       {onLeaveToday && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 flex items-center gap-3 shadow-xs">
           <Lock className="h-5 w-5 text-amber-600 shrink-0" />
           <div>
             <span className="font-extrabold block text-sm text-amber-900 dark:text-amber-200">
-              On Approved Leave Today
+              {getLeaveLabel(activeLeave)}
             </span>
             <p className="text-xs text-muted-foreground font-medium">
-              Punching in is disabled while on approved leave. You can still view your recent
+              Punching is disabled only during this approved period. You can still view your recent
               activity and punch history below.
             </p>
           </div>
@@ -678,7 +681,7 @@ function PunchPage() {
                 {isHoliday
                   ? "Company Holiday (Shift Off)"
                   : onLeaveToday
-                    ? "Punching Disabled (On Leave)"
+                    ? `Punching Disabled (${getLeaveLabel(activeLeave)})`
                     : isPunchedIn
                       ? "Punch Out"
                       : "Punch In"}

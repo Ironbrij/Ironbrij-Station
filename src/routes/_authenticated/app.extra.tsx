@@ -16,7 +16,13 @@ import { ymd } from "@/lib/time";
 import { toast } from "sonner";
 import { Clock, ShieldAlert, CheckCircle2, Lock, PartyPopper } from "lucide-react";
 import { format } from "date-fns";
-import { getEmployeeHoliday, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
+import {
+  getActiveEmployeeLeave,
+  getEmployeeHoliday,
+  getEmployeeTimezone,
+  getLeaveLabel,
+  zonedDateKey,
+} from "@/lib/attendance";
 
 export const Route = createFileRoute("/_authenticated/app/extra")({
   head: () => ({
@@ -36,16 +42,21 @@ function ExtraPage() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   const todayStr = employee
     ? zonedDateKey(new Date(), getEmployeeTimezone(employee))
     : ymd(new Date());
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
     const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
       if (s.exists()) setCompany(s.data() as Company);
     });
-    return () => unsubComp();
+    return () => {
+      window.clearInterval(timer);
+      unsubComp();
+    };
   }, []);
 
   useEffect(() => {
@@ -74,11 +85,11 @@ function ExtraPage() {
     return Boolean(getEmployeeHoliday(company, employee, todayStr));
   }, [company, employee, todayStr]);
 
-  const onLeaveToday = useMemo(() => {
-    return leaves.some(
-      (l) => l.status === "approved" && l.dateFrom <= todayStr && l.dateTo >= todayStr,
-    );
-  }, [leaves, todayStr]);
+  const activeLeave = useMemo(
+    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
+    [employee, leaves, now],
+  );
+  const onLeaveToday = Boolean(activeLeave);
 
   // Determine latest status
   const latestPunch = useMemo(() => allPunches[allPunches.length - 1], [allPunches]);
@@ -116,7 +127,9 @@ function ExtraPage() {
     if (!employee) return;
 
     if (onLeaveToday) {
-      toast.error("Overtime logging is disabled while on approved leave today.");
+      toast.error(
+        `Overtime logging is disabled during ${getLeaveLabel(activeLeave).toLowerCase()}.`,
+      );
       return;
     }
 
@@ -204,7 +217,7 @@ function ExtraPage() {
             <Lock className="h-5 w-5 text-amber-600 shrink-0" />
             <div>
               <span className="font-extrabold block text-sm text-amber-900 dark:text-amber-200">
-                On Approved Leave Today
+                {getLeaveLabel(activeLeave)}
               </span>
               Extra time and overtime logging are disabled while on approved leave. You can still
               view your logs below.

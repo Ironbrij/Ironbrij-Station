@@ -7,10 +7,12 @@ import { StatusDot } from "@/components/StatusDot";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   formatInTimezone,
+  getActiveEmployeeLeave,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
+  getLeaveLabel,
   getShiftTimezone,
   zonedDateKey,
 } from "@/lib/attendance";
@@ -140,16 +142,11 @@ function AdminHome() {
         isAutoPunchOut: false,
       };
     }
-    const isOnLeave = leaves.some(
-      (leave) =>
-        (leave.employeeId === emp.id || leave.employeeId === emp.authUid) &&
-        leave.dateFrom <= employeeToday &&
-        leave.dateTo >= employeeToday,
-    );
-    if (isOnLeave) {
+    const activeLeave = getActiveEmployeeLeave(emp, leaves, now);
+    if (activeLeave) {
       return {
         type: "leave" as const,
-        label: "On approved leave",
+        label: getLeaveLabel(activeLeave),
         isLate: false,
         minutesLate: 0,
         punchTimeStr: "",
@@ -263,6 +260,7 @@ function AdminHome() {
             >
               <option value="all">All Statuses</option>
               <option value="holiday">Holiday</option>
+              <option value="leave">Leave / Half-day / Break</option>
               <option value="in">🟢 Punched In Today</option>
               <option value="out">🔴 Punched Out Today</option>
               <option value="late">⚠️ Late Arrivals Today</option>
@@ -304,6 +302,7 @@ function AdminHome() {
               if (filterStatus === "in") return status.type === "in";
               if (filterStatus === "out") return status.type === "out";
               if (filterStatus === "holiday") return status.type === "holiday";
+              if (filterStatus === "leave") return status.type === "leave";
               if (filterStatus === "late") return status.isLate;
               return true;
             });
