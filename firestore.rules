@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthed() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthed() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && request.auth.token.email in ['pabibek9@gmail.com', 'bibekparajuli05@gmail.com', 'louis@ironbrij.com.au'])
+      );
+    }
+
+    // Registered Users Collection
+    match /users/{uid} {
+      allow read: if isAuthed();
+      allow write: if isAuthed() && (isOwner(uid) || isAdmin());
+    }
+
+    // Admins Collection
+    match /admins/{uid} {
+      allow read: if isAuthed();
+      allow write: if isAuthed() && (isOwner(uid) || isAdmin());
+    }
+
+    // Employees Collection (Contains department ID, hourly rates, shift times, country, timezone)
+    match /employees/{empId} {
+      allow read: if isAuthed();
+      allow create, update: if isAuthed();
+      allow delete: if isAdmin();
+    }
+
+    // Company & Departments Settings
+    match /companies/{id} {
+      allow read, write: if isAuthed();
+    }
+    match /departments/{id} {
+      allow read, write: if isAuthed();
+    }
+    match /departments/{id}/members/{memberId} {
+      allow read, write: if isAuthed();
+    }
+
+    // HR Announcements & Notices Collection
+    match /notices/{id} {
+      allow read, write: if isAuthed();
+    }
+
+    // Payroll Payouts Records Collection
+    match /payouts/{id} {
+      allow read, write: if isAuthed();
+    }
+
+    // Punches (Clock In / Clock Out / Overtime)
+    match /punches/{id} {
+      allow read: if isAuthed();
+      allow create: if isAuthed();
+      allow update, delete: if isAdmin();
+    }
+
+    // Leave Requests
+    match /leaveRequests/{id} {
+      allow read: if isAuthed();
+      allow create: if isAuthed();
+      allow update, delete: if isAdmin();
+    }
+
+    // Invites (Account activation)
+    match /invites/{token} {
+      allow read, create, update: if true;
+      allow delete: if isAdmin();
+    }
+  }
+}
