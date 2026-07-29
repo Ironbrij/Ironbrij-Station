@@ -372,6 +372,13 @@ function AdminHome() {
                               <span className="text-[11px] text-muted-foreground">
                                 {m.jobTitle || "Member"} · {countryData.flag}
                               </span>
+                              <span
+                                className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary"
+                                aria-label={`Shift ${m.shiftStartTime || "09:00"} to ${m.shiftEndTime || "17:00"}`}
+                              >
+                                <Clock className="h-3 w-3" aria-hidden="true" />
+                                {m.shiftStartTime || "09:00"}–{m.shiftEndTime || "17:00"}
+                              </span>
                             </div>
                           </div>
 
