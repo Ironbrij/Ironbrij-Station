@@ -38,9 +38,9 @@ async function handleAutomationStatusRequest(request: Request) {
     return privateResponse({ ok: false, error: "Personal API not found" }, 404);
   }
 
-  const firebaseProjectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
+  const firebaseProjectId = process.env.VITE_FIREBASE_PROJECT_ID || "ironbrij-timestation";
   const firebaseApiKey =
-    process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
+    process.env.VITE_FIREBASE_API_KEY || "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw";
 
   const profileResponse = await fetch(
     `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/(default)/documents/automationProfiles/${encodeURIComponent(token)}?key=${encodeURIComponent(firebaseApiKey)}`,
