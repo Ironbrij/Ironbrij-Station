@@ -45,11 +45,21 @@ async function handleAutomationStatusRequest(request: Request) {
   const profileResponse = await fetch(
     `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/(default)/documents/automationProfiles/${encodeURIComponent(token)}?key=${encodeURIComponent(firebaseApiKey)}`,
   );
-  if (profileResponse.status === 404 || profileResponse.status === 403) {
+  if (profileResponse.status === 404) {
     return privateResponse({ ok: false, error: "Personal API not found" }, 404);
   }
   if (!profileResponse.ok) {
-    return privateResponse({ ok: false, error: "Could not read attendance status" }, 502);
+    const errorJson = (await profileResponse.json().catch(() => null)) as {
+      error?: { message?: string; status?: string; code?: number };
+    } | null;
+    return privateResponse(
+      {
+        ok: false,
+        error: errorJson?.error?.message || "Could not read attendance status",
+        firestoreStatus: profileResponse.status,
+      },
+      profileResponse.status >= 400 && profileResponse.status < 600 ? profileResponse.status : 502,
+    );
   }
 
   const profileDocument = (await profileResponse.json()) as {
