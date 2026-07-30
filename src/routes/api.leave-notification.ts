@@ -37,7 +37,8 @@ export const Route = createFileRoute("/api/leave-notification")({
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
         const idToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-        const firebaseApiKey = process.env.VITE_FIREBASE_API_KEY;
+        const firebaseApiKey =
+          process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
         if (!idToken || !firebaseApiKey) {
           return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
         }
