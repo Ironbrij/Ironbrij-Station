@@ -2,5 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ironbrij-station",
   "compatibility_date": "2026-07-28",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "APP_URL": "https://station.savykids.com",
+    "N8N_INVITE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-employee-invite"
+  }
 }
