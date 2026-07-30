@@ -8,6 +8,7 @@ import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   formatInTimezone,
   getActiveEmployeeLeave,
+  getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
@@ -131,7 +132,8 @@ function AdminHome() {
 
   function getEmpTodayStatus(emp: Employee) {
     const employeeToday = zonedDateKey(now, getEmployeeTimezone(emp));
-    const holiday = getEmployeeHoliday(company, emp, employeeToday);
+    const shiftToday = zonedDateKey(now, getShiftTimezone(emp));
+    const holiday = getEmployeeHoliday(company, emp, shiftToday);
     if (holiday) {
       return {
         type: "holiday" as const,
@@ -143,10 +145,12 @@ function AdminHome() {
       };
     }
     const activeLeave = getActiveEmployeeLeave(emp, leaves, now);
-    if (activeLeave) {
+    const approvedLeaveToday =
+      getEmployeeApprovedLeaveForDate(emp, leaves, shiftToday) || activeLeave;
+    if (approvedLeaveToday) {
       return {
         type: "leave" as const,
-        label: getLeaveLabel(activeLeave),
+        label: getLeaveLabel(approvedLeaveToday),
         isLate: false,
         minutesLate: 0,
         punchTimeStr: "",
@@ -162,7 +166,7 @@ function AdminHome() {
       emp,
       list,
       now,
-      company?.lateGraceMinutes ?? 1,
+      company?.lateGraceMinutes ?? 5,
       company?.workingDays,
       getEmployeeHolidayDates(company, emp),
     );
@@ -488,7 +492,17 @@ function AdminHome() {
                   <StatusDot status={isPunchIn ? "in" : "out"} />
                   <div>
                     <div className="font-bold text-sm text-foreground flex items-center gap-1.5">
-                      <span>{emp?.name ?? p.employeeName ?? p.employeeId}</span>
+                      {emp ? (
+                        <Link
+                          to="/admin/employees/$id"
+                          params={{ id: emp.id }}
+                          className="text-primary hover:underline"
+                        >
+                          {emp.name}
+                        </Link>
+                      ) : (
+                        <span>{p.employeeName ?? p.employeeId}</span>
+                      )}
                       <span className="text-[10px] text-muted-foreground font-normal">
                         ({countryData.flag} {countryData.name})
                       </span>

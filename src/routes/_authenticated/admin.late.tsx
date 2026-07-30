@@ -7,7 +7,7 @@ import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
   computeEmployeeLateness,
   formatInTimezone,
-  getActiveEmployeeLeave,
+  getEffectiveLateGraceMinutes,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
@@ -42,7 +42,7 @@ function LateArrivalsPage() {
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
   const [now, setNow] = useState(() => new Date());
   const { company } = useAuth();
-  const graceMinutes = company?.lateGraceMinutes ?? 1;
+  const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -107,7 +107,7 @@ function LateArrivalsPage() {
       }
       for (const [dateKey, punch] of firstByShiftDate) {
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
-        if (approvedLeave?.leaveType !== "timed_break") continue;
+        if (approvedLeave) continue;
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
         if (!late.isLate) continue;
@@ -122,8 +122,6 @@ function LateArrivalsPage() {
         });
       }
 
-      const onLeave = Boolean(getActiveEmployeeLeave(employee, leaves, now));
-
       const status = getLiveAttendanceStatus(
         employee,
         list,
@@ -132,7 +130,12 @@ function LateArrivalsPage() {
         company?.workingDays,
         getEmployeeHolidayDates(company, employee),
       );
-      if (!onLeave && status.isMissingLate) {
+      const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
+        employee,
+        leaves,
+        status.shift.dateKey,
+      );
+      if (!approvedLeaveToday && status.isMissingLate) {
         result.push({
           id: `missing-${employee.id}-${status.shift.dateKey}`,
           employee,

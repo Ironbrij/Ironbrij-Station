@@ -47,7 +47,7 @@ function CompanyPage() {
     holidays: [],
     holidayAssignments: [],
     workingDays: [1, 2, 3, 4, 5],
-    lateGraceMinutes: 1,
+    lateGraceMinutes: 5,
     logoUrl: DEFAULT_LOGO,
   });
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -78,7 +78,7 @@ function CompanyPage() {
         holidays: data.holidays ?? [],
         holidayAssignments: data.holidayAssignments ?? [],
         workingDays: data.workingDays ?? [1, 2, 3, 4, 5],
-        lateGraceMinutes: data.lateGraceMinutes ?? 1,
+        lateGraceMinutes: Math.max(5, data.lateGraceMinutes ?? 5),
         logoUrl: data.logoUrl || DEFAULT_LOGO,
       });
     });
@@ -114,7 +114,7 @@ function CompanyPage() {
         holidays: updatedCompany.holidays,
         holidayAssignments: updatedCompany.holidayAssignments ?? [],
         workingDays: updatedCompany.workingDays,
-        lateGraceMinutes: Math.max(0, updatedCompany.lateGraceMinutes ?? 1),
+        lateGraceMinutes: Math.max(5, updatedCompany.lateGraceMinutes ?? 5),
         logoUrl: updatedCompany.logoUrl?.trim() || DEFAULT_LOGO,
       };
       await setDoc(doc(db(), "companies", COMPANY_ID), payload, { merge: true });

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   collection,
@@ -85,6 +85,17 @@ export const Route = createFileRoute("/_authenticated/admin/employees")({
 });
 
 function EmployeesPage() {
+  const matchRoute = useMatchRoute();
+  const employeeProfileMatch = matchRoute({
+    to: "/admin/employees/$id",
+    fuzzy: false,
+  });
+
+  if (employeeProfileMatch) return <Outlet />;
+  return <EmployeesListPage />;
+}
+
+function EmployeesListPage() {
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [depts, setDepts] = useState<Department[]>([]);
   const [todayPunches, setTodayPunches] = useState<Punch[]>([]);

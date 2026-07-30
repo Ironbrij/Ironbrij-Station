@@ -13,14 +13,15 @@ import {
 import {
   formatInTimezone,
   getActiveEmployeeLeave,
+  getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
   getLiveAttendanceStatus,
   getLeaveLabel,
+  getShiftTimezone,
   zonedDateKey,
 } from "@/lib/attendance";
-import { ymd } from "@/lib/time";
 import {
   CheckCircle2,
   Megaphone,
@@ -61,7 +62,7 @@ function UserNoticesPage() {
     }
   });
 
-  const todayStr = employee ? zonedDateKey(now, getEmployeeTimezone(employee)) : "";
+  const todayStr = employee ? zonedDateKey(now, getShiftTimezone(employee)) : "";
 
   useEffect(() => {
     const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
@@ -105,17 +106,17 @@ function UserNoticesPage() {
 
   const attendanceStatus = useMemo(
     () =>
-      employee && !getActiveEmployeeLeave(employee, leaves, now)
+      employee && !getEmployeeApprovedLeaveForDate(employee, leaves, todayStr)
         ? getLiveAttendanceStatus(
             employee,
             punches,
             now,
-            company?.lateGraceMinutes ?? 1,
+            company?.lateGraceMinutes ?? 5,
             company?.workingDays,
             getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, punches, leaves, now, company],
+    [employee, punches, leaves, now, company, todayStr],
   );
   const isHoliday = useMemo(() => {
     return Boolean(getEmployeeHoliday(company, employee, todayStr));

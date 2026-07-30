@@ -24,7 +24,7 @@ function AdminLayout() {
         { to: "/admin/notices", label: "Notifications" },
         { to: "/admin/departments", label: "Departments" },
         { to: "/admin/company", label: "Company" },
-        { to: "/admin/leaves", label: "Leaves" },
+        { to: "/admin/leaves", label: "Leave" },
         { to: "/admin/reports", label: "Reports" },
       ]}
     >

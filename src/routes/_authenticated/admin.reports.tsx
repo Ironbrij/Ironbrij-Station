@@ -11,6 +11,7 @@ import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEffectiveLateGraceMinutes,
   getEmployeeApprovedLeaveForDate,
   getEmployeeApprovedLeaveDates,
   getEmployeeHoliday,
@@ -138,7 +139,11 @@ function ReportsPage() {
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, date);
         const holiday = getEmployeeHoliday(company, employee, date);
         const late = firstIn
-          ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, 1)
+          ? computeEmployeeLateness(
+              firstIn.timestamp.toDate(),
+              employee,
+              getEffectiveLateGraceMinutes(company?.lateGraceMinutes),
+            )
           : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
         output.push({
@@ -398,7 +403,13 @@ function ReportsPage() {
                 <tr key={row.key} className="hover:bg-secondary/30">
                   <td className="p-3 font-mono text-xs">{row.date}</td>
                   <td className="p-3">
-                    <div className="font-bold">{row.employee.name}</div>
+                    <Link
+                      to="/admin/employees/$id"
+                      params={{ id: row.employee.id }}
+                      className="font-bold text-primary hover:underline"
+                    >
+                      {row.employee.name}
+                    </Link>
                     <div className="text-xs text-muted-foreground">{row.employee.email}</div>
                   </td>
                   <td className="p-3">{row.department}</td>

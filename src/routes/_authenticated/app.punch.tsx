@@ -25,6 +25,7 @@ import {
   computeRegularWorkedMsForDay,
   formatInTimezone,
   getActiveEmployeeLeave,
+  getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
   getEmployeeTimezone,
@@ -162,6 +163,17 @@ function PunchPage() {
     [employee, leaves, now],
   );
   const onLeaveToday = Boolean(activeLeave);
+  const approvedLeaveToday = useMemo(
+    () =>
+      employee
+        ? getEmployeeApprovedLeaveForDate(
+            employee,
+            leaves,
+            zonedDateKey(new Date(now), getShiftTimezone(employee)),
+          )
+        : null,
+    [employee, leaves, now],
+  );
 
   // Resolve department name
   const deptName = useMemo(() => {
@@ -189,7 +201,7 @@ function PunchPage() {
             employee,
             allPunches,
             new Date(now),
-            company?.lateGraceMinutes ?? 1,
+            company?.lateGraceMinutes ?? 5,
             company?.workingDays,
             getEmployeeHolidayDates(company, employee),
           )
@@ -305,16 +317,17 @@ function PunchPage() {
           employee,
           allPunches,
           new Date(),
-          company?.lateGraceMinutes ?? 1,
+          company?.lateGraceMinutes ?? 5,
           company?.workingDays,
           getEmployeeHolidayDates(company, employee),
         );
         const lateness = computeEmployeeLateness(
           new Date(),
           employee,
-          company?.lateGraceMinutes ?? 1,
+          company?.lateGraceMinutes ?? 5,
         );
         if (!schedule.isScheduledDay) toast.success("Punch recorded outside the regular schedule.");
+        else if (approvedLeaveToday) toast.success("Punch recorded on an approved leave date.");
         else if (lateness.isLate) toast.warning(`Punched in ${lateness.minutes} minutes late.`);
         else toast.success("Punched in on time.");
       } else {
@@ -546,7 +559,7 @@ function PunchPage() {
               {getEmployeeTimezone(employee)}.
             </p>
           </div>
-          {attendanceStatus?.isLate && !onLeaveToday && !isHoliday && (
+          {attendanceStatus?.isLate && !approvedLeaveToday && !isHoliday && (
             <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-600">
               {attendanceStatus.isMissingLate ? "Not punched in" : "Late arrival"} ·{" "}
               {attendanceStatus.minutesLate} min

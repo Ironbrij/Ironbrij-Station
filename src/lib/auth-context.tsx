@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "./firebase";
 import { COMPANY_ID, type Company, type Employee } from "./types";
+import { resolveProfilePhoto } from "./profile-photo";
 
 interface AuthState {
   user: User | null;
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function hydrate(u: User) {
     const userEmail = u.email ? u.email.toLowerCase().trim() : "";
+    const authPhotoUrl = resolveProfilePhoto(u);
     const ADMIN_EMAILS = [
       "pabibek9@gmail.com",
       "bibekparajuli05@gmail.com",
@@ -48,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         uid: u.uid,
         name: u.displayName || (userEmail ? userEmail.split("@")[0] : "User"),
         email: userEmail,
-        photoUrl: u.photoURL || "",
+        ...(authPhotoUrl ? { photoUrl: authPhotoUrl } : {}),
         lastLogin: new Date().toISOString(),
       },
       { merge: true },
@@ -76,11 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const empSnap = empResult.status === "fulfilled" ? empResult.value : null;
       if (empSnap && empSnap.exists()) {
         const empData = empSnap.data() as Omit<Employee, "id">;
+        const employeeUpdates: Partial<Employee> = {};
         if (userEmail && empData.email?.toLowerCase() !== userEmail) {
-          empData.email = userEmail;
-          setDoc(doc(db(), "employees", u.uid), { email: userEmail }, { merge: true }).catch(
-            () => {},
-          );
+          employeeUpdates.email = userEmail;
+        }
+        if (authPhotoUrl && empData.photoUrl !== authPhotoUrl) {
+          employeeUpdates.photoUrl = authPhotoUrl;
+        }
+        if (Object.keys(employeeUpdates).length) {
+          Object.assign(empData, employeeUpdates);
+          setDoc(doc(db(), "employees", u.uid), employeeUpdates, { merge: true }).catch(() => {});
         }
         setEmployee({ id: empSnap.id, ...empData });
       } else if (userEmail) {
@@ -93,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ...empData,
             email: userEmail,
             authUid: u.uid,
+            photoUrl: authPhotoUrl || resolveProfilePhoto(empData as Omit<Employee, "id">) || "",
           };
           setDoc(doc(db(), "employees", u.uid), updatedEmp, { merge: true }).catch(() => {});
           setEmployee({ id: u.uid, ...(updatedEmp as Omit<Employee, "id">) });

@@ -278,10 +278,17 @@ function LeavePage() {
                   </span>
                   {leave.decidedAt && (
                     <span>
-                      {leave.status === "approved" ? "Approved" : "Rejected"}{" "}
+                      {leave.status === "approved"
+                        ? "Approved"
+                        : leave.decisionSource === "automatic"
+                          ? "Rejected automatically"
+                          : "Rejected"}{" "}
                       {format(new Date(leave.decidedAt), "MMM d, yyyy · h:mm a")}
                       {leave.decidedBy ? ` by ${leave.decidedBy}` : ""}
                     </span>
+                  )}
+                  {leave.decisionSource === "automatic" && leave.decisionReason && (
+                    <span>{leave.decisionReason}</span>
                   )}
                 </div>
               </div>

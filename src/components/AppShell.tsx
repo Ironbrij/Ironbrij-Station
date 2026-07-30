@@ -2,6 +2,8 @@ import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { Headphones, LogOut, User } from "lucide-react";
 import type { ReactNode } from "react";
+import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
+import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
 
 interface NavItem {
   to: string;
@@ -20,6 +22,8 @@ export function AppShell({
 }) {
   const { logout, employee, user, isAdmin, company } = useAuth();
   const navigate = useNavigate();
+  const unreadLateCount = useAdminLateNotificationCount({ enabled: isAdmin, company });
+  useAutoRejectExpiredLeaves(isAdmin);
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary">
@@ -83,37 +87,53 @@ export function AppShell({
         </div>
 
         <div className="hidden border-t bg-muted/20 md:block">
-          <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
+          <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-3 sm:px-6 scrollbar-none">
             {nav.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
                 activeOptions={{ exact: item.exact }}
-                className="inline-flex shrink-0 items-center whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-semibold text-muted-foreground transition-all hover:bg-muted/70 hover:text-foreground"
+                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-semibold text-muted-foreground transition-all hover:bg-muted/70 hover:text-foreground"
                 activeProps={{
                   className:
-                    "inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-primary px-3.5 py-2 text-sm font-extrabold text-primary-foreground shadow-xs transition-all",
+                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-primary px-3.5 py-2 text-sm font-extrabold text-primary-foreground shadow-xs transition-all",
                 }}
               >
                 {item.label}
+                {item.to === "/admin/notices" && unreadLateCount > 0 && (
+                  <span
+                    aria-label={`${unreadLateCount} unread late alerts`}
+                    className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[10px] font-bold leading-none text-white shadow-sm"
+                  >
+                    +{unreadLateCount}
+                  </span>
+                )}
               </Link>
             ))}
           </nav>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-t bg-muted/20 px-4 py-1.5 md:hidden scrollbar-none">
+        <div className="flex gap-1 overflow-x-auto border-t bg-muted/20 px-4 py-2.5 md:hidden scrollbar-none">
           {nav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               activeOptions={{ exact: item.exact }}
-              className="shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+              className="relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
               activeProps={{
                 className:
-                  "shrink-0 whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs",
+                  "relative shrink-0 whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs",
               }}
             >
               {item.label}
+              {item.to === "/admin/notices" && unreadLateCount > 0 && (
+                <span
+                  aria-label={`${unreadLateCount} unread late alerts`}
+                  className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm"
+                >
+                  +{unreadLateCount}
+                </span>
+              )}
             </Link>
           ))}
         </div>

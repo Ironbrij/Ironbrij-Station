@@ -46,6 +46,7 @@ export interface Employee {
   status: EmployeeStatus;
   authUid?: string;
   photoUrl?: string;
+  photoURL?: string; // Legacy/Firebase-style Google profile photo field
   inviteStatus: InviteStatus;
   shiftStartTime?: string; // e.g. "09:00"
   shiftEndTime?: string; // e.g. "17:00"
@@ -53,6 +54,7 @@ export interface Employee {
   state?: string; // Optional state/province/region; "N/A" means not assigned
   timezone?: string; // employee local timezone
   shiftTimezone?: string; // timezone used to interpret shift start/end
+  createdAt?: string; // ISO timestamp for when the employee profile was created
 }
 
 export interface Punch {
@@ -82,6 +84,8 @@ export interface LeaveRequest {
   createdAt: Timestamp;
   decidedAt?: string;
   decidedBy?: string;
+  decisionSource?: "admin" | "automatic";
+  decisionReason?: string;
 }
 
 export interface DailySummary {

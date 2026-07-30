@@ -8,8 +8,10 @@ import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth-context";
-import { ShieldCheck, UserCheck, Crown } from "lucide-react";
+import { ShieldCheck, UserCheck } from "lucide-react";
 import { getStateOptions, normalizeState } from "@/lib/states";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { resolveProfilePhoto } from "@/lib/profile-photo";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
@@ -34,6 +36,8 @@ interface RegisteredUser {
   name?: string;
   email: string;
   photoUrl?: string;
+  photoURL?: string;
+  picture?: string;
   lastLogin?: string;
 }
 
@@ -43,8 +47,6 @@ function UsersPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [adminUids, setAdminUids] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<RegisteredUser | null>(null);
-  const [newOwnerInput, setNewOwnerInput] = useState("");
-  const [busyOwner, setBusyOwner] = useState(false);
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
@@ -111,35 +113,6 @@ function UsersPage() {
     }
   }
 
-  async function addOwnerByInput(e: React.FormEvent) {
-    e.preventDefault();
-    const input = newOwnerInput.trim();
-    if (!input) return;
-
-    setBusyOwner(true);
-    try {
-      // Find user by UID or Email
-      const match = users?.find(
-        (u) => u.uid === input || (u.email && u.email.toLowerCase() === input.toLowerCase()),
-      );
-      const targetUid = match ? match.uid : input;
-      const targetEmail = match ? match.email : input;
-
-      await setDoc(doc(db(), "admins", targetUid), {
-        role: "owner",
-        email: targetEmail,
-        addedAt: new Date().toISOString(),
-      });
-
-      toast.success(`Granted Owner Status to ${targetEmail} (UID: ${targetUid})!`);
-      setNewOwnerInput("");
-    } catch (err) {
-      toast.error("Failed to add owner: " + (err as Error).message);
-    } finally {
-      setBusyOwner(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -151,31 +124,6 @@ function UsersPage() {
             View signed-in users, manage Owner/Admin permissions, and assign employee profiles.
           </p>
         </div>
-      </div>
-
-      {/* Add Owner Form Card */}
-      <div className="rounded-xl border bg-card p-5 shadow-lift space-y-3">
-        <h3 className="text-sm font-bold text-primary flex items-center gap-1.5">
-          <Crown className="h-4 w-4 text-amber-500" /> Add New Owner / Admin
-        </h3>
-        <p className="text-xs text-muted-foreground font-medium">
-          Enter a user's <strong>User UID</strong> or <strong>Email address</strong> to grant them
-          full Owner / Admin permissions:
-        </p>
-        <form onSubmit={addOwnerByInput} className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={newOwnerInput}
-            onChange={(e) => setNewOwnerInput(e.target.value)}
-            placeholder="Paste User UID (e.g. ySN3hCkAmoy...) or user email..."
-            className="flex-1 rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20 font-mono"
-          />
-          <button
-            disabled={busyOwner}
-            className="btn-lift rounded-md bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-sm font-bold flex items-center justify-center gap-1"
-          >
-            <Crown className="h-4 w-4" /> {busyOwner ? "Granting..." : "Grant Owner Status"}
-          </button>
-        </form>
       </div>
 
       {/* Registered Users Table */}
@@ -219,17 +167,11 @@ function UsersPage() {
                   return (
                     <tr key={u.uid} className="hover:bg-accent/40 transition-colors">
                       <td className="p-3.5 font-medium flex items-center gap-3">
-                        {u.photoUrl ? (
-                          <img
-                            src={u.photoUrl}
-                            alt=""
-                            className="h-8 w-8 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
-                            {(u.name || u.email || "U")[0]}
-                          </div>
-                        )}
+                        <ProfileAvatar
+                          name={u.name || u.email || "User"}
+                          photoUrl={resolveProfilePhoto(u.uid === user?.uid ? user : undefined, u)}
+                          className="h-8 w-8 text-xs"
+                        />
                         <div>
                           {existingEmp ? (
                             <Link
@@ -367,6 +309,7 @@ function MakeEmployeeModal({
         status: "active",
         inviteStatus: "accepted",
         authUid: user.uid,
+        photoUrl: user.photoUrl || user.photoURL || user.picture || "",
         createdAt: new Date().toISOString(),
       });
 

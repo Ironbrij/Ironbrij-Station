@@ -8,6 +8,11 @@ export const ATTENDANCE_TIMEZONES = [
 
 export const DEFAULT_SHIFT_TIMEZONE = "Australia/Sydney";
 export const DEFAULT_LOCAL_TIMEZONE = "Asia/Kathmandu";
+export const MINIMUM_LATE_GRACE_MINUTES = 5;
+
+export function getEffectiveLateGraceMinutes(configuredMinutes?: number): number {
+  return Math.max(MINIMUM_LATE_GRACE_MINUTES, configuredMinutes ?? MINIMUM_LATE_GRACE_MINUTES);
+}
 
 type ZonedParts = {
   year: number;
@@ -359,7 +364,11 @@ export function getShiftConversions(employee: Employee, instant = new Date()) {
   }));
 }
 
-export function computeEmployeeLateness(punchValue: Date, employee: Employee, graceMinutes = 1) {
+export function computeEmployeeLateness(
+  punchValue: Date,
+  employee: Employee,
+  graceMinutes = MINIMUM_LATE_GRACE_MINUTES,
+) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(punchValue, shiftTimezone);
   const window = getShiftWindow(
@@ -369,15 +378,18 @@ export function computeEmployeeLateness(punchValue: Date, employee: Employee, gr
     shiftTimezone,
   );
   const differenceSeconds = Math.floor((punchValue.getTime() - window.start.getTime()) / 1000);
-  const graceSeconds = Math.max(0, graceMinutes) * 60;
+  const minutes = Math.max(0, Math.floor(differenceSeconds / 60));
+  const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   return {
-    isLate: differenceSeconds > graceSeconds,
+    // A punch showing as 5 minutes after shift start is still on time.
+    isLate: minutes > effectiveGraceMinutes,
     isEarly: differenceSeconds < 0,
-    minutes: Math.max(0, Math.floor(differenceSeconds / 60)),
+    minutes,
     seconds: Math.max(0, differenceSeconds),
     dateKey,
     scheduledAt: window.start,
     shiftTimezone,
+    graceMinutes: effectiveGraceMinutes,
   };
 }
 
@@ -402,7 +414,7 @@ export function getLiveAttendanceStatus(
   employee: Employee,
   punches: Punch[],
   now = new Date(),
-  graceMinutes = 1,
+  graceMinutes = MINIMUM_LATE_GRACE_MINUTES,
   workingDays?: number[],
   holidays: string[] = [],
 ) {
@@ -417,16 +429,14 @@ export function getLiveAttendanceStatus(
   const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
   const isScheduledDay =
     (!workingDays || workingDays.includes(shiftWeekday)) && !holidays.includes(shift.dateKey);
+  const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   const lateness =
     firstIn && isScheduledDay
-      ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, graceMinutes)
+      ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, effectiveGraceMinutes)
       : null;
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
-    isScheduledDay &&
-    !firstIn &&
-    now.getTime() > shift.start.getTime() + Math.max(0, graceMinutes) * 60000 &&
-    now <= shift.end;
+    isScheduledDay && !firstIn && missingMinutes > effectiveGraceMinutes && now <= shift.end;
   return {
     latest,
     firstIn,

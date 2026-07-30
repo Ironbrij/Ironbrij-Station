@@ -262,7 +262,7 @@ function DepartmentsPage() {
           const lateness = computeEmployeeLateness(
             firstIn.timestamp.toDate(),
             emp,
-            company?.lateGraceMinutes ?? 1,
+            company?.lateGraceMinutes ?? 5,
           );
           if (lateness.isLate) {
             latenessText = `Late (${lateness.minutes} mins late)`;
@@ -391,7 +391,7 @@ function DepartmentsPage() {
             ? computeEmployeeLateness(
                 firstIn.timestamp.toDate(),
                 employee,
-                company?.lateGraceMinutes ?? 1,
+                company?.lateGraceMinutes ?? 5,
               )
             : null;
         rows.push({

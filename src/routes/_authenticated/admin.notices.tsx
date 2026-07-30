@@ -1,27 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
-import { AlertTriangle, CalendarClock, Megaphone, Trash2, UserX } from "lucide-react";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { CalendarClock, Megaphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import type { CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
-import {
-  formatInTimezone,
-  getActiveEmployeeLeave,
-  getEmployeeHoliday,
-  getEmployeeHolidayDates,
-  getEmployeeTimezone,
-  getLiveAttendanceStatus,
-  zonedDateKey,
-} from "@/lib/attendance";
+import { formatInTimezone, getEmployeeTimezone } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
 import { getNoticeDeliveryTime } from "@/lib/notices";
+import {
+  buildAdminLateAlerts,
+  LATE_ALERT_READ_EVENT,
+  markLateAlertsRead,
+  readLateAlertIds,
+} from "@/lib/late-alerts";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
   head: () => ({ meta: [{ title: "Notifications — Time Station Admin" }] }),
   component: NotificationsPage,
 });
+
+const NOTICE_PAGE_SIZE = 5;
 
 function NotificationsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -29,6 +38,9 @@ function NotificationsPage() {
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
+  const [noticeLimit, setNoticeLimit] = useState(NOTICE_PAGE_SIZE);
+  const [hasMoreNotices, setHasMoreNotices] = useState(false);
+  const [loadingNotices, setLoadingNotices] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
@@ -40,6 +52,7 @@ function NotificationsPage() {
   const [deliveryMode, setDeliveryMode] = useState<"instant" | "scheduled">("instant");
   const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [readLateIds, setReadLateIds] = useState<Set<string>>(() => readLateAlertIds());
   const { company, user } = useAuth();
 
   useEffect(() => {
@@ -71,13 +84,6 @@ function NotificationsPage() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "notices"), (snapshot) =>
-        setNotices(
-          snapshot.docs
-            .map((item) => ({ id: item.id, ...(item.data() as Omit<CompanyNotice, "id">) }))
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-        ),
-      ),
     ];
     return () => {
       window.clearInterval(timer);
@@ -85,38 +91,60 @@ function NotificationsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setLoadingNotices(true);
+    const noticesQuery = query(
+      collection(db(), "notices"),
+      orderBy("createdAt", "desc"),
+      limit(noticeLimit + 1),
+    );
+    return onSnapshot(
+      noticesQuery,
+      (snapshot) => {
+        setHasMoreNotices(snapshot.docs.length > noticeLimit);
+        setNotices(
+          snapshot.docs.slice(0, noticeLimit).map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<CompanyNotice, "id">),
+          })),
+        );
+        setLoadingNotices(false);
+      },
+      (error) => {
+        console.error("Could not load announcement history", error);
+        setLoadingNotices(false);
+      },
+    );
+  }, [noticeLimit]);
+
+  useEffect(() => {
+    const syncReadIds = () => setReadLateIds(readLateAlertIds());
+    syncReadIds();
+    window.addEventListener(LATE_ALERT_READ_EVENT, syncReadIds);
+    window.addEventListener("storage", syncReadIds);
+    return () => {
+      window.removeEventListener(LATE_ALERT_READ_EVENT, syncReadIds);
+      window.removeEventListener("storage", syncReadIds);
+    };
+  }, []);
+
   const alerts = useMemo(
-    () =>
-      employees
-        .filter((employee) => employee.status === "active" && employee.inviteStatus === "accepted")
-        .filter((employee) => !getActiveEmployeeLeave(employee, leaves, now))
-        .filter(
-          (employee) =>
-            !getEmployeeHoliday(
-              company,
-              employee,
-              zonedDateKey(now, getEmployeeTimezone(employee)),
-            ),
-        )
-        .map((employee) => {
-          const ids = new Set([employee.id, employee.authUid].filter(Boolean));
-          const list = punches.filter((punch) => ids.has(punch.employeeId));
-          return {
-            employee,
-            status: getLiveAttendanceStatus(
-              employee,
-              list,
-              now,
-              company?.lateGraceMinutes ?? 1,
-              company?.workingDays,
-              getEmployeeHolidayDates(company, employee),
-            ),
-          };
-        })
-        .filter((item) => item.status.isLate)
-        .sort((a, b) => b.status.minutesLate - a.status.minutesLate),
+    () => buildAdminLateAlerts({ employees, punches, leaves, company, now }),
     [employees, punches, leaves, now, company],
   );
+  const unreadAlerts = useMemo(
+    () => alerts.filter((alert) => !readLateIds.has(alert.id)),
+    [alerts, readLateIds],
+  );
+
+  function markLateAlertRead(id: string) {
+    setReadLateIds(markLateAlertsRead([id]));
+  }
+
+  function clearLateAlerts() {
+    setReadLateIds(markLateAlertsRead(alerts.map((alert) => alert.id)));
+    toast.success("Late alerts cleared");
+  }
 
   const availableStates = useMemo(
     () =>
@@ -234,47 +262,52 @@ function NotificationsPage() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-bold text-primary flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" /> Live late alerts
-          </h2>
-          <Link to="/admin/late" className="text-xs font-bold text-primary hover:underline">
-            Open full late log
-          </Link>
+          <h2 className="font-semibold text-foreground">Late alerts</h2>
+          <div className="flex items-center gap-3 text-xs">
+            {unreadAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={clearLateAlerts}
+                className="text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Clear all
+              </button>
+            )}
+            <Link to="/admin/late" className="font-medium text-foreground hover:underline">
+              Full late log
+            </Link>
+          </div>
         </div>
-        {alerts.length === 0 ? (
-          <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-            No employee is currently late.
+        {unreadAlerts.length === 0 ? (
+          <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+            No new late alerts.
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-3">
-            {alerts.map(({ employee, status }) => (
+          <div className="divide-y rounded-lg border bg-card">
+            {unreadAlerts.map(({ id, employee, status }) => (
               <Link
-                key={employee.id}
+                key={id}
                 to="/admin/employees/$id"
                 params={{ id: employee.id }}
-                className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 hover:bg-rose-500/10"
+                onClick={() => markLateAlertRead(id)}
+                className="flex flex-col gap-2 px-4 py-3 hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-bold text-primary">{employee.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {departments.find((item) => item.id === employee.deptId)?.name ||
-                        "No department"}
-                    </div>
+                <div>
+                  <div className="font-medium text-foreground">{employee.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {departments.find((item) => item.id === employee.deptId)?.name ||
+                      "No department"}
                   </div>
-                  {status.isMissingLate ? (
-                    <UserX className="h-5 w-5 text-rose-600" />
-                  ) : (
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  )}
                 </div>
-                <div className="mt-3 text-sm font-bold text-rose-600">
-                  {status.isMissingLate ? "Not punched in" : "Arrived late"} · {status.minutesLate}{" "}
-                  min
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Shift started{" "}
-                  {formatInTimezone(status.shift.start, getEmployeeTimezone(employee))} local time
+                <div className="text-left sm:text-right">
+                  <div className="text-sm font-medium text-foreground">
+                    {status.isMissingLate ? "Not punched in" : "Arrived late"} ·{" "}
+                    {status.minutesLate} min
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Shift started{" "}
+                    {formatInTimezone(status.shift.start, getEmployeeTimezone(employee))}
+                  </div>
                 </div>
               </Link>
             ))}
@@ -551,8 +584,21 @@ function NotificationsPage() {
           ))}
           {notices.length === 0 && (
             <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-              No announcements published yet.
+              {loadingNotices ? "Loading announcements…" : "No announcements published yet."}
             </div>
+          )}
+          {hasMoreNotices && (
+            <button
+              type="button"
+              disabled={loadingNotices}
+              onClick={() => {
+                setLoadingNotices(true);
+                setNoticeLimit((current) => current + NOTICE_PAGE_SIZE);
+              }}
+              className="w-full rounded-md border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              {loadingNotices ? "Loading…" : "Load 5 more"}
+            </button>
           )}
         </div>
       </section>
