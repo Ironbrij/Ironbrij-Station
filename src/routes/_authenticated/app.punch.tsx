@@ -281,7 +281,7 @@ function PunchPage() {
   }, [employee, allPunches, now]);
 
   async function doPunch(targetType: "in" | "out") {
-    if (!employee) return;
+    if (!employee || !user) return;
 
     // Strict Double-Punch Validation
     const latestType = allPunches[allPunches.length - 1]?.type;
@@ -303,14 +303,53 @@ function PunchPage() {
     try {
       const punchType =
         latestType === "extra_in" && targetType === "out" ? "extra_out" : targetType;
-      await addDoc(collection(db(), "punches"), {
+      const punchTime = new Date();
+      const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
+      const punchRef = await addDoc(collection(db(), "punches"), {
         employeeId: employee.id,
         employeeName: employee.name,
-        date: zonedDateKey(new Date(), getShiftTimezone(employee)),
+        date: punchDate,
         type: punchType,
         timestamp: serverTimestamp(),
         source: "app",
       });
+
+      try {
+        const idToken = await user.getIdToken();
+        const event = punchType === "in" ? "punch_in" : "punch_out";
+        const automationResponse = await fetch("/api/attendance-event", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${idToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            event,
+            punchId: punchRef.id,
+            punchType,
+            employeeId: employee.id,
+            employeeName: employee.name,
+            employeeEmail: employee.email,
+            departmentId: employee.deptId || "",
+            departmentName: deptName,
+            jobTitle: employee.jobTitle || "",
+            country: employee.country || "",
+            state: employee.state || "",
+            timezone: getEmployeeTimezone(employee),
+            shiftStartTime: employee.shiftStartTime || "",
+            shiftEndTime: employee.shiftEndTime || "",
+            shiftTimezone: getShiftTimezone(employee),
+            date: punchDate,
+            occurredAt: punchTime.toISOString(),
+          }),
+        });
+        if (!automationResponse.ok) {
+          console.warn("Attendance automation was not delivered:", await automationResponse.text());
+        }
+      } catch (automationError) {
+        console.warn("Attendance automation request failed:", automationError);
+      }
+
       setQuote(randomQuote());
       if (targetType === "in") {
         const schedule = getLiveAttendanceStatus(
