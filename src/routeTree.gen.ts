@@ -14,7 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
-import { Route as ApiAttendanceEventRouteImport } from './routes/api.attendance-event'
+import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation-status'
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
@@ -29,6 +29,7 @@ import { Route as AuthenticatedAdminNoticesRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin.reports'
 import { Route as AuthenticatedAdminSupportRouteImport } from './routes/_authenticated/admin.support'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
+import { Route as AuthenticatedAppAutomationRouteImport } from './routes/_authenticated/app.automation'
 import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticated/app.extra'
 import { Route as AuthenticatedAppLeaveRouteImport } from './routes/_authenticated/app.leave'
 import { Route as AuthenticatedAppNoticesRouteImport } from './routes/_authenticated/app.notices'
@@ -59,9 +60,9 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   path: '/app',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const ApiAttendanceEventRoute = ApiAttendanceEventRouteImport.update({
-  id: '/api/attendance-event',
-  path: '/api/attendance-event',
+const ApiAutomationStatusRoute = ApiAutomationStatusRouteImport.update({
+  id: '/api/automation-status',
+  path: '/api/automation-status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiInviteNotificationRoute = ApiInviteNotificationRouteImport.update({
@@ -142,6 +143,12 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedAppAutomationRoute =
+  AuthenticatedAppAutomationRouteImport.update({
+    id: '/automation',
+    path: '/automation',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppExtraRoute = AuthenticatedAppExtraRouteImport.update({
   id: '/extra',
   path: '/extra',
@@ -174,7 +181,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/app': typeof AuthenticatedAppRouteWithChildren
-  '/api/attendance-event': typeof ApiAttendanceEventRoute
+  '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -188,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/app/automation': typeof AuthenticatedAppAutomationRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -199,7 +207,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
-  '/api/attendance-event': typeof ApiAttendanceEventRoute
+  '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -213,6 +221,7 @@ export interface FileRoutesByTo {
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/app/automation': typeof AuthenticatedAppAutomationRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -227,7 +236,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
-  '/api/attendance-event': typeof ApiAttendanceEventRoute
+  '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -241,6 +250,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/support': typeof AuthenticatedAdminSupportRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/app/automation': typeof AuthenticatedAppAutomationRoute
   '/_authenticated/app/extra': typeof AuthenticatedAppExtraRoute
   '/_authenticated/app/leave': typeof AuthenticatedAppLeaveRoute
   '/_authenticated/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -255,7 +265,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin'
     | '/app'
-    | '/api/attendance-event'
+    | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/support'
     | '/admin/users'
+    | '/app/automation'
     | '/app/extra'
     | '/app/leave'
     | '/app/notices'
@@ -280,7 +291,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/app'
-    | '/api/attendance-event'
+    | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/support'
     | '/admin/users'
+    | '/app/automation'
     | '/app/extra'
     | '/app/leave'
     | '/app/notices'
@@ -307,7 +319,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/admin'
     | '/_authenticated/app'
-    | '/api/attendance-event'
+    | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -321,6 +333,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/support'
     | '/_authenticated/admin/users'
+    | '/_authenticated/app/automation'
     | '/_authenticated/app/extra'
     | '/_authenticated/app/leave'
     | '/_authenticated/app/notices'
@@ -333,7 +346,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
-  ApiAttendanceEventRoute: typeof ApiAttendanceEventRoute
+  ApiAutomationStatusRoute: typeof ApiAutomationStatusRoute
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
@@ -377,11 +390,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/api/attendance-event': {
-      id: '/api/attendance-event'
-      path: '/api/attendance-event'
-      fullPath: '/api/attendance-event'
-      preLoaderRoute: typeof ApiAttendanceEventRouteImport
+    '/api/automation-status': {
+      id: '/api/automation-status'
+      path: '/api/automation-status'
+      fullPath: '/api/automation-status'
+      preLoaderRoute: typeof ApiAutomationStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/invite-notification': {
@@ -482,6 +495,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/app/automation': {
+      id: '/_authenticated/app/automation'
+      path: '/automation'
+      fullPath: '/app/automation'
+      preLoaderRoute: typeof AuthenticatedAppAutomationRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/extra': {
       id: '/_authenticated/app/extra'
       path: '/extra'
@@ -565,6 +585,7 @@ const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
 interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppAutomationRoute: typeof AuthenticatedAppAutomationRoute
   AuthenticatedAppExtraRoute: typeof AuthenticatedAppExtraRoute
   AuthenticatedAppLeaveRoute: typeof AuthenticatedAppLeaveRoute
   AuthenticatedAppNoticesRoute: typeof AuthenticatedAppNoticesRoute
@@ -572,6 +593,7 @@ interface AuthenticatedAppRouteChildren {
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppAutomationRoute: AuthenticatedAppAutomationRoute,
   AuthenticatedAppExtraRoute: AuthenticatedAppExtraRoute,
   AuthenticatedAppLeaveRoute: AuthenticatedAppLeaveRoute,
   AuthenticatedAppNoticesRoute: AuthenticatedAppNoticesRoute,
@@ -599,7 +621,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
-  ApiAttendanceEventRoute: ApiAttendanceEventRoute,
+  ApiAutomationStatusRoute: ApiAutomationStatusRoute,
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,

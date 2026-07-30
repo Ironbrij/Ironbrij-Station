@@ -20,6 +20,7 @@ function EmployeeLayout() {
         { to: "/app/extra", label: "Extra Time" },
         { to: "/app/leave", label: "Leave" },
         { to: "/app/notices", label: "Notifications" },
+        { to: "/app/automation", label: "Automation" },
       ]}
     >
       <Outlet />

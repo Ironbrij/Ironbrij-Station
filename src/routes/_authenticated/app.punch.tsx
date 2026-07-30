@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { PartyPopper, Lock, Megaphone, X } from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
+import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -315,39 +316,16 @@ function PunchPage() {
       });
 
       try {
-        const idToken = await user.getIdToken();
-        const event = punchType === "in" ? "punch_in" : "punch_out";
-        const automationResponse = await fetch("/api/attendance-event", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${idToken}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            event,
-            punchId: punchRef.id,
-            punchType,
-            employeeId: employee.id,
-            employeeName: employee.name,
-            employeeEmail: employee.email,
-            departmentId: employee.deptId || "",
-            departmentName: deptName,
-            jobTitle: employee.jobTitle || "",
-            country: employee.country || "",
-            state: employee.state || "",
-            timezone: getEmployeeTimezone(employee),
-            shiftStartTime: employee.shiftStartTime || "",
-            shiftEndTime: employee.shiftEndTime || "",
-            shiftTimezone: getShiftTimezone(employee),
-            date: punchDate,
-            occurredAt: punchTime.toISOString(),
-          }),
+        await publishPersonalAttendanceEvent({
+          ownerUid: user.uid,
+          employee,
+          punchId: punchRef.id,
+          punchType,
+          date: punchDate,
+          occurredAt: punchTime,
         });
-        if (!automationResponse.ok) {
-          console.warn("Attendance automation was not delivered:", await automationResponse.text());
-        }
       } catch (automationError) {
-        console.warn("Attendance automation request failed:", automationError);
+        console.warn("Personal automation status could not be updated:", automationError);
       }
 
       setQuote(randomQuote());

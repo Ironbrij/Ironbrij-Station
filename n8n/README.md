@@ -10,17 +10,11 @@ When an admin creates an employee, Time Station stores one invite token and send
 activation link to n8n. If email delivery fails, the employee record remains saved and the admin can
 copy the same activation link from the confirmation dialog.
 
-## Attendance event endpoint
+## Personal attendance API
 
-Time Station calls `/api/attendance-event` after every successful manual punch. Set
-`N8N_ATTENDANCE_WEBHOOK_URL` to the production webhook for the workflow that should receive these
-events.
+Employees can open **Automation** in Time Station and create a private status URL. Use that URL in
+an n8n HTTP Request after a Schedule Trigger. The response includes the employee's current
+`attendance.status`, latest `attendance.event`, and unique `attendance.eventId`.
 
-The webhook payload has an `event` value of `punch_in` or `punch_out`, plus:
-
-- `employee.id`, `employee.authUid`, `employee.name`, and `employee.email`
-- department, role, country, timezone, and shift details
-- `attendance.punchId`, type, status, local date, and exact event time
-- a stable `idempotencyKey` based on the recorded punch
-
-Use `employee.id` or `employee.email` in the workflow condition to target one specific employee.
+Only continue the workflow when `attendance.eventId` changes. Then branch on `punch_in` or
+`punch_out`. Regenerating or revoking the URL immediately disables the old URL.
