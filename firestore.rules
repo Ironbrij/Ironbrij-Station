@@ -73,20 +73,10 @@ service cloud.firestore {
     }
 
     // Personal automation status.
-    // The random document ID is the private API token. It can be fetched directly
-    // but cannot be listed anonymously.
+    // The random document ID is the private API token.
     match /automationProfiles/{token} {
-      allow get: if true;
-      allow list: if isAuthed() && resource.data.ownerUid == request.auth.uid;
-      allow create: if isAuthed()
-        && request.resource.data.ownerUid == request.auth.uid
-        && token.size() == 64;
-      allow update: if isAuthed()
-        && resource.data.ownerUid == request.auth.uid
-        && request.resource.data.ownerUid == resource.data.ownerUid;
-      allow delete: if isAuthed() && (
-        resource.data.ownerUid == request.auth.uid || isAdmin()
-      );
+      allow read: if true;
+      allow create, update, delete: if isAuthed();
     }
 
     // Invites (Account activation)
