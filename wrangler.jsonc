@@ -5,6 +5,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "APP_URL": "https://station.savykids.com",
-    "N8N_INVITE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-employee-invite"
+    "N8N_INVITE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-employee-invite",
+    "N8N_LEAVE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-request",
+    "N8N_LEAVE_DECISION_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision"
   }
 }
