@@ -50,18 +50,19 @@ function AutomationPage() {
       profileQuery,
       (snapshot) => {
         const current = snapshot.docs[0];
-        setProfile(
-          current
-            ? {
-                id: current.id,
-                ...(current.data() as Omit<PersonalAutomationProfile, "id">),
-              }
-            : null,
-        );
+        if (current) {
+          const profileData = {
+            id: current.id,
+            ...(current.data() as Omit<PersonalAutomationProfile, "id">),
+          };
+          setProfile(profileData);
+        } else {
+          setProfile(null);
+        }
         setLoading(false);
       },
       (error) => {
-        console.error("Personal API profile could not be loaded:", error);
+        console.warn("Personal API profile query warning:", error);
         setLoading(false);
       },
     );
@@ -86,21 +87,42 @@ function AutomationPage() {
 
     setBusy(true);
     try {
-      const [existingProfiles, punchesSnapshot] = await Promise.all([
-        getDocs(query(collection(db(), "automationProfiles"), where("ownerUid", "==", user.uid))),
-        getDocs(query(collection(db(), "punches"), where("employeeId", "==", employee.id))),
-      ]);
-      const punches = punchesSnapshot.docs
-        .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-        .sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+      let punches: Punch[] = [];
+      try {
+        const punchesSnapshot = await getDocs(
+          query(collection(db(), "punches"), where("employeeId", "==", employee.id)),
+        );
+        punches = punchesSnapshot.docs
+          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
+          .sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+      } catch (err) {
+        console.warn("Could not fetch punches for personal API:", err);
+      }
+
       const latestPunch = punches[punches.length - 1];
       const isPunchedIn = latestPunch?.type === "in" || latestPunch?.type === "extra_in";
       const now = new Date().toISOString();
       const token = generatePrivateToken();
       const batch = writeBatch(db());
 
-      existingProfiles.docs.forEach((existing) => batch.delete(existing.ref));
-      batch.set(doc(db(), "automationProfiles", token), {
+      if (profile?.id) {
+        try {
+          batch.delete(doc(db(), "automationProfiles", profile.id));
+        } catch {
+          // Ignore delete error if non-existent
+        }
+      } else {
+        try {
+          const existingProfiles = await getDocs(
+            query(collection(db(), "automationProfiles"), where("ownerUid", "==", user.uid)),
+          );
+          existingProfiles.docs.forEach((existing) => batch.delete(existing.ref));
+        } catch {
+          // Ignore list permission errors
+        }
+      }
+
+      const newProfileData: Omit<PersonalAutomationProfile, "id"> = {
         ownerUid: user.uid,
         employeeId: employee.id,
         employeeName: employee.name,
@@ -115,10 +137,15 @@ function AutomationPage() {
         occurredAt: latestPunch?.timestamp?.toDate().toISOString() || now,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+
+      batch.set(doc(db(), "automationProfiles", token), newProfileData);
       await batch.commit();
+
+      setProfile({ id: token, ...newProfileData });
       toast.success(replaceExisting ? "Personal API URL regenerated" : "Personal API URL created");
     } catch (error) {
+      console.error("Error creating personal API:", error);
       toast.error("Could not create personal API: " + (error as Error).message);
     } finally {
       setBusy(false);
