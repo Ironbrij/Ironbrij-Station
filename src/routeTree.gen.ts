@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
+import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -56,6 +57,11 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiInviteNotificationRoute = ApiInviteNotificationRouteImport.update({
+  id: '/api/invite-notification',
+  path: '/api/invite-notification',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiLeaveDecisionNotificationRoute =
   ApiLeaveDecisionNotificationRouteImport.update({
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin'
     | '/app'
+    | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
     | '/invite/$token'
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/app'
+    | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
     | '/invite/$token'
@@ -285,6 +296,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/admin'
     | '/_authenticated/app'
+    | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
     | '/invite/$token'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -350,6 +363,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app'
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/invite-notification': {
+      id: '/api/invite-notification'
+      path: '/api/invite-notification'
+      fullPath: '/api/invite-notification'
+      preLoaderRoute: typeof ApiInviteNotificationRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/leave-decision-notification': {
       id: '/api/leave-decision-notification'
@@ -559,6 +579,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,
   InviteTokenRoute: InviteTokenRoute,

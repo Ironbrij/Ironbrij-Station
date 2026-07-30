@@ -29,9 +29,7 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { toast } from "sonner";
-import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/lib/auth-context";
-import { sendInvite } from "@/lib/invite.functions";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -598,7 +596,8 @@ function NewEmployeeForm({
   const [busy, setBusy] = useState(false);
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [createdEmpId, setCreatedEmpId] = useState<string | null>(null);
-  const invite = useServerFn(sendInvite);
+  const [inviteEmailSent, setInviteEmailSent] = useState<boolean | null>(null);
+  const { user, company } = useAuth();
   const navigate = useNavigate();
 
   async function submit(e: React.FormEvent) {
@@ -638,8 +637,52 @@ function NewEmployeeForm({
       ]);
       setCreatedInviteUrl(inviteUrl);
       setCreatedEmpId(empId);
-      toast.success("Employee profile and invite link created");
-      invite({ data: { employeeId: empId, email: cleanEmail, name: cleanName } }).catch(() => {});
+
+      let emailSent = false;
+      try {
+        const idToken = await user?.getIdToken();
+        if (idToken) {
+          const notificationResponse = await fetch("/api/invite-notification", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${idToken}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              employeeId: empId,
+              employeeName: cleanName,
+              employeeEmail: cleanEmail,
+              inviteToken: token,
+              companyName: company?.name || "Time Station",
+              departmentName:
+                departments.find((department) => department.id === deptId)?.name || "",
+              jobTitle: jobTitle.trim(),
+              country,
+              state,
+              shiftStartTime,
+              shiftEndTime,
+              shiftTimezone,
+            }),
+          });
+          emailSent = notificationResponse.ok;
+        }
+      } catch {
+        emailSent = false;
+      }
+      setInviteEmailSent(emailSent);
+      const emailAttemptedAt = new Date().toISOString();
+      updateDoc(doc(db(), "invites", token), {
+        emailStatus: emailSent ? "sent" : "failed",
+        emailAttemptedAt,
+        ...(emailSent ? { emailSentAt: emailAttemptedAt } : {}),
+      }).catch(() => {});
+      if (emailSent) {
+        toast.success(`Employee created and invite emailed to ${cleanEmail}`);
+      } else {
+        toast.warning(
+          "Employee created, but invite email could not be sent. Copy the link instead.",
+        );
+      }
     } catch (err) {
       toast.error("Database save failed: " + (err as Error).message);
     } finally {
@@ -653,7 +696,9 @@ function NewEmployeeForm({
         <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift text-center">
           <h3 className="text-lg font-bold text-primary">Employee created</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Share this activation link with <strong>{name}</strong>.
+            {inviteEmailSent
+              ? `An invitation email was sent automatically to ${email}.`
+              : `Email delivery is unavailable. Share this activation link with ${name}.`}
           </p>
           <input
             readOnly

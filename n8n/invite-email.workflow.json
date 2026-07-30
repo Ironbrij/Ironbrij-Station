@@ -1,0 +1,77 @@
+{
+  "name": "Time Station - Employee Invite Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "time-station-employee-invite",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "employee-invite-webhook",
+      "name": "Employee Invite Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "time-station-employee-invite"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.email.to }}",
+        "subject": "={{ $json.body.email.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body.email.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Time Station"
+        }
+      },
+      "id": "send-invite-email",
+      "name": "Send Invite with Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true }",
+        "options": {}
+      },
+      "id": "invite-webhook-response",
+      "name": "Invite Sent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Employee Invite Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Invite with Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Invite with Gmail": {
+      "main": [
+        [
+          {
+            "node": "Invite Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
