@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import {
   DEFAULT_REPORTING_SETTINGS,
+  DEFAULT_REPORT_QUESTIONS,
   isReportDeadlinePassed,
   reportDateForEmployee,
   reportDocumentId,
