@@ -33,7 +33,12 @@ service cloud.firestore {
     // Employees Collection (Contains department ID, hourly rates, shift times, country, timezone)
     match /employees/{empId} {
       allow read: if isAuthed();
-      allow create, update: if isAuthed();
+      allow create: if isAuthed();
+      allow update: if isAdmin() || (
+        isAuthed() &&
+        request.resource.data.get('reportingRequirement', 'none') ==
+          resource.data.get('reportingRequirement', 'none')
+      );
       allow delete: if isAdmin();
     }
 
@@ -70,6 +75,35 @@ service cloud.firestore {
       allow read: if isAuthed();
       allow create: if isAuthed();
       allow update, delete: if isAdmin();
+    }
+
+    // SOD & EOD configuration and question bank
+    match /reportingSettings/{id} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /reportQuestions/{id} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Submitted reports are immutable historical records.
+    match /dailyReports/{reportId} {
+      // Admins can list/read all reports; employees can only read their own.
+      allow list: if isAdmin() || (
+        isAuthed() && resource.data.userId == request.auth.uid
+      );
+      allow get: if isAdmin() || (
+        isAuthed() && resource.data.userId == request.auth.uid
+      );
+      allow create: if isAuthed()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.reportType in ['sod', 'eod']
+        && request.resource.data.submittedAt == request.time
+        && reportId == request.auth.uid + '_' + request.resource.data.reportDate + '_' + request.resource.data.reportType;
+      allow update, delete: if false;
     }
 
     // Personal automation status.

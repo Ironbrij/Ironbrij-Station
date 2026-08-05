@@ -8,27 +8,40 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminLayout() {
-  const { isAdmin, loading } = useAuth();
+  const { isAdmin, employee, loading } = useAuth();
   useCompanyShiftAutoPunchOut(isAdmin && !loading);
 
   if (loading) return null;
   if (!isAdmin) return <Navigate to="/app/punch" />;
+
+  const adminNav = [
+    { to: "/admin", label: "Dashboard", exact: true },
+    { to: "/admin/employees", label: "Employees" },
+    { to: "/admin/users", label: "Users" },
+    { to: "/admin/late", label: "Late Logs" },
+    { to: "/admin/notices", label: "Notifications" },
+    { to: "/admin/departments", label: "Departments" },
+    { to: "/admin/company", label: "Company" },
+    { to: "/admin/leaves", label: "Leave" },
+    { to: "/admin/sod-eod", label: "SOD & EOD" },
+    { to: "/admin/reports", label: "Reports" },
+  ];
+
+  // If admin is also an employee, add employee-specific tabs
+  if (employee) {
+    adminNav.push(
+      { to: "/app/punch", label: "Punch In" },
+      { to: "/app/sod-eod", label: "My SOD & EOD" },
+    );
+  }
+
   return (
     <AppShell
       title="Time Station — Admin"
-      nav={[
-        { to: "/admin", label: "Dashboard", exact: true },
-        { to: "/admin/employees", label: "Employees" },
-        { to: "/admin/users", label: "Users" },
-        { to: "/admin/late", label: "Late Logs" },
-        { to: "/admin/notices", label: "Notifications" },
-        { to: "/admin/departments", label: "Departments" },
-        { to: "/admin/company", label: "Company" },
-        { to: "/admin/leaves", label: "Leave" },
-        { to: "/admin/reports", label: "Reports" },
-      ]}
+      nav={adminNav}
     >
       <Outlet />
     </AppShell>
   );
 }
+

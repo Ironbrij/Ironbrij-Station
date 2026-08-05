@@ -27,6 +27,7 @@ import { Route as AuthenticatedAdminLateRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAdminLeavesRouteImport } from './routes/_authenticated/admin.leaves'
 import { Route as AuthenticatedAdminNoticesRouteImport } from './routes/_authenticated/admin.notices'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin.reports'
+import { Route as AuthenticatedAdminSodEodRouteImport } from './routes/_authenticated/admin.sod-eod'
 import { Route as AuthenticatedAdminSupportRouteImport } from './routes/_authenticated/admin.support'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAppAutomationRouteImport } from './routes/_authenticated/app.automation'
@@ -34,6 +35,7 @@ import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppLeaveRouteImport } from './routes/_authenticated/app.leave'
 import { Route as AuthenticatedAppNoticesRouteImport } from './routes/_authenticated/app.notices'
 import { Route as AuthenticatedAppPunchRouteImport } from './routes/_authenticated/app.punch'
+import { Route as AuthenticatedAppSodEodRouteImport } from './routes/_authenticated/app.sod-eod'
 import { Route as AuthenticatedAdminEmployeesIdRouteImport } from './routes/_authenticated/admin.employees.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -132,6 +134,12 @@ const AuthenticatedAdminReportsRoute =
     path: '/reports',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminSodEodRoute =
+  AuthenticatedAdminSodEodRouteImport.update({
+    id: '/sod-eod',
+    path: '/sod-eod',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminSupportRoute =
   AuthenticatedAdminSupportRouteImport.update({
     id: '/support',
@@ -169,6 +177,11 @@ const AuthenticatedAppPunchRoute = AuthenticatedAppPunchRouteImport.update({
   path: '/punch',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppSodEodRoute = AuthenticatedAppSodEodRouteImport.update({
+  id: '/sod-eod',
+  path: '/sod-eod',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAdminEmployeesIdRoute =
   AuthenticatedAdminEmployeesIdRouteImport.update({
     id: '/$id',
@@ -193,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/automation': typeof AuthenticatedAppAutomationRoute
@@ -200,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
   '/app/punch': typeof AuthenticatedAppPunchRoute
+  '/app/sod-eod': typeof AuthenticatedAppSodEodRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/employees/$id': typeof AuthenticatedAdminEmployeesIdRoute
 }
@@ -219,6 +234,7 @@ export interface FileRoutesByTo {
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/automation': typeof AuthenticatedAppAutomationRoute
@@ -226,6 +242,7 @@ export interface FileRoutesByTo {
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
   '/app/punch': typeof AuthenticatedAppPunchRoute
+  '/app/sod-eod': typeof AuthenticatedAppSodEodRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/employees/$id': typeof AuthenticatedAdminEmployeesIdRoute
 }
@@ -248,6 +265,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/_authenticated/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/_authenticated/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/_authenticated/admin/support': typeof AuthenticatedAdminSupportRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/app/automation': typeof AuthenticatedAppAutomationRoute
@@ -255,6 +273,7 @@ export interface FileRoutesById {
   '/_authenticated/app/leave': typeof AuthenticatedAppLeaveRoute
   '/_authenticated/app/notices': typeof AuthenticatedAppNoticesRoute
   '/_authenticated/app/punch': typeof AuthenticatedAppPunchRoute
+  '/_authenticated/app/sod-eod': typeof AuthenticatedAppSodEodRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/employees/$id': typeof AuthenticatedAdminEmployeesIdRoute
 }
@@ -277,6 +296,7 @@ export interface FileRouteTypes {
     | '/admin/leaves'
     | '/admin/notices'
     | '/admin/reports'
+    | '/admin/sod-eod'
     | '/admin/support'
     | '/admin/users'
     | '/app/automation'
@@ -284,6 +304,7 @@ export interface FileRouteTypes {
     | '/app/leave'
     | '/app/notices'
     | '/app/punch'
+    | '/app/sod-eod'
     | '/admin/'
     | '/admin/employees/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -303,6 +324,7 @@ export interface FileRouteTypes {
     | '/admin/leaves'
     | '/admin/notices'
     | '/admin/reports'
+    | '/admin/sod-eod'
     | '/admin/support'
     | '/admin/users'
     | '/app/automation'
@@ -310,6 +332,7 @@ export interface FileRouteTypes {
     | '/app/leave'
     | '/app/notices'
     | '/app/punch'
+    | '/app/sod-eod'
     | '/admin'
     | '/admin/employees/$id'
   id:
@@ -331,6 +354,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/leaves'
     | '/_authenticated/admin/notices'
     | '/_authenticated/admin/reports'
+    | '/_authenticated/admin/sod-eod'
     | '/_authenticated/admin/support'
     | '/_authenticated/admin/users'
     | '/_authenticated/app/automation'
@@ -338,6 +362,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/leave'
     | '/_authenticated/app/notices'
     | '/_authenticated/app/punch'
+    | '/_authenticated/app/sod-eod'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/employees/$id'
   fileRoutesById: FileRoutesById
@@ -481,6 +506,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/sod-eod': {
+      id: '/_authenticated/admin/sod-eod'
+      path: '/sod-eod'
+      fullPath: '/admin/sod-eod'
+      preLoaderRoute: typeof AuthenticatedAdminSodEodRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/support': {
       id: '/_authenticated/admin/support'
       path: '/support'
@@ -530,6 +562,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppPunchRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/sod-eod': {
+      id: '/_authenticated/app/sod-eod'
+      path: '/sod-eod'
+      fullPath: '/app/sod-eod'
+      preLoaderRoute: typeof AuthenticatedAppSodEodRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/admin/employees/$id': {
       id: '/_authenticated/admin/employees/$id'
       path: '/$id'
@@ -562,6 +601,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminLeavesRoute: typeof AuthenticatedAdminLeavesRoute
   AuthenticatedAdminNoticesRoute: typeof AuthenticatedAdminNoticesRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
+  AuthenticatedAdminSodEodRoute: typeof AuthenticatedAdminSodEodRoute
   AuthenticatedAdminSupportRoute: typeof AuthenticatedAdminSupportRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -576,6 +616,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminLeavesRoute: AuthenticatedAdminLeavesRoute,
   AuthenticatedAdminNoticesRoute: AuthenticatedAdminNoticesRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
+  AuthenticatedAdminSodEodRoute: AuthenticatedAdminSodEodRoute,
   AuthenticatedAdminSupportRoute: AuthenticatedAdminSupportRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
@@ -590,6 +631,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppLeaveRoute: typeof AuthenticatedAppLeaveRoute
   AuthenticatedAppNoticesRoute: typeof AuthenticatedAppNoticesRoute
   AuthenticatedAppPunchRoute: typeof AuthenticatedAppPunchRoute
+  AuthenticatedAppSodEodRoute: typeof AuthenticatedAppSodEodRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
@@ -598,6 +640,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppLeaveRoute: AuthenticatedAppLeaveRoute,
   AuthenticatedAppNoticesRoute: AuthenticatedAppNoticesRoute,
   AuthenticatedAppPunchRoute: AuthenticatedAppPunchRoute,
+  AuthenticatedAppSodEodRoute: AuthenticatedAppSodEodRoute,
 }
 
 const AuthenticatedAppRouteWithChildren =
