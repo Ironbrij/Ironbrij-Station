@@ -351,12 +351,18 @@ function PunchPage() {
           employee,
           company?.lateGraceMinutes ?? 5,
         );
-        if (!schedule.isScheduledDay) toast.success("Punch recorded outside the regular schedule.");
-        else if (approvedLeaveToday) toast.success("Punch recorded on an approved leave date.");
-        else if (lateness.isLate) toast.warning(`Punched in ${lateness.minutes} minutes late.`);
-        else toast.success("Punched in on time.");
+        if (!schedule.isScheduledDay) toast.success("Punched in! Fill out your SOD report below.");
+        else if (approvedLeaveToday) toast.success("Punched in on leave date!");
+        else if (lateness.isLate) toast.warning(`Punched in ${lateness.minutes}m late.`);
+        else toast.success("Punched in on time!");
+
+        // Auto-popup SOD Notepad after Punch In
+        setShowNotepadModal("sod");
       } else {
-        toast.success("Punched out successfully.");
+        toast.success("Punched out successfully!");
+
+        // Auto-popup EOD Notepad after Punch Out
+        setShowNotepadModal("eod");
       }
       setConfirmEarly(false);
       setShowPunchOutModal(false);
@@ -372,62 +378,56 @@ function PunchPage() {
   const [eodAnswers, setEodAnswers] = useState<Record<string, string>>({});
   const [savingNotepad, setSavingNotepad] = useState(false);
 
-  async function submitNotepadAndPunch(type: "sod" | "eod", skipReport = false) {
+  async function submitNotepadReport(type: "sod" | "eod") {
     if (!employee || !user) return;
     setSavingNotepad(true);
     try {
-      if (!skipReport) {
-        const answersMap = type === "sod" ? sodAnswers : eodAnswers;
-        const questionsList = DEFAULT_REPORT_QUESTIONS[type];
-        const reportAnswers = questionsList.map((q) => ({
-          questionId: q.id,
-          question: q.question,
-          answer: answersMap[q.id]?.trim() || "",
-        }));
+      const answersMap = type === "sod" ? sodAnswers : eodAnswers;
+      const questionsList = DEFAULT_REPORT_QUESTIONS[type];
+      const reportAnswers = questionsList.map((q) => ({
+        questionId: q.id,
+        question: q.question,
+        answer: answersMap[q.id]?.trim() || "",
+      }));
 
-        const reportDate = reportDateForEmployee(employee, new Date());
-        const reportId = reportDocumentId(user.uid, reportDate, type);
-        const reportRef = doc(db(), "dailyReports", reportId);
+      const reportDate = reportDateForEmployee(employee, new Date());
+      const reportId = reportDocumentId(user.uid, reportDate, type);
+      const reportRef = doc(db(), "dailyReports", reportId);
 
-        const deadlinePassed = isReportDeadlinePassed(
-          employee,
-          type,
+      const deadlinePassed = isReportDeadlinePassed(
+        employee,
+        type,
+        reportDate,
+        DEFAULT_REPORTING_SETTINGS,
+        new Date(),
+      );
+
+      await setDoc(
+        reportRef,
+        {
+          userId: user.uid,
+          employeeId: employee.id,
+          userName: employee.name,
+          userEmail: employee.email,
+          reportType: type,
           reportDate,
-          DEFAULT_REPORTING_SETTINGS,
-          new Date(),
-        );
+          answers: reportAnswers,
+          submittedAt: serverTimestamp(),
+          status: "submitted",
+          timezone: getEmployeeTimezone(employee),
+          submittedLate: deadlinePassed,
+        },
+        { merge: true },
+      );
 
-        await setDoc(
-          reportRef,
-          {
-            userId: user.uid,
-            employeeId: employee.id,
-            userName: employee.name,
-            userEmail: employee.email,
-            reportType: type,
-            reportDate,
-            answers: reportAnswers,
-            submittedAt: serverTimestamp(),
-            status: "submitted",
-            timezone: getEmployeeTimezone(employee),
-            submittedLate: deadlinePassed,
-          },
-          { merge: true },
-        );
-      }
-
-      await doPunch(type === "sod" ? "in" : "out");
-
-      if (!skipReport) {
-        toast.success(
-          `Punched ${type === "sod" ? "In" : "Out"}! Your ${type.toUpperCase()} report has been saved to SOD & EOD tab. 📝`,
-        );
-      }
+      toast.success(
+        `Your ${type.toUpperCase()} report has been saved & sent to SOD & EOD tab! 📝`,
+      );
       setShowNotepadModal(null);
       if (type === "sod") setSodAnswers({});
       else setEodAnswers({});
     } catch (err) {
-      console.error("Notepad punch error:", err);
+      console.error("Notepad save error:", err);
       toast.error("Could not save report: " + (err as Error).message);
     } finally {
       setSavingNotepad(false);
@@ -436,9 +436,9 @@ function PunchPage() {
 
   function handlePunchClick() {
     if (isPunchedIn) {
-      setShowNotepadModal("eod");
+      doPunch("out");
     } else {
-      setShowNotepadModal("sod");
+      doPunch("in");
     }
   }
 
@@ -912,40 +912,38 @@ function PunchPage() {
               <button
                 type="button"
                 disabled={busy || savingNotepad}
-                onClick={() => submitNotepadAndPunch(showNotepadModal, false)}
+                onClick={() => submitNotepadReport(showNotepadModal)}
                 className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-md flex items-center justify-center gap-2 transition-all btn-lift ${
                   showNotepadModal === "sod"
                     ? "bg-amber-600 hover:bg-amber-700"
                     : "bg-indigo-600 hover:bg-indigo-700"
                 }`}
               >
-                {savingNotepad || busy ? (
-                  "Saving & Processing..."
+                {savingNotepad ? (
+                  "Saving Report..."
                 ) : (
                   <>
                     <Send className="h-4 w-4" />
-                    Save {showNotepadModal.toUpperCase()} & Punch{" "}
-                    {showNotepadModal === "sod" ? "In" : "Out"}
+                    Save {showNotepadModal.toUpperCase()} Report to SOD & EOD Tab
                   </>
                 )}
               </button>
 
               <div className="flex items-center justify-between gap-2 text-xs pt-1">
-                <button
-                  type="button"
-                  disabled={busy || savingNotepad}
-                  onClick={() => submitNotepadAndPunch(showNotepadModal, true)}
-                  className="text-muted-foreground hover:text-primary underline font-semibold text-[11px]"
+                <Link
+                  to="/app/sod-eod"
+                  onClick={() => setShowNotepadModal(null)}
+                  className="text-primary hover:underline font-bold text-xs inline-flex items-center gap-1"
                 >
-                  ⚡ Quick Punch {showNotepadModal === "sod" ? "In" : "Out"} (Skip Notepad)
-                </button>
+                  Go to SOD & EOD Tab →
+                </Link>
 
                 <button
                   type="button"
                   onClick={() => setShowNotepadModal(null)}
-                  className="rounded-lg border px-3 py-1.5 font-semibold text-muted-foreground hover:bg-muted"
+                  className="rounded-lg border px-3.5 py-1.5 font-semibold text-muted-foreground hover:bg-muted"
                 >
-                  Cancel
+                  Close
                 </button>
               </div>
             </div>

@@ -223,6 +223,56 @@ function LeaveRequestsPage() {
     }
   }
 
+  async function revokeLeave(id: string) {
+    const leave = leaves?.find((item) => item.id === id);
+    if (!leave || busyId) return;
+
+    if (
+      !window.confirm(
+        "Are you sure you want to revoke this approved leave? This will allow the employee to punch in on these dates.",
+      )
+    ) {
+      return;
+    }
+
+    setBusyId(id);
+    try {
+      const employee = employeeById.get(leave.employeeId);
+      const batch = writeBatch(db());
+      batch.update(doc(db(), "leaveRequests", id), {
+        status: "rejected",
+        decidedAt: new Date().toISOString(),
+        decidedBy: user?.email || "Admin",
+        decisionReason: "Revoked by admin",
+      });
+
+      if (employee) {
+        const dateRange =
+          leave.dateFrom === leave.dateTo
+            ? leave.dateFrom
+            : `${leave.dateFrom} to ${leave.dateTo}`;
+        const notice: Omit<CompanyNotice, "id"> = {
+          title: "Approved leave revoked",
+          message: `Your approved leave for ${dateRange} has been revoked by admin. You may now punch in as usual.`,
+          priority: "warning",
+          targetType: "employee",
+          targetEmployeeId: employee.id,
+          targetEmployeeIds: [employee.id],
+          createdAt: new Date().toISOString(),
+          authorName: user?.displayName || user?.email || "Leave administration",
+        };
+        batch.set(doc(collection(db(), "notices")), notice);
+      }
+
+      await batch.commit();
+      toast.success("Approved leave revoked successfully! Employee can now punch in.");
+    } catch (error) {
+      toast.error("Could not revoke leave: " + (error as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   function clearFilters() {
     setSearch("");
     setStatusFilter("pending");
@@ -236,7 +286,7 @@ function LeaveRequestsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Leave requests</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review dates and reasons, then approve or reject pending requests.
+          Review dates and reasons, then approve, reject, or revoke leave requests.
         </p>
       </div>
 
@@ -297,72 +347,62 @@ function LeaveRequestsPage() {
         </div>
 
         {hasFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="mt-3 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          >
-            Clear filters
-          </button>
+          <div className="mt-3 flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              Showing {filteredRequests.length} of {leaves?.length || 0} requests
+            </span>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="font-medium text-foreground hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
         )}
       </section>
 
       {leaves === null ? (
-        <div className="divide-y rounded-lg border">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="h-36 skeleton-shimmer" />
-          ))}
+        <div className="py-12 text-center text-sm text-muted-foreground">
+          Loading leave requests…
         </div>
-      ) : visibleRequests.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <h2 className="font-medium text-foreground">
-            {hasFilters ? "No requests match these filters" : "No pending leave requests"}
-          </h2>
+      ) : filteredRequests.length === 0 ? (
+        <div className="rounded-xl border bg-card p-8 text-center shadow-lift">
+          <h2 className="font-semibold text-foreground">No leave requests found</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {hasFilters
-              ? "Clear or change the filters."
-              : "New requests will appear here for review."}
+              ? "Try adjusting your filters to see more requests."
+              : "Employee leave applications will appear here."}
           </p>
         </div>
       ) : (
-        <section className="divide-y rounded-lg border bg-card">
+        <section className="space-y-3">
           {visibleRequests.map((leave) => {
             const employee = employeeById.get(leave.employeeId);
-            const profile = employee
-              ? userByIdentity.get(employee.authUid || "") ||
-                userByIdentity.get(employee.id) ||
-                userByIdentity.get(employee.email.toLowerCase())
-              : undefined;
+            const userProfile = userByIdentity.get(
+              employee?.authUid || employee?.id || employee?.email?.toLowerCase() || "",
+            );
             const isBusy = busyId === leave.id;
 
             return (
-              <article key={leave.id} className="p-4 sm:p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
+              <article key={leave.id} className="rounded-xl border bg-card p-5 shadow-lift">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <div className="flex items-center gap-3">
                     <ProfileAvatar
-                      name={employee?.name || "Unknown employee"}
-                      photoUrl={resolveProfilePhoto(profile, employee)}
+                      name={employee?.name || leave.employeeId}
+                      photoUrl={resolveProfilePhoto(userProfile, employee)}
                       className="h-10 w-10 text-xs"
                     />
-                    <div className="min-w-0">
-                      {employee ? (
-                        <Link
-                          to="/admin/employees/$id"
-                          params={{ id: employee.id }}
-                          className="truncate font-semibold text-foreground hover:underline"
-                        >
-                          {employee.name}
-                        </Link>
-                      ) : (
-                        <div className="font-semibold text-foreground">Unknown employee</div>
-                      )}
-                      <div className="truncate text-xs text-muted-foreground">
-                        {employee?.email || leave.employeeId}
-                        {employee?.jobTitle ? ` · ${employee.jobTitle}` : ""}
+                    <div>
+                      <div className="font-semibold text-foreground">
+                        {employee?.name || leave.employeeId}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {employee?.email || "No email available"}
                       </div>
                     </div>
                   </div>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs font-medium text-muted-foreground">
                     {leave.status === "pending"
                       ? "Pending review"
                       : leave.decisionSource === "automatic"
@@ -373,9 +413,9 @@ function LeaveRequestsPage() {
                   </span>
                 </div>
 
-                <dl className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
                   <div>
-                    <dt className="text-xs text-muted-foreground">Leave dates</dt>
+                    <dt className="text-xs text-muted-foreground">Dates</dt>
                     <dd className="mt-0.5 font-medium text-foreground">
                       {formatLeaveDateRange(leave.dateFrom, leave.dateTo)}
                     </dd>
@@ -405,7 +445,7 @@ function LeaveRequestsPage() {
                     <span>{leave.decisionReason}</span>
                   )}
 
-                  {leave.status === "pending" && (
+                  {leave.status === "pending" ? (
                     <div className="flex shrink-0 gap-2">
                       <button
                         type="button"
@@ -424,7 +464,18 @@ function LeaveRequestsPage() {
                         {isBusy ? "Saving…" : "Approve"}
                       </button>
                     </div>
-                  )}
+                  ) : leave.status === "approved" ? (
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        disabled={Boolean(busyId)}
+                        onClick={() => revokeLeave(leave.id)}
+                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 disabled:opacity-50"
+                      >
+                        {isBusy ? "Revoking..." : "Revoke Leave"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </article>
             );

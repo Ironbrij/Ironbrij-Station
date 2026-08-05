@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import type { LeaveRequest } from "@/lib/types";
@@ -118,183 +118,223 @@ function LeavePage() {
 
   if (!employee) return <div>No employee profile.</div>;
 
+  async function cancelLeaveRequest(id: string) {
+    if (!window.confirm("Are you sure you want to cancel this leave request?")) return;
+    try {
+      await updateDoc(doc(db(), "leaveRequests", id), {
+        status: "rejected",
+        decidedAt: new Date().toISOString(),
+        decidedBy: employee?.name || user?.email || "Employee",
+        decisionReason: "Cancelled by employee",
+      });
+      toast.success("Leave request cancelled.");
+    } catch (err) {
+      toast.error("Could not cancel leave: " + (err as Error).message);
+    }
+  }
+
+  const counts = {
+    pending: history.filter((i) => i.status === "pending").length,
+    approved: history.filter((i) => i.status === "approved").length,
+    rejected: history.filter((i) => i.status === "rejected").length,
+  };
+
   return (
-    <div className="max-w-2xl mx-auto grid gap-6">
-      <form onSubmit={submit} className="rounded-xl border bg-card p-6 shadow-lift">
-        <h1 className="text-xl font-semibold text-primary">Request Leave</h1>
-        <div className="mt-4">
-          <label className="text-sm font-medium">Request type</label>
-          <select
-            value={leaveType}
-            onChange={(event) =>
-              setLeaveType(event.target.value as NonNullable<LeaveRequest["leaveType"]>)
-            }
-            className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
-          >
-            <option value="full_day">Full-day leave</option>
-            <option value="half_day">Half-day leave</option>
-            <option value="timed_break">Break at a specific time</option>
-          </select>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-foreground">Leave management</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Submit new leave requests or review your application history.
+        </p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <form onSubmit={submit} className="rounded-xl border bg-card p-5 space-y-4 shadow-lift">
+          <h2 className="font-semibold text-foreground border-b pb-2">Request leave</h2>
+
           <div>
-            <label className="text-sm font-medium">From</label>
-            <input
-              type="date"
-              required
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2"
-            />
+            <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+              Leave Type
+            </label>
+            <select
+              value={leaveType}
+              onChange={(e) => setLeaveType(e.target.value as any)}
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+            >
+              <option value="full_day">Full Day Leave</option>
+              <option value="half_day">Half Day Leave</option>
+              <option value="timed_break">Timed Break / Short Leave</option>
+            </select>
           </div>
-          {leaveType === "full_day" && (
+
+          {leaveType === "half_day" && (
             <div>
-              <label className="text-sm font-medium">To (optional)</label>
+              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                Half Day Period
+              </label>
+              <select
+                value={halfDayPeriod}
+                onChange={(e) => setHalfDayPeriod(e.target.value as any)}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+              >
+                <option value="first_half">First Half (Morning)</option>
+                <option value="second_half">Second Half (Afternoon)</option>
+              </select>
+            </div>
+          )}
+
+          {leaveType === "timed_break" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                  Start Time
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                  End Time
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                To Date
+              </label>
               <input
                 type="date"
                 value={dateTo}
+                disabled={leaveType !== "full_day"}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="mt-1 w-full rounded-md border px-3 py-2"
-              />
-            </div>
-          )}
-        </div>
-        {leaveType === "half_day" && (
-          <div className="mt-3">
-            <label className="text-sm font-medium">Which half?</label>
-            <select
-              value={halfDayPeriod}
-              onChange={(event) =>
-                setHalfDayPeriod(event.target.value as NonNullable<LeaveRequest["halfDayPeriod"]>)
-              }
-              className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
-            >
-              <option value="first_half">First half of shift</option>
-              <option value="second_half">Second half of shift</option>
-            </select>
-          </div>
-        )}
-        {leaveType === "timed_break" && (
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium">Break starts</label>
-              <input
-                type="time"
-                required
-                value={startTime}
-                onChange={(event) => setStartTime(event.target.value)}
-                className="mt-1 w-full rounded-md border px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Break ends</label>
-              <input
-                type="time"
-                required
-                value={endTime}
-                onChange={(event) => setEndTime(event.target.value)}
-                className="mt-1 w-full rounded-md border px-3 py-2"
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium disabled:opacity-50"
+                required={leaveType === "full_day"}
               />
             </div>
           </div>
-        )}
-        <div className="mt-3">
-          <label className="text-sm font-medium">Reason</label>
-          <textarea
-            required
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 min-h-[80px]"
-          />
-        </div>
-        <button
-          disabled={busy}
-          className="btn-lift mt-4 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
-        >
-          {busy ? "Submitting…" : "Submit request"}
-        </button>
-      </form>
 
-      <div className="rounded-xl border bg-card p-6 shadow-lift">
-        <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="font-semibold text-primary">Recent Leave Activity</h2>
-            <p className="text-xs text-muted-foreground">
-              Follow every request from submission to the final decision.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-            <ActivityCount
-              label="Pending"
-              count={history.filter((item) => item.status === "pending").length}
-              tone="amber"
-            />
-            <ActivityCount
-              label="Approved"
-              count={history.filter((item) => item.status === "approved").length}
-              tone="emerald"
-            />
-            <ActivityCount
-              label="Rejected"
-              count={history.filter((item) => item.status === "rejected").length}
-              tone="rose"
+            <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+              Reason / Notes
+            </label>
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="State reason for leave..."
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+              required
             />
           </div>
-        </div>
-        <ul className="mt-2 divide-y">
-          {history.length === 0 && (
-            <li className="py-8 text-center text-sm text-muted-foreground">
-              No leave activity yet.
-            </li>
-          )}
-          {history.map((leave) => (
-            <li key={leave.id} className="flex items-start gap-3 py-4">
-              <StatusIcon status={leave.status} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-sm font-bold">
-                      <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                      {leave.dateFrom}
-                      {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full py-2.5 rounded-lg bg-primary font-bold text-sm text-primary-foreground shadow-md transition-all btn-lift"
+          >
+            {busy ? "Submitting..." : "Submit Leave Application"}
+          </button>
+        </form>
+
+        <div className="rounded-xl border bg-card p-5 space-y-4 shadow-lift">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h2 className="font-semibold text-foreground">Leave history</h2>
+            <div className="flex gap-2 text-xs">
+              <ActivityCount label="Pending" count={counts.pending} tone="amber" />
+              <ActivityCount label="Approved" count={counts.approved} tone="emerald" />
+            </div>
+          </div>
+
+          <ul className="divide-y max-h-[500px] overflow-y-auto pr-1">
+            {history.length === 0 && (
+              <li className="py-8 text-center text-sm text-muted-foreground">
+                No leave activity yet.
+              </li>
+            )}
+            {history.map((leave) => (
+              <li key={leave.id} className="flex items-start gap-3 py-4">
+                <StatusIcon status={leave.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-sm font-bold">
+                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                        {leave.dateFrom}
+                        {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-primary">
+                        {!leave.leaveType || leave.leaveType === "full_day"
+                          ? "Full-day leave"
+                          : leave.leaveType === "half_day"
+                            ? `Half-day · ${leave.halfDayPeriod === "second_half" ? "second half" : "first half"}`
+                            : `Scheduled break · ${leave.startTime}–${leave.endTime}`}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">{leave.reason}</div>
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-primary">
-                      {!leave.leaveType || leave.leaveType === "full_day"
-                        ? "Full-day leave"
-                        : leave.leaveType === "half_day"
-                          ? `Half-day · ${leave.halfDayPeriod === "second_half" ? "second half" : "first half"}`
-                          : `Scheduled break · ${leave.startTime}–${leave.endTime}`}
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={leave.status} />
+                      {(leave.status === "pending" || leave.status === "approved") && (
+                        <button
+                          type="button"
+                          onClick={() => cancelLeaveRequest(leave.id)}
+                          className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
+                        >
+                          Cancel
+                        </button>
+                      )}
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">{leave.reason}</div>
                   </div>
-                  <StatusBadge status={leave.status} />
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>
-                    Submitted{" "}
-                    {leave.createdAt?.toDate
-                      ? format(leave.createdAt.toDate(), "MMM d, yyyy · h:mm a")
-                      : "just now"}
-                  </span>
-                  {leave.decidedAt && (
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                     <span>
-                      {leave.status === "approved"
-                        ? "Approved"
-                        : leave.decisionSource === "automatic"
-                          ? "Rejected automatically"
-                          : "Rejected"}{" "}
-                      {format(new Date(leave.decidedAt), "MMM d, yyyy · h:mm a")}
-                      {leave.decidedBy ? ` by ${leave.decidedBy}` : ""}
+                      Submitted{" "}
+                      {leave.createdAt?.toDate
+                        ? format(leave.createdAt.toDate(), "MMM d, yyyy · h:mm a")
+                        : "just now"}
                     </span>
-                  )}
-                  {leave.decisionSource === "automatic" && leave.decisionReason && (
-                    <span>{leave.decisionReason}</span>
-                  )}
+                    {leave.decidedAt && (
+                      <span>
+                        {leave.status === "approved"
+                          ? "Approved"
+                          : leave.decisionSource === "automatic"
+                            ? "Rejected automatically"
+                            : "Rejected"}{" "}
+                        {format(new Date(leave.decidedAt), "MMM d, yyyy · h:mm a")}
+                        {leave.decidedBy ? ` by ${leave.decidedBy}` : ""}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );
