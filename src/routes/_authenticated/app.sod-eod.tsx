@@ -52,7 +52,43 @@ function EmployeeSodEodPage() {
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
   const [clock, setClock] = useState(() => Date.now());
 
-  useEffect(() => setCurrentEmployee(employee), [employee]);
+  const defaultQuestions = useMemo<ReportQuestion[]>(() => {
+    return [
+      ...DEFAULT_REPORT_QUESTIONS.sod.map((q, order) => ({
+        id: q.id,
+        reportType: "sod" as const,
+        question: q.question,
+        required: true,
+        order,
+      })),
+      ...DEFAULT_REPORT_QUESTIONS.eod.map((q, order) => ({
+        id: q.id,
+        reportType: "eod" as const,
+        question: q.question,
+        required: true,
+        order,
+      })),
+    ];
+  }, []);
+
+  const fallbackEmployee = useMemo<Employee | null>(() => {
+    if (employee) return employee;
+    if (!user) return null;
+    return {
+      id: user.uid,
+      authUid: user.uid,
+      name: user.displayName || user.email?.split("@")[0] || "User",
+      email: user.email || "",
+      reportingRequirement: "sod_eod",
+      status: "active",
+      inviteStatus: "accepted",
+      timezone: "Asia/Kathmandu",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Employee;
+  }, [employee, user]);
+
+  useEffect(() => setCurrentEmployee(employee || fallbackEmployee), [employee, fallbackEmployee]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 30_000);
@@ -60,26 +96,45 @@ function EmployeeSodEodPage() {
   }, []);
 
   useEffect(() => {
-    if (!user || !employee) return;
-    const unsubEmployee = onSnapshot(doc(db(), "employees", employee.id), (snapshot) => {
-      if (snapshot.exists()) {
-        setCurrentEmployee({ id: snapshot.id, ...(snapshot.data() as Omit<Employee, "id">) });
-      }
-    });
-    const unsubQuestions = onSnapshot(collection(db(), "reportQuestions"), (snapshot) =>
-      setQuestions(
-        snapshot.docs.map((item) => ({
+    if (!user) return;
+    const empId = employee?.id || user.uid;
+    const unsubEmployee = onSnapshot(
+      doc(db(), "employees", empId),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setCurrentEmployee({ id: snapshot.id, ...(snapshot.data() as Omit<Employee, "id">) });
+        }
+      },
+      (error) => {
+        console.error("Employee listener error:", error);
+      },
+    );
+    const unsubQuestions = onSnapshot(
+      collection(db(), "reportQuestions"),
+      (snapshot) => {
+        const loaded = snapshot.docs.map((item) => ({
           id: item.id,
           ...(item.data() as Omit<ReportQuestion, "id">),
-        })),
-      ),
+        }));
+        setQuestions(loaded.length > 0 ? loaded : defaultQuestions);
+      },
+      (error) => {
+        console.error("Report questions listener error:", error);
+        setQuestions(defaultQuestions);
+      },
     );
-    const unsubSettings = onSnapshot(doc(db(), "reportingSettings", "default"), (snapshot) =>
-      setSettings(
-        snapshot.exists()
-          ? { ...DEFAULT_REPORTING_SETTINGS, ...(snapshot.data() as ReportingSettings) }
-          : DEFAULT_REPORTING_SETTINGS,
-      ),
+    const unsubSettings = onSnapshot(
+      doc(db(), "reportingSettings", "default"),
+      (snapshot) =>
+        setSettings(
+          snapshot.exists()
+            ? { ...DEFAULT_REPORTING_SETTINGS, ...(snapshot.data() as ReportingSettings) }
+            : DEFAULT_REPORTING_SETTINGS,
+        ),
+      (error) => {
+        console.error("Reporting settings listener error:", error);
+        setSettings(DEFAULT_REPORTING_SETTINGS);
+      },
     );
     const reportQuery = query(collection(db(), "dailyReports"), where("userId", "==", user.uid));
     const unsubReports = onSnapshot(
@@ -103,16 +158,19 @@ function EmployeeSodEodPage() {
       unsubSettings();
       unsubReports();
     };
-  }, [employee, user]);
+  }, [defaultQuestions, employee, user]);
+
+  const activeEmp = currentEmployee || fallbackEmployee;
 
   const requiredTypes = useMemo(
-    () => requiredReportTypes(currentEmployee?.reportingRequirement),
-    [currentEmployee?.reportingRequirement],
+    () => requiredReportTypes(activeEmp?.reportingRequirement),
+    [activeEmp?.reportingRequirement],
   );
-  const reportDate = currentEmployee ? reportDateForEmployee(currentEmployee, new Date(clock)) : "";
+  const reportDate = activeEmp ? reportDateForEmployee(activeEmp, new Date(clock)) : "";
 
   function questionsFor(type: DailyReportType) {
-    return (questions || [])
+    const list = questions && questions.length > 0 ? questions : defaultQuestions;
+    return list
       .filter((question) => question.reportType === type)
       .sort((a, b) => a.order - b.order);
   }
@@ -124,7 +182,7 @@ function EmployeeSodEodPage() {
   }
 
   async function submitReport(type: DailyReportType) {
-    if (!user || !currentEmployee || !reportDate) return;
+    if (!user || !activeEmp || !reportDate) return;
     const typeQuestions = questionsFor(type);
     const typeAnswers = answers[type];
     const missing = typeQuestions.find(
@@ -136,7 +194,7 @@ function EmployeeSodEodPage() {
     }
 
     const deadlinePassed = isReportDeadlinePassed(
-      currentEmployee,
+      activeEmp,
       type,
       reportDate,
       settings,
@@ -168,15 +226,15 @@ function EmployeeSodEodPage() {
         if (existing.exists()) throw new Error("This report has already been submitted.");
         transaction.set(reportRef, {
           userId: user.uid,
-          employeeId: currentEmployee.id,
-          userName: currentEmployee.name,
-          userEmail: currentEmployee.email,
+          employeeId: activeEmp.id,
+          userName: activeEmp.name,
+          userEmail: activeEmp.email,
           reportType: type,
           reportDate,
           answers: reportAnswers,
           submittedAt: serverTimestamp(),
           status: "submitted",
-          timezone: getEmployeeTimezone(currentEmployee),
+          timezone: getEmployeeTimezone(activeEmp),
           submittedLate: deadlinePassed,
         });
       });
@@ -201,7 +259,7 @@ function EmployeeSodEodPage() {
     [reports],
   );
 
-  if (!currentEmployee) {
+  if (!activeEmp) {
     return (
       <div className="py-12 text-center text-sm text-muted-foreground">
         Your employee profile is not active yet.
@@ -214,7 +272,7 @@ function EmployeeSodEodPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">SOD & EOD reports</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Daily reports for {reportDate} in {getEmployeeTimezone(currentEmployee)}.
+          Daily reports for {reportDate} in {getEmployeeTimezone(activeEmp)}.
         </p>
       </div>
 
@@ -235,7 +293,7 @@ function EmployeeSodEodPage() {
           {requiredTypes.map((type) => {
             const report = reportForToday(type);
             const deadlinePassed = isReportDeadlinePassed(
-              currentEmployee,
+              activeEmp,
               type,
               reportDate,
               settings,

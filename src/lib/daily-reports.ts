@@ -37,10 +37,10 @@ export function reportingRequirementLabel(value?: ReportingRequirement) {
 }
 
 export function requiredReportTypes(value?: ReportingRequirement): DailyReportType[] {
+  if (value === "none") return [];
   if (value === "sod_only") return ["sod"];
   if (value === "eod_only") return ["eod"];
-  if (value === "sod_eod") return ["sod", "eod"];
-  return [];
+  return ["sod", "eod"];
 }
 
 export function reportTypeLabel(type: DailyReportType) {

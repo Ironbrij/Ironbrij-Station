@@ -86,37 +86,63 @@ function AdminSodEodPage() {
   }, []);
 
   useEffect(() => {
-    const unsubEmployees = onSnapshot(collection(db(), "employees"), (snapshot) =>
-      setEmployees(
-        snapshot.docs
-          .map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) }))
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      ),
+    const unsubEmployees = onSnapshot(
+      collection(db(), "employees"),
+      (snapshot) =>
+        setEmployees(
+          snapshot.docs
+            .map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+      (error) => {
+        console.error("Employees listener error:", error);
+        setEmployees([]);
+      },
     );
-    const unsubQuestions = onSnapshot(collection(db(), "reportQuestions"), (snapshot) =>
-      setQuestions(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<ReportQuestion, "id">),
-        })),
-      ),
+    const unsubQuestions = onSnapshot(
+      collection(db(), "reportQuestions"),
+      (snapshot) =>
+        setQuestions(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<ReportQuestion, "id">),
+          })),
+        ),
+      (error) => {
+        console.error("Report questions listener error:", error);
+        setQuestions([]);
+      },
     );
-    const unsubReports = onSnapshot(collection(db(), "dailyReports"), (snapshot) =>
-      setReports(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<DailyReport, "id">),
-        })),
-      ),
+    const unsubReports = onSnapshot(
+      collection(db(), "dailyReports"),
+      (snapshot) =>
+        setReports(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<DailyReport, "id">),
+          })),
+        ),
+      (error) => {
+        console.error("Daily reports listener error:", error);
+        setReports([]);
+      },
     );
-    const unsubSettings = onSnapshot(doc(db(), "reportingSettings", "default"), (snapshot) => {
-      setSettings(
-        snapshot.exists()
-          ? { ...DEFAULT_REPORTING_SETTINGS, ...(snapshot.data() as ReportingSettings) }
-          : DEFAULT_REPORTING_SETTINGS,
-      );
-      setSettingsLoaded(true);
-    });
+    const unsubSettings = onSnapshot(
+      doc(db(), "reportingSettings", "default"),
+      (snapshot) => {
+        setSettings(
+          snapshot.exists()
+            ? { ...DEFAULT_REPORTING_SETTINGS, ...(snapshot.data() as ReportingSettings) }
+            : DEFAULT_REPORTING_SETTINGS,
+        );
+        setSettingsLoaded(true);
+      },
+      (error) => {
+        console.error("Reporting settings listener error:", error);
+        setSettings(DEFAULT_REPORTING_SETTINGS);
+        setSettingsLoaded(true);
+      },
+    );
 
     return () => {
       unsubEmployees();
