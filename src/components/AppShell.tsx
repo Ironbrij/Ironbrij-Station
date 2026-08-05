@@ -48,12 +48,25 @@ export function AppShell({
 
           <div className="flex shrink-0 items-center gap-2.5">
             {isAdmin && (
-              <Link
-                to="/admin/support"
-                className="btn-lift inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-bold text-primary hover:bg-muted/60"
-              >
-                <Headphones className="h-4 w-4" /> Support
-              </Link>
+              <>
+                <Link
+                  to={title.includes("Admin") ? "/app/punch" : "/admin"}
+                  className="btn-lift inline-flex items-center gap-1.5 rounded-lg border bg-primary/10 border-primary/20 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary/20 transition-all shadow-xs"
+                >
+                  {title.includes("Admin") ? (
+                    <>👤 Switch to Employee Portal</>
+                  ) : (
+                    <>🛡️ Switch to Admin Dashboard</>
+                  )}
+                </Link>
+
+                <Link
+                  to="/admin/support"
+                  className="btn-lift inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-bold text-primary hover:bg-muted/60"
+                >
+                  <Headphones className="h-4 w-4" /> Support
+                </Link>
+              </>
             )}
 
             {!isAdmin && (

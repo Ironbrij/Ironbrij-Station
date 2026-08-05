@@ -8,20 +8,26 @@ export const Route = createFileRoute("/_authenticated/app")({
 });
 
 function EmployeeLayout() {
-  const { employee } = useAuth();
+  const { employee, isAdmin } = useAuth();
   useShiftAutoPunchOut(employee);
+
+  const nav = [
+    { to: "/app/punch", label: "Punch" },
+    { to: "/app/extra", label: "Extra Time" },
+    { to: "/app/leave", label: "Leave" },
+    { to: "/app/sod-eod", label: "SOD & EOD" },
+    { to: "/app/notices", label: "Notifications" },
+    { to: "/app/automation", label: "Automation" },
+  ];
+
+  if (isAdmin) {
+    nav.push({ to: "/admin", label: "🛡️ Admin Dashboard" });
+  }
 
   return (
     <AppShell
       title="Time Station"
-      nav={[
-        { to: "/app/punch", label: "Punch" },
-        { to: "/app/extra", label: "Extra Time" },
-        { to: "/app/leave", label: "Leave" },
-        { to: "/app/sod-eod", label: "SOD & EOD" },
-        { to: "/app/notices", label: "Notifications" },
-        { to: "/app/automation", label: "Automation" },
-      ]}
+      nav={nav}
     >
       <Outlet />
     </AppShell>
