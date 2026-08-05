@@ -626,6 +626,7 @@ function NewEmployeeForm({
           timezone: COUNTRY_TIMEZONES[country].timezone,
           status: "active",
           inviteStatus: "pending",
+          reportingRequirement: "sod_eod",
           createdAt: new Date().toISOString(),
         }),
         setDoc(doc(db(), "invites", token), {

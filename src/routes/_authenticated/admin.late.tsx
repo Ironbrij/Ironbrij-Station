@@ -1,7 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { AlertTriangle, Clock3, UserX } from "lucide-react";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  Timestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import {
@@ -17,6 +24,7 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/late")({
   head: () => ({ meta: [{ title: "Late Logs — Time Station Admin" }] }),
@@ -31,6 +39,8 @@ type LateRecord = {
   punchedAt?: Date;
   minutesLate: number;
   kind: "arrival" | "missing";
+  isExcused?: boolean;
+  punch?: Punch;
 };
 
 function LateArrivalsPage() {
@@ -41,8 +51,16 @@ function LateArrivalsPage() {
   const [filterDept, setFilterDept] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
   const [now, setNow] = useState(() => new Date());
-  const { company } = useAuth();
+  const { company, user } = useAuth();
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
+
+  // Manual Clock-In Modal States
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Kathmandu"));
+  const [manualTime, setManualTime] = useState("09:00");
+  const [manualNotes, setManualNotes] = useState("");
+  const [submittingManual, setSubmittingManual] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -110,7 +128,7 @@ function LateArrivalsPage() {
         if (approvedLeave) continue;
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
-        if (!late.isLate) continue;
+        if (!late.isLate && !punch.isExcused) continue;
         result.push({
           id: punch.id,
           employee,
@@ -119,6 +137,8 @@ function LateArrivalsPage() {
           punchedAt: punch.timestamp.toDate(),
           minutesLate: late.minutes,
           kind: "arrival",
+          isExcused: Boolean(punch.isExcused),
+          punch,
         });
       }
 
@@ -164,19 +184,86 @@ function LateArrivalsPage() {
   );
 
   const missingCount = filtered.filter((record) => record.kind === "missing").length;
-  const arrivalCount = filtered.filter((record) => record.kind === "arrival").length;
-  const totalMinutes = filtered.reduce((sum, record) => sum + record.minutesLate, 0);
+  const arrivalCount = filtered.filter((record) => record.kind === "arrival" && !record.isExcused).length;
+  const totalMinutes = filtered
+    .filter((record) => !record.isExcused)
+    .reduce((sum, record) => sum + record.minutesLate, 0);
+
+  async function toggleExcuse(punchId?: string, currentExcused?: boolean) {
+    if (!punchId) return;
+    try {
+      await updateDoc(doc(db(), "punches", punchId), {
+        isExcused: !currentExcused,
+        excusedBy: user?.email || "admin",
+        excusedAt: new Date().toISOString(),
+      });
+      toast.success(
+        !currentExcused ? "Lateness marked as Not Late (Excused)! ✓" : "Lateness flag restored.",
+      );
+    } catch (err) {
+      toast.error("Could not update punch status: " + (err as Error).message);
+    }
+  }
+
+  async function saveManualClockIn() {
+    if (!selectedEmpId || !manualDate || !manualTime) {
+      toast.error("Please fill in employee, date, and clock-in time.");
+      return;
+    }
+    const targetEmp = employees.find((e) => e.id === selectedEmpId);
+    if (!targetEmp) return;
+
+    setSubmittingManual(true);
+    try {
+      const shiftTz = getShiftTimezone(targetEmp);
+      const dateTimeStr = `${manualDate}T${manualTime}:00`;
+      const punchDateObj = new Date(dateTimeStr);
+      const dateKey = zonedDateKey(punchDateObj, shiftTz);
+
+      await addDoc(collection(db(), "punches"), {
+        employeeId: targetEmp.id,
+        employeeName: targetEmp.name,
+        date: dateKey,
+        type: "in",
+        timestamp: Timestamp.fromDate(punchDateObj),
+        source: "admin_manual",
+        isManual: true,
+        adjustedBy: user?.email || "admin",
+        notes: manualNotes.trim() || "Manual clock-in added by admin",
+      });
+
+      toast.success(`Manual clock-in saved for ${targetEmp.name} at ${manualTime}! ⏰`);
+      setShowManualModal(false);
+      setManualNotes("");
+    } catch (err) {
+      toast.error("Could not save manual clock-in: " + (err as Error).message);
+    } finally {
+      setSubmittingManual(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-          <Clock3 className="h-6 w-6" /> Late Logs
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Live late alerts and arrival history calculated against each shift’s reference timezone.
-          Grace period: {graceMinutes} minute(s).
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+            <Clock3 className="h-6 w-6" /> Late Logs & Attendance Corrections
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Review lateness, mark on-time excuses, or manually fix missed clock-ins. Grace period:{" "}
+            {graceMinutes} min.
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            if (employees.length > 0) setSelectedEmpId(employees[0].id);
+            setShowManualModal(true);
+          }}
+          className="btn-lift inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-md shrink-0"
+        >
+          <Plus className="h-4 w-4" /> Fix Missed Clock-In
+        </button>
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
@@ -219,6 +306,7 @@ function LateArrivalsPage() {
               <th className="p-3.5">Actual punch</th>
               <th className="p-3.5">Lateness</th>
               <th className="p-3.5">Status</th>
+              <th className="p-3.5 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -255,9 +343,21 @@ function LateArrivalsPage() {
                     </div>
                     <div className="text-[10px] text-muted-foreground">{employeeTimezone}</div>
                   </td>
-                  <td className="p-3.5 font-bold text-amber-600">{record.minutesLate} min</td>
+                  <td className="p-3.5 font-bold text-amber-600">
+                    {record.isExcused ? (
+                      <span className="text-emerald-600 line-through">
+                        {record.minutesLate} min
+                      </span>
+                    ) : (
+                      `${record.minutesLate} min`
+                    )}
+                  </td>
                   <td className="p-3.5">
-                    {record.kind === "missing" ? (
+                    {record.isExcused ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
+                      </span>
+                    ) : record.kind === "missing" ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-600">
                         <UserX className="h-3.5 w-3.5" /> Missing
                       </span>
@@ -267,12 +367,39 @@ function LateArrivalsPage() {
                       </span>
                     )}
                   </td>
+                  <td className="p-3.5 text-right">
+                    {record.kind === "arrival" && record.punch ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
+                        className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
+                          record.isExcused
+                            ? "bg-secondary text-muted-foreground hover:bg-muted"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                        }`}
+                      >
+                        {record.isExcused ? "Un-excuse" : "Mark Not Late"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmpId(record.employee.id);
+                          setManualDate(record.dateKey);
+                          setShowManualModal(true);
+                        }}
+                        className="rounded-lg border bg-primary/5 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/10"
+                      >
+                        Fix Punch
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-10 text-center text-muted-foreground">
+                <td colSpan={7} className="p-10 text-center text-muted-foreground">
                   No late records for this filter.
                 </td>
               </tr>
@@ -280,6 +407,108 @@ function LateArrivalsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* ----- Fix Missed Clock-In Modal ----- */}
+      {showManualModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl border bg-card p-6 shadow-2xl space-y-5">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold">
+                  <UserCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">Fix Missed Clock-In</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Retroactively add or adjust clock-in time for an employee when a mistake happens.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualModal(false)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">
+                  Employee <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={selectedEmpId}
+                  onChange={(e) => setSelectedEmpId(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                >
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-foreground mb-1">
+                    Shift Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-foreground mb-1">
+                    Actual Clock-In Time <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={manualTime}
+                    onChange={(e) => setManualTime(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">Reason / Notes</label>
+                <textarea
+                  rows={2}
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="e.g. Forgot to login at start of shift..."
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setShowManualModal(false)}
+                className="rounded-lg border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submittingManual}
+                onClick={saveManualClockIn}
+                className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
+              >
+                {submittingManual ? "Saving..." : "Save Manual Clock-In"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
