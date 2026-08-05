@@ -15,17 +15,12 @@ export const DEFAULT_REPORTING_SETTINGS: ReportingSettings = {
 
 export const DEFAULT_REPORT_QUESTIONS = {
   sod: [
-    { id: "sod_priorities", question: "What are your main priorities today?" },
-    { id: "sod_tasks", question: "What tasks will you work on today?" },
-    { id: "sod_blockers", question: "Are there any blockers or support needed?" },
-    { id: "sod_team_note", question: "Is there anything important the team should know?" },
+    { id: "sod_priorities", question: "What are your main priorities today? *" },
+    { id: "sod_team_note", question: "Is there anything important the team should know? *" },
   ],
   eod: [
-    { id: "eod_completed", question: "What did you complete today?" },
-    { id: "eod_pending", question: "What tasks are still pending?" },
-    { id: "eod_blockers", question: "Did you face any problems or blockers?" },
-    { id: "eod_tomorrow", question: "What will you continue working on tomorrow?" },
-    { id: "eod_team_note", question: "Is there anything important the team should know?" },
+    { id: "eod_completed", question: "What did you complete today? *" },
+    { id: "eod_team_note", question: "Is there anything important the team should know? *" },
   ],
 } as const;
 

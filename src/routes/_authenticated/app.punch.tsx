@@ -887,19 +887,15 @@ function PunchPage() {
                       <span>
                         <span className="text-primary mr-1">#{index + 1}</span> {question.question}
                       </span>
-                      <span className="text-[10px] text-muted-foreground font-normal">Optional</span>
+                      <span className="text-[10px] text-amber-600 font-semibold">Required</span>
                     </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       value={currentAnswers[question.id] || ""}
                       onChange={(e) =>
                         setAnswersFunc((prev) => ({ ...prev, [question.id]: e.target.value }))
                       }
-                      placeholder={
-                        showNotepadModal === "sod"
-                          ? "Type your priorities, tasks or notes for today..."
-                          : "Type what you completed or notes for tomorrow..."
-                      }
+                      placeholder="Type your answer here..."
                       className="w-full resize-y rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium text-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                     />
                   </div>
