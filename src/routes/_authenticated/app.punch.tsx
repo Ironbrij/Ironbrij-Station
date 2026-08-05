@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -35,9 +36,16 @@ import {
   getShiftTimezone,
   zonedDateKey,
 } from "@/lib/attendance";
+import {
+  DEFAULT_REPORT_QUESTIONS,
+  DEFAULT_REPORTING_SETTINGS,
+  isReportDeadlinePassed,
+  reportDateForEmployee,
+  reportDocumentId,
+} from "@/lib/daily-reports";
 import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
-import { PartyPopper, Lock, Megaphone, X } from "lucide-react";
+import { PartyPopper, Lock, Megaphone, X, Sun, Moon, FileText, Send, CheckCircle2, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
@@ -359,11 +367,78 @@ function PunchPage() {
     }
   }
 
+  const [showNotepadModal, setShowNotepadModal] = useState<"sod" | "eod" | null>(null);
+  const [sodAnswers, setSodAnswers] = useState<Record<string, string>>({});
+  const [eodAnswers, setEodAnswers] = useState<Record<string, string>>({});
+  const [savingNotepad, setSavingNotepad] = useState(false);
+
+  async function submitNotepadAndPunch(type: "sod" | "eod", skipReport = false) {
+    if (!employee || !user) return;
+    setSavingNotepad(true);
+    try {
+      if (!skipReport) {
+        const answersMap = type === "sod" ? sodAnswers : eodAnswers;
+        const questionsList = DEFAULT_REPORT_QUESTIONS[type];
+        const reportAnswers = questionsList.map((q) => ({
+          questionId: q.id,
+          question: q.question,
+          answer: answersMap[q.id]?.trim() || "",
+        }));
+
+        const reportDate = reportDateForEmployee(employee, new Date());
+        const reportId = reportDocumentId(user.uid, reportDate, type);
+        const reportRef = doc(db(), "dailyReports", reportId);
+
+        const deadlinePassed = isReportDeadlinePassed(
+          employee,
+          type,
+          reportDate,
+          DEFAULT_REPORTING_SETTINGS,
+          new Date(),
+        );
+
+        await setDoc(
+          reportRef,
+          {
+            userId: user.uid,
+            employeeId: employee.id,
+            userName: employee.name,
+            userEmail: employee.email,
+            reportType: type,
+            reportDate,
+            answers: reportAnswers,
+            submittedAt: serverTimestamp(),
+            status: "submitted",
+            timezone: getEmployeeTimezone(employee),
+            submittedLate: deadlinePassed,
+          },
+          { merge: true },
+        );
+      }
+
+      await doPunch(type === "sod" ? "in" : "out");
+
+      if (!skipReport) {
+        toast.success(
+          `Punched ${type === "sod" ? "In" : "Out"}! Your ${type.toUpperCase()} report has been saved to SOD & EOD tab. 📝`,
+        );
+      }
+      setShowNotepadModal(null);
+      if (type === "sod") setSodAnswers({});
+      else setEodAnswers({});
+    } catch (err) {
+      console.error("Notepad punch error:", err);
+      toast.error("Could not save report: " + (err as Error).message);
+    } finally {
+      setSavingNotepad(false);
+    }
+  }
+
   function handlePunchClick() {
     if (isPunchedIn) {
-      setShowPunchOutModal(true);
+      setShowNotepadModal("eod");
     } else {
-      doPunch("in");
+      setShowNotepadModal("sod");
     }
   }
 
@@ -743,42 +818,136 @@ function PunchPage() {
         </div>
       </div>
 
-      {/* ----- Punch Out Confirmation Modal ----- */}
-      {showPunchOutModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-5 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10 text-rose-600">
-              <Lock className="h-8 w-8" />
-            </div>
-
-            <div>
-              <h3 className="text-xl font-black text-primary">Confirm Punch Out</h3>
-              <p className="mt-2 text-sm text-muted-foreground font-medium leading-relaxed">
-                Are you sure you want to punch out for today?
-              </p>
-              <div className="mt-3 p-3 rounded-lg bg-secondary/50 border font-mono text-xs text-primary font-bold">
-                Total Worked Today: {formatDurationHMS(totalWorkedMs)} (
-                {(totalWorkedMs / 3600000).toFixed(2)} hrs)
+      {/* ----- SOD & EOD Notepad Modal on Punch In / Out ----- */}
+      {showNotepadModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border bg-card p-6 shadow-2xl space-y-5 my-8">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl font-bold shadow-xs ${
+                    showNotepadModal === "sod"
+                      ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                      : "bg-indigo-500/10 text-indigo-600 border border-indigo-500/20"
+                  }`}
+                >
+                  {showNotepadModal === "sod" ? (
+                    <Sun className="h-6 w-6 animate-pulse text-amber-500" />
+                  ) : (
+                    <Moon className="h-6 w-6 animate-pulse text-indigo-500" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-foreground flex items-center gap-2">
+                    {showNotepadModal === "sod"
+                      ? "☀️ Start of Day (SOD) Notepad"
+                      : "🌙 End of Day (EOD) Notepad"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {showNotepadModal === "sod"
+                      ? "Fill in your SOD report for today before punching in."
+                      : "Fill in your EOD summary for today before punching out."}
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowNotepadModal(null)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            {/* Info & Duration Badge */}
+            <div className="flex items-center justify-between text-xs font-semibold bg-muted/40 p-3 rounded-lg border">
+              <span className="flex items-center gap-1.5 text-primary">
+                <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                Report auto-syncs to <strong>SOD & EOD Tab</strong>
+              </span>
+              <span className="font-mono text-muted-foreground">
+                {showNotepadModal === "eod" && totalWorkedMs > 0 ? (
+                  <strong className="text-primary font-mono">{formatDurationHMS(totalWorkedMs)} worked</strong>
+                ) : (
+                  format(new Date(), "dd MMM yyyy")
+                )}
+              </span>
+            </div>
+
+            {/* Notepad Question Textareas */}
+            <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+              {DEFAULT_REPORT_QUESTIONS[showNotepadModal].map((question, index) => {
+                const currentAnswers = showNotepadModal === "sod" ? sodAnswers : eodAnswers;
+                const setAnswersFunc = showNotepadModal === "sod" ? setSodAnswers : setEodAnswers;
+
+                return (
+                  <div key={question.id} className="space-y-1.5 rounded-xl border bg-background p-4 shadow-xs">
+                    <label className="block text-xs font-bold text-foreground flex items-center justify-between">
+                      <span>
+                        <span className="text-primary mr-1">#{index + 1}</span> {question.question}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-normal">Optional</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={currentAnswers[question.id] || ""}
+                      onChange={(e) =>
+                        setAnswersFunc((prev) => ({ ...prev, [question.id]: e.target.value }))
+                      }
+                      placeholder={
+                        showNotepadModal === "sod"
+                          ? "Type your priorities, tasks or notes for today..."
+                          : "Type what you completed or notes for tomorrow..."
+                      }
+                      className="w-full resize-y rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium text-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-3 space-y-2 border-t">
               <button
                 type="button"
-                onClick={() => setShowPunchOutModal(false)}
-                className="btn-lift rounded-lg border py-2.5 text-xs font-bold hover:bg-secondary transition-colors"
+                disabled={busy || savingNotepad}
+                onClick={() => submitNotepadAndPunch(showNotepadModal, false)}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-md flex items-center justify-center gap-2 transition-all btn-lift ${
+                  showNotepadModal === "sod"
+                    ? "bg-amber-600 hover:bg-amber-700"
+                    : "bg-indigo-600 hover:bg-indigo-700"
+                }`}
               >
-                Cancel
+                {savingNotepad || busy ? (
+                  "Saving & Processing..."
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Save {showNotepadModal.toUpperCase()} & Punch{" "}
+                    {showNotepadModal === "sod" ? "In" : "Out"}
+                  </>
+                )}
               </button>
 
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => doPunch("out")}
-                className="btn-lift rounded-lg bg-rose-600 hover:bg-rose-700 text-white py-2.5 text-xs font-black shadow-md transition-colors"
-              >
-                {busy ? "Punching Out..." : "Yes, Punch Out"}
-              </button>
+              <div className="flex items-center justify-between gap-2 text-xs pt-1">
+                <button
+                  type="button"
+                  disabled={busy || savingNotepad}
+                  onClick={() => submitNotepadAndPunch(showNotepadModal, true)}
+                  className="text-muted-foreground hover:text-primary underline font-semibold text-[11px]"
+                >
+                  ⚡ Quick Punch {showNotepadModal === "sod" ? "In" : "Out"} (Skip Notepad)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowNotepadModal(null)}
+                  className="rounded-lg border px-3 py-1.5 font-semibold text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
