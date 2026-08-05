@@ -67,10 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const adminStatus = (adminSnap && adminSnap.exists()) || isEmailAdmin;
       setIsAdmin(adminStatus);
 
-      if (isEmailAdmin && (!adminSnap || !adminSnap.exists())) {
+      if (adminStatus && (!adminSnap || !adminSnap.exists())) {
         setDoc(
           doc(db(), "admins", u.uid),
-          { role: "owner", email: userEmail },
+          { role: "owner", email: userEmail, createdAt: new Date().toISOString() },
           { merge: true },
         ).catch(() => {});
       }
@@ -104,9 +104,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
           setDoc(doc(db(), "employees", u.uid), updatedEmp, { merge: true }).catch(() => {});
           setEmployee({ id: u.uid, ...(updatedEmp as Omit<Employee, "id">) });
+        } else if (adminStatus) {
+          // Auto-create employee record for admin if none exists
+          const adminEmpDoc: Employee = {
+            id: u.uid,
+            authUid: u.uid,
+            name: u.displayName || (userEmail ? userEmail.split("@")[0] : "Admin"),
+            email: userEmail,
+            reportingRequirement: "sod_eod",
+            status: "active",
+            inviteStatus: "accepted",
+            timezone: "Asia/Kathmandu",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as Employee;
+          setDoc(doc(db(), "employees", u.uid), adminEmpDoc, { merge: true }).catch(() => {});
+          setEmployee(adminEmpDoc);
         } else {
           setEmployee(null);
         }
+      } else if (adminStatus) {
+        const adminEmpDoc: Employee = {
+          id: u.uid,
+          authUid: u.uid,
+          name: u.displayName || "Admin",
+          email: userEmail,
+          reportingRequirement: "sod_eod",
+          status: "active",
+          inviteStatus: "accepted",
+          timezone: "Asia/Kathmandu",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as Employee;
+        setDoc(doc(db(), "employees", u.uid), adminEmpDoc, { merge: true }).catch(() => {});
+        setEmployee(adminEmpDoc);
       } else {
         setEmployee(null);
       }

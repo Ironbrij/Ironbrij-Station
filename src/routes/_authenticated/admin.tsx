@@ -27,13 +27,10 @@ function AdminLayout() {
     { to: "/admin/reports", label: "Reports" },
   ];
 
-  // If admin is also an employee, add employee-specific tabs
-  if (employee) {
-    adminNav.push(
-      { to: "/app/punch", label: "Punch In" },
-      { to: "/app/sod-eod", label: "My SOD & EOD" },
-    );
-  }
+  adminNav.push(
+    { to: "/app/punch", label: "Punch In" },
+    { to: "/app/sod-eod", label: "My SOD & EOD" },
+  );
 
   return (
     <AppShell
