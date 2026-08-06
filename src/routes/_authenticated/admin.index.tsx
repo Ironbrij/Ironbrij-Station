@@ -32,6 +32,7 @@ import {
   Filter,
   AlertTriangle,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -69,9 +70,41 @@ function AdminHome() {
   const [expandedDeptMap, setExpandedDeptMap] = useState<Record<string, boolean>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(15);
+  const [viewingReport, setViewingReport] = useState<{
+    report?: DailyReport;
+    employee: Employee;
+    reportType: "sod" | "eod";
+    isMissed: boolean;
+    dateKey: string;
+  } | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   const { company } = useAuth();
+
+  const handleBadgeClick = (emp: Employee, type: "sod" | "eod", e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const tz = getEmployeeTimezone(emp);
+    const todayKey = zonedDateKey(now, tz);
+    const reportId = reportDocumentId(emp.authUid || emp.id, todayKey, type);
+    const foundReport = dailyReports.find(
+      (r) =>
+        r.id === reportId ||
+        (r.userId === (emp.authUid || emp.id) &&
+          r.reportDate === todayKey &&
+          r.reportType === type),
+    );
+
+    const isMissed = isReportDeadlinePassed(emp, type, todayKey, reportingSettings, now);
+
+    setViewingReport({
+      report: foundReport,
+      employee: emp,
+      reportType: type,
+      isMissed: !foundReport && isMissed,
+      dateKey: todayKey,
+    });
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -434,36 +467,44 @@ function AdminHome() {
 
                                 <div className="flex items-center gap-1 shrink-0">
                                   {sodStatus === "submitted" && (
-                                    <span
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 text-white font-extrabold text-[9px] shadow-xs"
-                                      title="SOD Submitted Today"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleBadgeClick(m, "sod", e)}
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      title="Click to view SOD report answers"
                                     >
                                       S
-                                    </span>
+                                    </button>
                                   )}
                                   {sodStatus === "missed" && (
-                                    <span
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 text-white font-extrabold text-[9px] shadow-xs"
-                                      title="SOD Missed Today"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleBadgeClick(m, "sod", e)}
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      title="Click to view missed SOD report info"
                                     >
                                       S
-                                    </span>
+                                    </button>
                                   )}
                                   {eodStatus === "submitted" && (
-                                    <span
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 text-white font-extrabold text-[9px] shadow-xs"
-                                      title="EOD Submitted Today"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleBadgeClick(m, "eod", e)}
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      title="Click to view EOD report answers"
                                     >
                                       E
-                                    </span>
+                                    </button>
                                   )}
                                   {eodStatus === "missed" && (
-                                    <span
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 text-white font-extrabold text-[9px] shadow-xs"
-                                      title="EOD Missed Today"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleBadgeClick(m, "eod", e)}
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      title="Click to view missed EOD report info"
                                     >
                                       E
-                                    </span>
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -645,6 +686,104 @@ function AdminHome() {
           </div>
         )}
       </section>
+
+      {viewingReport && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-5 shadow-2xl sm:p-6 space-y-4">
+            <div className="flex items-start justify-between border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-foreground uppercase">
+                  {viewingReport.reportType} Report — {viewingReport.employee.name}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {viewingReport.employee.email} · Date: {viewingReport.dateKey}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingReport(null)}
+                className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {viewingReport.report ? (
+              <>
+                <dl className="grid gap-3 rounded-lg border p-4 text-xs sm:grid-cols-2 bg-secondary/20">
+                  <div>
+                    <dt className="text-xs text-muted-foreground font-medium">Submitted At</dt>
+                    <dd className="font-bold text-foreground">
+                      {viewingReport.report.submittedAt?.toDate
+                        ? viewingReport.report.submittedAt.toDate().toLocaleString([], {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })
+                        : "N/A"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground font-medium">Timing Status</dt>
+                    <dd className="font-bold">
+                      {viewingReport.report.submittedLate ? (
+                        <span className="text-rose-600 font-extrabold">Submitted Late</span>
+                      ) : (
+                        <span className="text-emerald-600 font-extrabold">On Time</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground font-medium">Timezone</dt>
+                    <dd className="font-bold text-foreground">{viewingReport.report.timezone}</dd>
+                  </div>
+                </dl>
+
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-xs uppercase font-extrabold text-muted-foreground tracking-wider">
+                    Submitted Answers
+                  </h4>
+                  {viewingReport.report.answers?.map((answer, index) => (
+                    <div
+                      key={`${answer.questionId}-${index}`}
+                      className="rounded-lg border p-3.5 bg-background"
+                    >
+                      <div className="text-xs font-bold text-foreground">{answer.question}</div>
+                      <div className="mt-1.5 whitespace-pre-wrap text-xs text-muted-foreground font-medium">
+                        {answer.answer || "No answer provided"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-6 text-center space-y-2">
+                <div className="text-rose-600 font-extrabold text-base">
+                  ⚠️ Report Missed (Not Submitted)
+                </div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {viewingReport.employee.name} did not submit their{" "}
+                  {viewingReport.reportType.toUpperCase()} report for {viewingReport.dateKey} before
+                  the deadline passed.
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setViewingReport(null)}
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
