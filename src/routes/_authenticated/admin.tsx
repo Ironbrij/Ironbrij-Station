@@ -28,7 +28,7 @@ function AdminLayout() {
   ];
 
   adminNav.push(
-    { to: "/app/punch", label: "Punch In" },
+    { to: "/app/punch", label: "Start/Stop Work" },
     { to: "/app/sod-eod", label: "My SOD & EOD" },
   );
 

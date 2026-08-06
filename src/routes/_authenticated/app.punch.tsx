@@ -759,7 +759,7 @@ function PunchPage() {
                 </div>
               ) : isPunchedIn && lastIn ? (
                 <div className="rounded-xl bg-lime-400 text-slate-900 font-bold p-5 border border-lime-500 shadow-sm space-y-1">
-                  <div className="text-2xl font-black">In at {format(lastIn, "h:mm a")}</div>
+                  <div className="text-2xl font-black">Working since {format(lastIn, "h:mm a")}</div>
                   <div className="text-base font-bold">On {format(lastIn, "dd/MM/yyyy")}</div>
                   <div className="text-sm font-black text-slate-800 mt-1 uppercase tracking-wide">
                     {deptName}
@@ -767,8 +767,8 @@ function PunchPage() {
                 </div>
               ) : (
                 <div className="rounded-xl bg-slate-200 text-slate-800 font-bold p-5 border border-slate-300 shadow-sm space-y-1">
-                  <div className="text-2xl font-black">Punched Out</div>
-                  <div className="text-base font-bold text-slate-600">Ready for shift</div>
+                  <div className="text-2xl font-black">Not Working</div>
+                  <div className="text-base font-bold text-slate-600">Ready to start shift</div>
                   <div className="text-sm font-black text-slate-700 mt-1 uppercase tracking-wide">
                     {deptName}
                   </div>
@@ -780,7 +780,7 @@ function PunchPage() {
             <div className="space-y-3">
               <div className="text-xs font-bold text-muted-foreground flex items-center justify-center gap-2 uppercase tracking-wider">
                 <span className="h-px bg-border flex-1" />
-                <span>{isPunchedIn ? "Punch Out" : "Punch In"}</span>
+                <span>{isPunchedIn ? "Stop Work" : "Start Work"}</span>
                 <span className="h-px bg-border flex-1" />
               </div>
 
@@ -798,10 +798,10 @@ function PunchPage() {
                 {isHoliday
                   ? "Company Holiday (Shift Off)"
                   : onLeaveToday
-                    ? `Punching Disabled (${getLeaveLabel(activeLeave)})`
+                    ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
                     : isPunchedIn
-                      ? "Punch Out"
-                      : "Punch In"}
+                      ? "Stop Work"
+                      : "Start Work"}
               </button>
 
               {/* Ticker Below Button */}
@@ -846,8 +846,8 @@ function PunchPage() {
                   </h3>
                   <p className="text-xs text-muted-foreground font-medium">
                     {showNotepadModal === "sod"
-                      ? "Fill in your SOD report for today before punching in."
-                      : "Fill in your EOD summary for today before punching out."}
+                      ? "Fill in your SOD report for today after starting work."
+                      : "Fill in your EOD summary for today after stopping work."}
                   </p>
                 </div>
               </div>

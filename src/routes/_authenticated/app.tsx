@@ -12,7 +12,7 @@ function EmployeeLayout() {
   useShiftAutoPunchOut(employee);
 
   const nav = [
-    { to: "/app/punch", label: "Punch" },
+    { to: "/app/punch", label: "Start/Stop Work" },
     { to: "/app/extra", label: "Extra Time" },
     { to: "/app/leave", label: "Leave" },
     { to: "/app/sod-eod", label: "SOD & EOD" },
