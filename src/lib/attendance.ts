@@ -7,7 +7,7 @@ export const ATTENDANCE_TIMEZONES = [
 ] as const;
 
 export const DEFAULT_SHIFT_TIMEZONE = "Australia/Sydney";
-export const DEFAULT_LOCAL_TIMEZONE = "Asia/Kathmandu";
+export const DEFAULT_LOCAL_TIMEZONE = "Asia/Manila";
 export const MINIMUM_LATE_GRACE_MINUTES = 5;
 
 export function getEffectiveLateGraceMinutes(configuredMinutes?: number): number {

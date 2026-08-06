@@ -83,7 +83,7 @@ function EmployeeSodEodPage() {
       reportingRequirement: "sod_eod",
       status: "active",
       inviteStatus: "accepted",
-      timezone: "Asia/Kathmandu",
+      timezone: "Asia/Manila",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     } as Employee;

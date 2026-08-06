@@ -283,10 +283,10 @@ function EmployeesListPage() {
                   <td className="p-3 text-xs">
                     <span
                       className="inline-flex items-center gap-1 font-semibold"
-                      title={COUNTRY_TIMEZONES[e.country ?? "NP"]?.name || "Nepal"}
+                      title={COUNTRY_TIMEZONES[e.country ?? "PH"]?.name || "Philippines"}
                     >
-                      <span>{COUNTRY_TIMEZONES[e.country ?? "NP"]?.flag || "🇳🇵"}</span>
-                      <span>{COUNTRY_TIMEZONES[e.country ?? "NP"]?.name || "Nepal"}</span>
+                      <span>{COUNTRY_TIMEZONES[e.country ?? "PH"]?.flag || "🇵🇭"}</span>
+                      <span>{COUNTRY_TIMEZONES[e.country ?? "PH"]?.name || "Philippines"}</span>
                       <span className="text-muted-foreground">· {normalizeState(e.state)}</span>
                     </span>
                   </td>
@@ -586,7 +586,7 @@ function NewEmployeeForm({
   const [email, setEmail] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
-  const [country, setCountry] = useState<CountryCode>("NP");
+  const [country, setCountry] = useState<CountryCode>("PH");
   const [state, setState] = useState(
     normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
   );

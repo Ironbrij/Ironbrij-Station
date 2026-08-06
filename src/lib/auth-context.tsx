@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             reportingRequirement: "sod_eod",
             status: "active",
             inviteStatus: "accepted",
-            timezone: "Asia/Kathmandu",
+            timezone: "Asia/Manila",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           } as Employee;
@@ -132,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           reportingRequirement: "sod_eod",
           status: "active",
           inviteStatus: "accepted",
-          timezone: "Asia/Kathmandu",
+          timezone: "Asia/Manila",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         } as Employee;

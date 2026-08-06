@@ -57,7 +57,7 @@ function LateArrivalsPage() {
   // Manual Clock-In Modal States
   const [showManualModal, setShowManualModal] = useState(false);
   const [selectedEmpId, setSelectedEmpId] = useState("");
-  const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Kathmandu"));
+  const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Manila"));
   const [manualTime, setManualTime] = useState("09:00");
   const [manualNotes, setManualNotes] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
