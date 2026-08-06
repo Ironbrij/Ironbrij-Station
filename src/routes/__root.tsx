@@ -58,9 +58,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Time Station" },
-      { name: "description", content: "Employee attendance and punch-in/out system." },
-      { property: "og:title", content: "Time Station" },
+      { title: "SavyTime" },
+      { name: "description", content: "Employee attendance and shift tracking system." },
+      { property: "og:title", content: "SavyTime" },
       { property: "og:description", content: "Employee attendance and punch-in/out system." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

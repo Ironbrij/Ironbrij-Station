@@ -26,7 +26,7 @@ function EmployeeLayout() {
 
   return (
     <AppShell
-      title="Time Station"
+      title="SavyTime"
       nav={nav}
     >
       <Outlet />

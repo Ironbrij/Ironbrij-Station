@@ -116,7 +116,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
         const decisionText = approved
           ? `Your ${requestType} request for ${dateRange} has been approved.`
           : `Your ${requestType} request for ${dateRange} has been rejected.`;
-        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open Time Station to view the updated status.`;
+        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTime to view the updated status.`;
         const statusColor = approved ? "#047857" : "#be123c";
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
@@ -140,7 +140,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
               to: body.employeeEmail,
               subject,
               text,
-              html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h2 style="color:${statusColor}">Leave request ${escapeHtml(body.status)}</h2><p>Hi ${escapeHtml(body.employeeName)},</p><p>${escapeHtml(decisionText)}</p><p><strong>Your submitted reason:</strong> ${escapeHtml(body.reason)}</p><p>Please open Time Station to view the updated status.</p></div>`,
+              html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h2 style="color:${statusColor}">Leave request ${escapeHtml(body.status)}</h2><p>Hi ${escapeHtml(body.employeeName)},</p><p>${escapeHtml(decisionText)}</p><p><strong>Your submitted reason:</strong> ${escapeHtml(body.reason)}</p><p>Please open SavyTime to view the updated status.</p></div>`,
             },
           }),
         });

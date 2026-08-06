@@ -96,7 +96,7 @@ export const Route = createFileRoute("/api/invite-notification")({
           );
         }
 
-        const companyName = body.companyName?.trim() || "Time Station";
+        const companyName = body.companyName?.trim() || "SavyTime";
         const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
         const inviteUrl = `${appUrl}/invite/${body.inviteToken}`;
         const subject = `You're invited to ${companyName}`;
@@ -104,8 +104,8 @@ export const Route = createFileRoute("/api/invite-notification")({
           body.shiftStartTime && body.shiftEndTime
             ? `${body.shiftStartTime}–${body.shiftEndTime}${body.shiftTimezone ? ` (${body.shiftTimezone})` : ""}`
             : "Your manager will confirm your shift";
-        const text = `Hi ${body.employeeName},\n\nYou have been invited to join ${companyName} on Time Station.\n\nActivate your account: ${inviteUrl}\n\nRole: ${body.jobTitle || "Employee"}\nDepartment: ${body.departmentName || "Not assigned"}\nShift: ${shift}`;
-        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px"><h2 style="margin:0 0 16px">Welcome to ${escapeHtml(companyName)}</h2><p>Hi ${escapeHtml(body.employeeName)},</p><p>Your employee profile is ready. Use the button below to activate your Time Station account.</p><p style="margin:28px 0"><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#0b2545;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">Activate account</a></p><p><strong>Role:</strong> ${escapeHtml(body.jobTitle || "Employee")}<br><strong>Department:</strong> ${escapeHtml(body.departmentName || "Not assigned")}<br><strong>Shift:</strong> ${escapeHtml(shift)}</p><p style="color:#64748b;font-size:12px">If the button does not work, copy this link:<br>${escapeHtml(inviteUrl)}</p></div>`;
+        const text = `Hi ${body.employeeName},\n\nYou have been invited to join ${companyName} on SavyTime.\n\nActivate your account: ${inviteUrl}\n\nRole: ${body.jobTitle || "Employee"}\nDepartment: ${body.departmentName || "Not assigned"}\nShift: ${shift}`;
+        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px"><h2 style="margin:0 0 16px">Welcome to ${escapeHtml(companyName)}</h2><p>Hi ${escapeHtml(body.employeeName)},</p><p>Your employee profile is ready. Use the button below to activate your SavyTime account.</p><p style="margin:28px 0"><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#0b2545;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">Activate account</a></p><p><strong>Role:</strong> ${escapeHtml(body.jobTitle || "Employee")}<br><strong>Department:</strong> ${escapeHtml(body.departmentName || "Not assigned")}<br><strong>Shift:</strong> ${escapeHtml(shift)}</p><p style="color:#64748b;font-size:12px">If the button does not work, copy this link:<br>${escapeHtml(inviteUrl)}</p></div>`;
 
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
@@ -131,7 +131,7 @@ export const Route = createFileRoute("/api/invite-notification")({
               createdAt: new Date().toISOString(),
             },
             email: {
-              from: process.env.INVITE_FROM_EMAIL || "Time Station <onboarding@example.com>",
+              from: process.env.INVITE_FROM_EMAIL || "SavyTime <onboarding@example.com>",
               to: body.employeeEmail,
               subject,
               text,

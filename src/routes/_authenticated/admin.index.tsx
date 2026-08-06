@@ -32,12 +32,12 @@ import { format } from "date-fns";
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — Time Station Admin" },
+      { title: "Dashboard — SavyTime Admin" },
       {
         name: "description",
         content: "Live team status, department cards, and today's activity feed.",
       },
-      { property: "og:title", content: "Dashboard — Time Station Admin" },
+      { property: "og:title", content: "Dashboard — SavyTime Admin" },
       {
         property: "og:description",
         content: "Live team status, department cards, and today's activity feed.",

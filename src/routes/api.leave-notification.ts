@@ -98,7 +98,7 @@ export const Route = createFileRoute("/api/leave-notification")({
               ? `${body.halfDayPeriod === "second_half" ? "second" : "first"}-half leave`
               : "full-day leave";
         const subject = `New ${requestType} request from ${body.employeeName}`;
-        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange}.\n\nReason: ${body.reason}\n\nOpen Time Station to approve or reject this request.`;
+        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange}.\n\nReason: ${body.reason}\n\nOpen SavyTime to approve or reject this request.`;
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -121,7 +121,7 @@ export const Route = createFileRoute("/api/leave-notification")({
               to: managerEmail,
               subject,
               text,
-              html: `<div style="font-family:Arial,sans-serif;max-width:600px"><h2>New leave request</h2><p><strong>${escapeHtml(body.employeeName)}</strong> (${escapeHtml(body.employeeEmail)}) is asking for <strong>${escapeHtml(requestType)}</strong> on <strong>${escapeHtml(dateRange)}</strong>.</p><p><strong>Reason:</strong> ${escapeHtml(body.reason)}</p><p>Open Time Station to approve or reject this request.</p></div>`,
+              html: `<div style="font-family:Arial,sans-serif;max-width:600px"><h2>New leave request</h2><p><strong>${escapeHtml(body.employeeName)}</strong> (${escapeHtml(body.employeeEmail)}) is asking for <strong>${escapeHtml(requestType)}</strong> on <strong>${escapeHtml(dateRange)}</strong>.</p><p><strong>Reason:</strong> ${escapeHtml(body.reason)}</p><p>Open SavyTime to approve or reject this request.</p></div>`,
             },
           }),
         });

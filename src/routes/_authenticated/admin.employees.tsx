@@ -73,9 +73,9 @@ function formatShiftRange(start?: string, end?: string): string {
 export const Route = createFileRoute("/_authenticated/admin/employees")({
   head: () => ({
     meta: [
-      { title: "Employees — Time Station Admin" },
+      { title: "Employees — SavyTime Admin" },
       { name: "description", content: "Manage your team." },
-      { property: "og:title", content: "Employees — Time Station Admin" },
+      { property: "og:title", content: "Employees — SavyTime Admin" },
       { property: "og:description", content: "Manage your team." },
     ],
   }),
@@ -654,7 +654,7 @@ function NewEmployeeForm({
               employeeName: cleanName,
               employeeEmail: cleanEmail,
               inviteToken: token,
-              companyName: company?.name || "Time Station",
+              companyName: company?.name || "SavyTime",
               departmentName:
                 departments.find((department) => department.id === deptId)?.name || "",
               jobTitle: jobTitle.trim(),
