@@ -351,10 +351,32 @@ function CompanyPage() {
     update(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
   }
 
+  const visibleHolidayDepartments = useMemo(() => {
+    if (!useCompanyScope || selectedCompanyIds.length === 0) return departments;
+    return departments.filter((d) => {
+      return (
+        (d.companyId && selectedCompanyIds.includes(d.companyId)) ||
+        (!d.companyId && selectedCompanyIds.includes(COMPANY_ID))
+      );
+    });
+  }, [departments, useCompanyScope, selectedCompanyIds]);
+
   const visibleEmployees = useMemo(
     () =>
       employees
         .filter((employee) => employee.status === "active")
+        .filter((employee) => {
+          if (!useCompanyScope || selectedCompanyIds.length === 0) return true;
+          const empCompIds = [
+            employee.companyId,
+            ...(employee.companyIds || []),
+          ].filter(Boolean) as string[];
+          return selectedCompanyIds.some(
+            (cId) =>
+              empCompIds.includes(cId) ||
+              (!employee.companyId && cId === COMPANY_ID),
+          );
+        })
         .filter(
           (employee) => countryFilter === "all" || (employee.country || "NP") === countryFilter,
         )
@@ -362,7 +384,7 @@ function CompanyPage() {
           (employee) => stateFilter === "all" || normalizeState(employee.state) === stateFilter,
         )
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [employees, countryFilter, stateFilter],
+    [employees, useCompanyScope, selectedCompanyIds, countryFilter, stateFilter],
   );
 
   const availableStates = useMemo(
@@ -627,10 +649,10 @@ function CompanyPage() {
               <Building2 className="h-3.5 w-3.5" /> Select departments
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {departments.map((department) => (
+              {visibleHolidayDepartments.map((department) => (
                 <label
                   key={department.id}
-                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
+                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm cursor-pointer select-none"
                 >
                   <input
                     type="checkbox"
@@ -643,10 +665,15 @@ function CompanyPage() {
                       )
                     }
                   />
-                  {department.name}
+                  <span>{department.name}</span>
                 </label>
               ))}
             </div>
+            {visibleHolidayDepartments.length === 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                No departments belong to the selected company. You can assign this holiday to &quot;Everyone in Company&quot; or assign departments to this company in the Departments tab.
+              </p>
+            )}
           </div>
         )}
 
