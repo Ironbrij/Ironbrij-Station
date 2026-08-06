@@ -41,6 +41,7 @@ import { useAuth } from "@/lib/auth-context";
 import { normalizeState } from "@/lib/states";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
+import { formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
   head: () => ({ meta: [{ title: "Employee Profile — Time Station Admin" }] }),
@@ -82,6 +83,7 @@ function EmployeeDetail() {
   const [historyScope, setHistoryScope] = useState<HistoryScope>("all");
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [now, setNow] = useState(() => new Date());
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const { company } = useAuth();
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
 
@@ -443,25 +445,34 @@ function EmployeeDetail() {
             className="h-24 w-24 text-2xl ring-4 ring-border"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-3xl font-black tracking-tight text-primary">
-                {employee.name}
-              </h1>
-              <span
-                className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                  employee.status === "inactive"
-                    ? "bg-rose-500/10 text-rose-700"
-                    : "bg-emerald-500/10 text-emerald-700"
-                }`}
-              >
-                {employee.status === "inactive" ? "Suspended" : liveLabel}
-              </span>
-              {!onHolidayToday && !approvedLeaveToday && !activeLeave && liveStatus?.isLate && (
-                <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
-                  {liveStatus.isMissingLate ? "Not punched in · " : ""}
-                  {liveStatus.minutesLate} min late
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <h1 className="truncate text-3xl font-black tracking-tight text-primary">
+                  {employee.name}
+                </h1>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                    employee.status === "inactive"
+                      ? "bg-rose-500/10 text-rose-700"
+                      : "bg-emerald-500/10 text-emerald-700"
+                  }`}
+                >
+                  {employee.status === "inactive" ? "Suspended" : liveLabel}
                 </span>
-              )}
+                {!onHolidayToday && !approvedLeaveToday && !activeLeave && liveStatus?.isLate && (
+                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
+                    {liveStatus.isMissingLate ? "Not punched in · " : ""}
+                    {liveStatus.minutesLate} min late
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingEmployee(employee)}
+                className="btn-lift rounded-lg border bg-background px-3.5 py-1.5 text-xs font-bold text-primary hover:bg-muted shadow-xs transition-colors shrink-0"
+              >
+                Edit Profile & Shift
+              </button>
             </div>
             <p className="mt-1 text-sm font-semibold text-foreground/80">
               {employee.jobTitle || "Team member"} · {department}
@@ -498,6 +509,11 @@ function EmployeeDetail() {
             icon={<Clock3 className="h-4 w-4" />}
             label="Shift"
             value={`${formatClock(employee.shiftStartTime)} – ${formatClock(employee.shiftEndTime)}`}
+          />
+          <DetailRow
+            icon={<CalendarDays className="h-4 w-4" />}
+            label="Working days"
+            value={formatWorkingDaysSummary(employee.workingDays)}
           />
           <DetailRow label="Local timezone" value={timezone} />
           <DetailRow label="Shift timezone" value={shiftTimezone} />
@@ -791,6 +807,13 @@ function EmployeeDetail() {
           )}
         </div>
       </section>
+      {editingEmployee && (
+        <PromoteModal
+          emp={editingEmployee}
+          depts={departments}
+          onClose={() => setEditingEmployee(null)}
+        />
+      )}
     </div>
   );
 }

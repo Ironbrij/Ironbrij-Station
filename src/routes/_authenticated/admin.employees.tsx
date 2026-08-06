@@ -56,6 +56,95 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+export const DAY_OPTIONS = [
+  { value: 0, label: "Sun", short: "Sun" },
+  { value: 1, label: "Mon", short: "Mon" },
+  { value: 2, label: "Tue", short: "Tue" },
+  { value: 3, label: "Wed", short: "Wed" },
+  { value: 4, label: "Thu", short: "Thu" },
+  { value: 5, label: "Fri", short: "Fri" },
+  { value: 6, label: "Sat", short: "Sat" },
+];
+
+export function formatWorkingDaysSummary(days?: number[]): string {
+  const resolved = Array.isArray(days) && days.length > 0 ? days : [0, 1, 2, 3, 4, 5];
+  if (resolved.length === 7) return "7 Days (Sun–Sat)";
+  if (resolved.length === 6 && resolved.join(",") === "0,1,2,3,4,5") return "6 Days (Sun–Fri)";
+  if (resolved.length === 5 && resolved.join(",") === "1,2,3,4,5") return "5 Days (Mon–Fri)";
+  const labels = resolved.map((d) => DAY_OPTIONS.find((o) => o.value === d)?.short || d);
+  return `${resolved.length} Days (${labels.join(", ")})`;
+}
+
+export function WorkingDaysPicker({
+  value,
+  onChange,
+}: {
+  value: number[];
+  onChange: (days: number[]) => void;
+}) {
+  const toggleDay = (day: number) => {
+    if (value.includes(day)) {
+      if (value.length === 1) return;
+      onChange(value.filter((d) => d !== day).sort((a, b) => a - b));
+    } else {
+      onChange([...value, day].sort((a, b) => a - b));
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium">Working days ({value.length} days/week)</label>
+        <div className="flex gap-1.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => onChange([0, 1, 2, 3, 4, 5, 6])}
+            className="text-primary hover:underline font-bold"
+          >
+            All 7d
+          </button>
+          <span className="text-muted-foreground">·</span>
+          <button
+            type="button"
+            onClick={() => onChange([0, 1, 2, 3, 4, 5])}
+            className="text-primary hover:underline font-bold"
+          >
+            Sun–Fri (6d)
+          </button>
+          <span className="text-muted-foreground">·</span>
+          <button
+            type="button"
+            onClick={() => onChange([1, 2, 3, 4, 5])}
+            className="text-primary hover:underline font-bold"
+          >
+            Mon–Fri (5d)
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1.5">
+        {DAY_OPTIONS.map((day) => {
+          const selected = value.includes(day.value);
+          return (
+            <button
+              key={day.value}
+              type="button"
+              onClick={() => toggleDay(day.value)}
+              className={`py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                selected
+                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                  : "bg-background text-muted-foreground border-border hover:bg-muted"
+              }`}
+            >
+              {day.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function formatShiftRange(start?: string, end?: string): string {
   const s = start || "09:00";
   const e = end || "17:00";
@@ -312,10 +401,11 @@ function EmployeesListPage() {
                     <Link
                       to="/admin/employees/$id"
                       params={{ id: e.id }}
-                      className="text-primary hover:underline"
+                      className="text-primary hover:underline font-bold block"
                     >
                       {e.name}
                     </Link>
+                    <div className="text-xs text-muted-foreground font-normal">{e.email}</div>
                   </td>
                   <td className="p-3">{e.jobTitle}</td>
                   <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
@@ -329,8 +419,13 @@ function EmployeesListPage() {
                       <span className="text-muted-foreground">· {normalizeState(e.state)}</span>
                     </span>
                   </td>
-                  <td className="p-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                    ⏰ {formatShiftRange(e.shiftStartTime, e.shiftEndTime)}
+                  <td className="p-3 text-xs whitespace-nowrap">
+                    <div className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                      ⏰ {formatShiftRange(e.shiftStartTime, e.shiftEndTime)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
+                      📅 {formatWorkingDaysSummary(e.workingDays)}
+                    </div>
                   </td>
                   <td className="p-3">
                     {e.inviteStatus === "pending" ? (
@@ -458,7 +553,7 @@ function ShiftPreview({
   );
 }
 
-function PromoteModal({
+export function PromoteModal({
   emp,
   depts,
   onClose,
@@ -468,6 +563,7 @@ function PromoteModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState(emp.name ?? "");
+  const [email, setEmail] = useState(emp.email ?? "");
   const [jobTitle, setJobTitle] = useState(emp.jobTitle ?? "");
   const [deptId, setDeptId] = useState(emp.deptId ?? "");
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
@@ -477,14 +573,21 @@ function PromoteModal({
   const [shiftTimezone, setShiftTimezone] = useState(emp.shiftTimezone || DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState(emp.shiftStartTime ?? "09:00");
   const [shiftEndTime, setShiftEndTime] = useState(emp.shiftEndTime ?? "17:00");
+  const [workingDays, setWorkingDays] = useState<number[]>(emp.workingDays ?? [0, 1, 2, 3, 4, 5]);
   const [busy, setBusy] = useState(false);
+  const { user, company } = useAuth();
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanName = name.trim() || emp.name;
+    const emailChanged = cleanEmail && cleanEmail !== (emp.email || "").toLowerCase().trim();
+
     try {
       await updateDoc(doc(db(), "employees", emp.id), {
-        name: name.trim() || emp.name,
+        name: cleanName,
+        email: cleanEmail || emp.email,
         jobTitle: jobTitle.trim() || emp.jobTitle,
         deptId,
         country,
@@ -493,8 +596,61 @@ function PromoteModal({
         shiftTimezone,
         shiftStartTime: shiftStartTime || "09:00",
         shiftEndTime: shiftEndTime || "17:00",
+        workingDays,
       });
-      toast.success(`Updated ${emp.name}`);
+
+      if (emailChanged) {
+        if (emp.inviteStatus === "pending") {
+          const token = crypto.randomUUID().replace(/-/g, "");
+          await setDoc(doc(db(), "invites", token), {
+            employeeId: emp.id,
+            email: cleanEmail,
+            createdAt: new Date().toISOString(),
+            used: false,
+          });
+
+          let emailSent = false;
+          try {
+            const idToken = await user?.getIdToken();
+            if (idToken) {
+              const notificationResponse = await fetch("/api/invite-notification", {
+                method: "POST",
+                headers: {
+                  authorization: `Bearer ${idToken}`,
+                  "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                  employeeId: emp.id,
+                  employeeName: cleanName,
+                  employeeEmail: cleanEmail,
+                  inviteToken: token,
+                  companyName: company?.name || "SavyTime",
+                  departmentName: depts.find((d) => d.id === deptId)?.name || "",
+                  jobTitle: jobTitle.trim() || emp.jobTitle,
+                  country,
+                  state,
+                  shiftStartTime,
+                  shiftEndTime,
+                  shiftTimezone,
+                }),
+              });
+              emailSent = notificationResponse.ok;
+            }
+          } catch {
+            emailSent = false;
+          }
+
+          if (emailSent) {
+            toast.success(`Updated email to ${cleanEmail} & re-sent invitation email!`);
+          } else {
+            toast.warning(`Updated email to ${cleanEmail}, but email sending failed. Copy link from list.`);
+          }
+        } else {
+          toast.success(`Updated email to ${cleanEmail} (accepted employee profile updated)`);
+        }
+      } else {
+        toast.success(`Updated ${cleanName}`);
+      }
       onClose();
     } catch (err) {
       toast.error("Failed to save updates: " + (err as Error).message);
@@ -510,12 +666,13 @@ function PromoteModal({
         className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto space-y-4 text-left"
       >
         <div>
-          <h3 className="text-lg font-bold text-primary">Edit Employee</h3>
+          <h3 className="text-lg font-bold text-primary">Edit Employee Profile</h3>
           <p className="text-xs text-muted-foreground">
-            Set the employee location and the timezone in which their shift is defined.
+            Update employee details, email, location, and working shift schedule.
           </p>
         </div>
         <Field label="Full name" value={name} onChange={setName} />
+        <Field label="Email address" type="email" value={email} onChange={setEmail} />
         <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
         <div>
           <label className="text-sm font-medium">Department</label>
@@ -590,6 +747,9 @@ function PromoteModal({
           />
           <Field label="Shift end" type="time" value={shiftEndTime} onChange={setShiftEndTime} />
         </div>
+
+        <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
+
         <ShiftPreview
           shiftStartTime={shiftStartTime}
           shiftEndTime={shiftEndTime}
@@ -632,6 +792,7 @@ function NewEmployeeForm({
   const [shiftTimezone, setShiftTimezone] = useState(DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState("09:00");
   const [shiftEndTime, setShiftEndTime] = useState("17:00");
+  const [workingDays, setWorkingDays] = useState<number[]>([0, 1, 2, 3, 4, 5]);
   const [busy, setBusy] = useState(false);
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [createdEmpId, setCreatedEmpId] = useState<string | null>(null);
@@ -660,6 +821,7 @@ function NewEmployeeForm({
           shiftStartTime,
           shiftEndTime,
           shiftTimezone,
+          workingDays,
           country,
           state,
           timezone: COUNTRY_TIMEZONES[country].timezone,
@@ -861,6 +1023,9 @@ function NewEmployeeForm({
             />
             <Field label="Shift end" type="time" value={shiftEndTime} onChange={setShiftEndTime} />
           </div>
+
+          <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
+
           <ShiftPreview
             shiftStartTime={shiftStartTime}
             shiftEndTime={shiftEndTime}

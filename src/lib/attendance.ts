@@ -450,6 +450,19 @@ export function getFirstRegularPunchInForShift(
     .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis())[0];
 }
 
+export function getEffectiveEmployeeWorkingDays(
+  employee?: Pick<Employee, "workingDays">,
+  companyWorkingDays?: number[],
+): number[] {
+  if (Array.isArray(employee?.workingDays) && employee!.workingDays!.length > 0) {
+    return employee!.workingDays!;
+  }
+  if (Array.isArray(companyWorkingDays) && companyWorkingDays.length > 0) {
+    return companyWorkingDays;
+  }
+  return [0, 1, 2, 3, 4, 5]; // Default Sunday to Friday (6 days)
+}
+
 export function getLiveAttendanceStatus(
   employee: Employee,
   punches: Punch[],
@@ -467,8 +480,9 @@ export function getLiveAttendanceStatus(
   const shift = getEmployeeShiftWindow(employee, now);
   const [shiftYear, shiftMonth, shiftDay] = shift.dateKey.split("-").map(Number);
   const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+  const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, workingDays);
   const isScheduledDay =
-    (!workingDays || workingDays.includes(shiftWeekday)) && !holidays.includes(shift.dateKey);
+    effectiveWorkingDays.includes(shiftWeekday) && !holidays.includes(shift.dateKey);
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   const lateness =
     firstIn && isScheduledDay
