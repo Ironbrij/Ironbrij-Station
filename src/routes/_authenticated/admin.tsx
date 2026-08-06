@@ -27,10 +27,6 @@ function AdminLayout() {
     { to: "/admin/reports", label: "Reports" },
   ];
 
-  adminNav.push(
-    { to: "/app/punch", label: "Start/Stop Work" },
-    { to: "/app/sod-eod", label: "My SOD & EOD" },
-  );
 
   return (
     <AppShell
