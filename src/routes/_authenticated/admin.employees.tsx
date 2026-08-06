@@ -197,31 +197,34 @@ function EmployeesListPage() {
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    if (authLoading || !user) return;
+    const unsubCompanies = onSnapshot(collection(db(), "companies"), (s) =>
+      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
+    );
 
-    const un3 = onSnapshot(
-      query(collection(db(), "punches"), where("date", "==", todayStr)),
-      (snap) => {
-        setTodayPunches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Punch));
-      },
-      (err) => console.error("Punches sub err:", err),
+    const unsubDepts = onSnapshot(collection(db(), "departments"), (s) =>
+      setDepts(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
+    );
+
+    const unsubEmps = onSnapshot(collection(db(), "employees"), (s) =>
+      setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
+    );
+
+    const unsubPunches = onSnapshot(collection(db(), "punches"), (s) =>
+      setPunches(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
     );
 
     return () => {
-      un1();
-      un2();
-      un3();
+      unsubCompanies();
+      unsubDepts();
+      unsubEmps();
+      unsubPunches();
     };
-  }, [user, authLoading]);
+  }, []);
 
   function getPunchStatus(empId: string): "in" | "out" {
-    const userPunches = todayPunches.filter((p) => p.employeeId === empId);
+    const userPunches = punches.filter((p) => p.employeeId === empId && p.timestamp);
     if (userPunches.length === 0) return "out";
-    userPunches.sort((a, b) => {
-      const tA = a.timestamp?.toMillis() || 0;
-      const tB = b.timestamp?.toMillis() || 0;
-      return tA - tB;
-    });
+    userPunches.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
     return userPunches[userPunches.length - 1].type === "in" ? "in" : "out";
   }
 
