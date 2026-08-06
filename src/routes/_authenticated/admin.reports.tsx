@@ -53,6 +53,8 @@ function ReportsPage() {
   const initialBounds = monthBounds(currentMonth);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [month, setMonth] = useState(currentMonth);
@@ -64,6 +66,11 @@ function ReportsPage() {
 
   useEffect(() => {
     const unsubscribers = [
+      onSnapshot(collection(db(), "companies"), (snapshot) =>
+        setCompanies(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+        ),
+      ),
       onSnapshot(collection(db(), "employees"), (snapshot) =>
         setEmployees(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
@@ -97,6 +104,13 @@ function ReportsPage() {
   const filteredEmployees = useMemo(
     () =>
       employees.filter((employee) => {
+        if (companyFilter !== "all") {
+          const matchCompany =
+            employee.companyId === companyFilter ||
+            employee.companyIds?.includes(companyFilter) ||
+            (!employee.companyId && companyFilter === COMPANY_ID);
+          if (!matchCompany) return false;
+        }
         if (departmentId && employee.deptId !== departmentId) return false;
         if (employeeId && employee.id !== employeeId && employee.authUid !== employeeId)
           return false;
@@ -107,7 +121,7 @@ function ReportsPage() {
           return false;
         return true;
       }),
-    [employees, departmentId, employeeId, search],
+    [employees, companyFilter, departmentId, employeeId, search],
   );
 
   const rows = useMemo(() => {
@@ -281,7 +295,25 @@ function ReportsPage() {
       </div>
 
       <div className="rounded-xl border bg-card p-4 shadow-lift space-y-4">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          <label className="text-xs font-bold text-muted-foreground">
+            Company
+            <select
+              value={companyFilter}
+              onChange={(event) => {
+                setCompanyFilter(event.target.value);
+                setEmployeeId("");
+              }}
+              className="mt-1 block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
+            >
+              <option value="all">All companies ({companies.length})</option>
+              {companies.map((c) => (
+                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                  {c.name} {c.isMain ? "(Main)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="text-xs font-bold text-muted-foreground">
             Month
             <input

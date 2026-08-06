@@ -41,14 +41,18 @@ type LateRecord = {
   kind: "arrival" | "missing";
   isExcused?: boolean;
   punch?: Punch;
+  isEarly?: boolean;
+  minutesEarly?: number;
 };
 
 function LateArrivalsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [filterDept, setFilterDept] = useState("");
+  const [filterCompany, setFilterCompany] = useState("all");
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
   const [now, setNow] = useState(() => new Date());
   const { company, user } = useAuth();
@@ -65,6 +69,11 @@ function LateArrivalsPage() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
     const unsubscribers = [
+      onSnapshot(collection(db(), "companies"), (snapshot) =>
+        setCompanies(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+        ),
+      ),
       onSnapshot(collection(db(), "employees"), (snapshot) =>
         setEmployees(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
@@ -189,9 +198,16 @@ function LateArrivalsPage() {
     () =>
       records.filter((record) => {
         if (filterDept && record.employee.deptId !== filterDept) return false;
+        if (filterCompany !== "all") {
+          const matchCompany =
+            record.employee.companyId === filterCompany ||
+            record.employee.companyIds?.includes(filterCompany) ||
+            (!record.employee.companyId && filterCompany === COMPANY_ID);
+          if (!matchCompany) return false;
+        }
         return true;
       }),
-    [records, filterDept],
+    [records, filterDept, filterCompany],
   );
 
   const missingCount = filtered.filter((record) => record.kind === "missing").length;
@@ -239,32 +255,30 @@ function LateArrivalsPage() {
         date: dateKey,
         type: "in",
         timestamp: Timestamp.fromDate(punchDateObj),
-        source: "admin_manual",
-        isManual: true,
-        adjustedBy: user?.email || "admin",
-        notes: manualNotes.trim() || "Manual clock-in added by admin",
+        manualNote: manualNotes.trim() || "Manual clock-in by admin",
+        addedByAdmin: user?.email || "admin",
+        createdAt: new Date().toISOString(),
       });
 
-      toast.success(`Manual clock-in saved for ${targetEmp.name} at ${manualTime}! ⏰`);
+      toast.success(`Manual clock-in logged for ${targetEmp.name}!`);
       setShowManualModal(false);
       setManualNotes("");
     } catch (err) {
-      toast.error("Could not save manual clock-in: " + (err as Error).message);
+      toast.error("Failed to add manual clock-in: " + (err as Error).message);
     } finally {
       setSubmittingManual(false);
     }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-            <Clock3 className="h-6 w-6" /> Late Logs & Attendance Corrections
+            <Clock3 className="h-6 w-6" /> Late Logs & Punctuality Dashboard
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Review lateness, mark on-time excuses, or manually fix missed clock-ins. Grace period:{" "}
-            {graceMinutes} min.
+          <p className="text-sm text-muted-foreground font-medium mt-0.5">
+            Review missing punches, late arrivals, and excuse lateness across companies.
           </p>
         </div>
 
@@ -289,18 +303,34 @@ function LateArrivalsPage() {
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
           ● Today's Punctuality Dashboard
         </span>
-        <select
-          value={filterDept}
-          onChange={(event) => setFilterDept(event.target.value)}
-          className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold"
-        >
-          <option value="">All departments</option>
-          {departments.map((department) => (
-            <option key={department.id} value={department.id}>
-              {department.name}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={filterCompany}
+            onChange={(event) => setFilterCompany(event.target.value)}
+            className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold"
+          >
+            <option value="all">All companies ({companies.length})</option>
+            {companies.map((c) => (
+              <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                {c.name} {c.isMain ? "(Main)" : ""}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterDept}
+            onChange={(event) => setFilterDept(event.target.value)}
+            className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold"
+          >
+            <option value="">All departments</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card overflow-x-auto shadow-lift">

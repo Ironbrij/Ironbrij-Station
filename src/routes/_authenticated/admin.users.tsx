@@ -45,12 +45,18 @@ function UsersPage() {
   const [users, setUsers] = useState<RegisteredUser[] | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [adminUids, setAdminUids] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<RegisteredUser | null>(null);
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     if (authLoading || !user) return;
+
+    const un0 = onSnapshot(collection(db(), "companies"), (s) =>
+      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
+    );
 
     const un1 = onSnapshot(
       collection(db(), "users"),
@@ -85,6 +91,7 @@ function UsersPage() {
     );
 
     return () => {
+      un0();
       un1();
       un2();
       un3();
@@ -93,6 +100,17 @@ function UsersPage() {
   }, [user, authLoading]);
 
   const empByEmail = new Map(employees.map((e) => [(e.email || "").toLowerCase(), e]));
+
+  const filteredUsers = (users ?? []).filter((u) => {
+    if (companyFilter === "all") return true;
+    const emp = empByEmail.get((u.email || "").toLowerCase());
+    if (!emp) return companyFilter === COMPANY_ID;
+    return (
+      emp.companyId === companyFilter ||
+      emp.companyIds?.includes(companyFilter) ||
+      (!emp.companyId && companyFilter === COMPANY_ID)
+    );
+  });
 
   async function toggleAdmin(u: RegisteredUser) {
     const isAlreadyAdmin = adminUids.has(u.uid);
@@ -115,7 +133,7 @@ function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
             👥 Registered Users & Owners
@@ -123,6 +141,21 @@ function UsersPage() {
           <p className="text-sm text-muted-foreground">
             View signed-in users, manage Owner/Admin permissions, and assign employee profiles.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
+            className="rounded-lg border px-3 py-2 text-xs font-semibold bg-background text-foreground"
+          >
+            <option value="all">All Companies ({companies.length})</option>
+            {companies.map((c) => (
+              <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                {c.name} {c.isMain ? "(Main)" : ""}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -146,15 +179,14 @@ function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {users.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-muted-foreground font-medium">
-                    No registered users found yet. Users will appear automatically when they sign
-                    in.
+                    No registered users found for this filter.
                   </td>
                 </tr>
               ) : (
-                users.map((u) => {
+                filteredUsers.map((u) => {
                   const existingEmp = empByEmail.get((u.email || "").toLowerCase());
                   const isOwner =
                     adminUids.has(u.uid) ||

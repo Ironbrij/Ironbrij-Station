@@ -132,6 +132,19 @@ function UserNoticesPage() {
       .filter((notice) => isNoticePublished(notice, now))
       .filter((n) => {
         if (!n.targetType || n.targetType === "all") return true;
+        if (n.targetType === "companies" && employee) {
+          const empCompanyIds = [
+            employee.companyId,
+            ...(employee.companyIds || []),
+          ].filter(Boolean) as string[];
+          if (
+            n.targetCompanyIds?.some(
+              (cId) => empCompanyIds.includes(cId) || (cId === COMPANY_ID && empCompanyIds.length === 0),
+            )
+          ) {
+            return true;
+          }
+        }
         if (
           n.targetType === "dept" &&
           employee?.deptId &&

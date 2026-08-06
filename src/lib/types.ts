@@ -5,13 +5,14 @@ export const DEFAULT_LOGO =
 
 export type PunchType = "in" | "out" | "extra_in" | "extra_out";
 
-export type HolidayTargetType = "all" | "departments" | "states" | "employees";
+export type HolidayTargetType = "all" | "companies" | "departments" | "states" | "employees";
 
 export interface CompanyHoliday {
   id: string;
   date: string; // YYYY-MM-DD
   name?: string;
   targetType: HolidayTargetType;
+  companyIds?: string[];
   departmentIds?: string[];
   stateCodes?: string[];
   employeeIds?: string[];

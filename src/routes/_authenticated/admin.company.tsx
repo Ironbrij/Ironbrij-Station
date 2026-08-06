@@ -62,6 +62,7 @@ function CompanyPage() {
   const [newHoliday, setNewHoliday] = useState("");
   const [holidayName, setHolidayName] = useState("");
   const [holidayTargetType, setHolidayTargetType] = useState<HolidayTargetType>("all");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
   const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -177,6 +178,10 @@ function CompanyPage() {
       toast.error("That company-wide holiday already exists.");
       return;
     }
+    if (holidayTargetType === "companies" && selectedCompanyIds.length === 0) {
+      toast.error("Select at least one company.");
+      return;
+    }
     if (holidayTargetType === "departments" && selectedDepartmentIds.length === 0) {
       toast.error("Select at least one department.");
       return;
@@ -215,19 +220,21 @@ function CompanyPage() {
         date: newHoliday,
         name: holidayName.trim() || "Company Holiday",
         targetType: holidayTargetType,
-        ...(holidayTargetType === "departments"
-          ? { departmentIds: selectedDepartmentIds }
-          : holidayTargetType === "states"
-            ? { stateCodes: selectedStateCodes }
-            : {
-                employeeIds: [
-                  ...new Set(
-                    employees
-                      .filter((employee) => selectedEmployeeIds.includes(employee.id))
-                      .flatMap((employee) => [employee.id, employee.authUid].filter(Boolean)),
-                  ),
-                ] as string[],
-              }),
+        ...(holidayTargetType === "companies"
+          ? { companyIds: selectedCompanyIds }
+          : holidayTargetType === "departments"
+            ? { departmentIds: selectedDepartmentIds }
+            : holidayTargetType === "states"
+              ? { stateCodes: selectedStateCodes }
+              : {
+                  employeeIds: [
+                    ...new Set(
+                      employees
+                        .filter((employee) => selectedEmployeeIds.includes(employee.id))
+                        .flatMap((employee) => [employee.id, employee.authUid].filter(Boolean)),
+                    ),
+                  ] as string[],
+                }),
       };
       updated = {
         ...company,
@@ -499,10 +506,11 @@ function CompanyPage() {
           />
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
           {(
             [
               ["all", "Everyone"],
+              ["companies", "Companies"],
               ["departments", "Departments"],
               ["states", "States"],
               ["employees", "Specific people"],
@@ -522,6 +530,37 @@ function CompanyPage() {
             </button>
           ))}
         </div>
+
+        {holidayTargetType === "companies" && (
+          <div className="rounded-lg border bg-secondary/20 p-3 space-y-2">
+            <div className="text-xs font-bold flex items-center gap-1.5">
+              <Building2 className="h-3.5 w-3.5" /> Select companies
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {companies.map((c) => (
+                <label
+                  key={c.id || c.name}
+                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedCompanyIds.includes(c.id || COMPANY_ID)}
+                    onChange={() =>
+                      toggleSelection(
+                        c.id || COMPANY_ID,
+                        selectedCompanyIds,
+                        setSelectedCompanyIds,
+                      )
+                    }
+                  />
+                  <span>
+                    {c.name} {c.isMain ? "(Main)" : ""}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         {holidayTargetType === "departments" && (
           <div className="rounded-lg border bg-secondary/20 p-3 space-y-2">

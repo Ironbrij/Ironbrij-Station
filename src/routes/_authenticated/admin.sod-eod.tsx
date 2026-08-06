@@ -24,6 +24,7 @@ import {
 } from "@/lib/daily-reports";
 import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 import type {
+  Company,
   DailyReport,
   DailyReportType,
   Employee,
@@ -31,6 +32,7 @@ import type {
   ReportingRequirement,
   ReportingSettings,
 } from "@/lib/types";
+import { COMPANY_ID } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/admin/sod-eod")({
   head: () => ({
@@ -62,6 +64,8 @@ const REQUIREMENT_OPTIONS: Array<{ value: ReportingRequirement; label: string }>
 function AdminSodEodPage() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[] | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [questions, setQuestions] = useState<ReportQuestion[] | null>(null);
   const [reports, setReports] = useState<DailyReport[] | null>(null);
   const [settings, setSettings] = useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
@@ -83,6 +87,11 @@ function AdminSodEodPage() {
   }, []);
 
   useEffect(() => {
+    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snapshot) =>
+      setCompanies(
+        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+      ),
+    );
     const unsubEmployees = onSnapshot(
       collection(db(), "employees"),
       (snapshot) =>
@@ -142,6 +151,7 @@ function AdminSodEodPage() {
     );
 
     return () => {
+      unsubCompanies();
       unsubEmployees();
       unsubQuestions();
       unsubReports();
@@ -411,13 +421,25 @@ function AdminSodEodPage() {
               Monitor today's SOD/EOD submissions and configure requirements per employee.
             </p>
           </div>
-          <div className="w-full sm:w-72">
+          <div className="w-full sm:w-auto flex items-center gap-2">
+            <select
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              className="rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
+            >
+              <option value="all">All companies ({companies.length})</option>
+              {companies.map((c) => (
+                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                  {c.name} {c.isMain ? "(Main)" : ""}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               placeholder="Search employee..."
               value={employeeSearch}
               onChange={(e) => setEmployeeSearch(e.target.value)}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
+              className="w-full sm:w-64 rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
             />
           </div>
         </div>
@@ -450,6 +472,13 @@ function AdminSodEodPage() {
                 (() => {
                   const filteredEmployees = employees.filter((emp) => {
                     if (emp.status !== "active") return false;
+                    if (companyFilter !== "all") {
+                      const matchComp =
+                        emp.companyId === companyFilter ||
+                        emp.companyIds?.includes(companyFilter) ||
+                        (!emp.companyId && companyFilter === COMPANY_ID);
+                      if (!matchComp) return false;
+                    }
                     if (employeeSearch) {
                       const query = employeeSearch.toLowerCase().trim();
                       return (

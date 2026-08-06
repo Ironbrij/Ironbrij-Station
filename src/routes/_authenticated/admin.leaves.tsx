@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { collection, doc, onSnapshot, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { CompanyNotice, Employee, LeaveRequest } from "@/lib/types";
+import type { Company, CompanyNotice, Employee, LeaveRequest } from "@/lib/types";
+import { COMPANY_ID } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { getLeaveLabel } from "@/lib/attendance";
@@ -41,9 +42,11 @@ const PAGE_SIZE = 8;
 function LeaveRequestsPage() {
   const [leaves, setLeaves] = useState<LeaveRequest[] | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [filterCompany, setFilterCompany] = useState("all");
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -53,6 +56,11 @@ function LeaveRequestsPage() {
   const today = ymd(new Date());
 
   useEffect(() => {
+    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snapshot) =>
+      setCompanies(
+        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+      ),
+    );
     const unsubscribeLeaves = onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
       setLeaves(
         snapshot.docs.map((item) => ({
@@ -79,6 +87,7 @@ function LeaveRequestsPage() {
     );
 
     return () => {
+      unsubCompanies();
       unsubscribeLeaves();
       unsubscribeEmployees();
       unsubscribeUsers();
@@ -87,7 +96,7 @@ function LeaveRequestsPage() {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [search, statusFilter, periodFilter, dateFrom, dateTo]);
+  }, [search, statusFilter, filterCompany, periodFilter, dateFrom, dateTo]);
 
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -123,6 +132,13 @@ function LeaveRequestsPage() {
           `${employee?.name || ""} ${employee?.email || ""} ${leave.reason || ""}`.toLowerCase();
         if (queryText && !searchable.includes(queryText)) return false;
         if (statusFilter !== "all" && leave.status !== statusFilter) return false;
+        if (filterCompany !== "all") {
+          const matchCompany =
+            employee?.companyId === filterCompany ||
+            employee?.companyIds?.includes(filterCompany) ||
+            (!employee?.companyId && filterCompany === COMPANY_ID);
+          if (!matchCompany) return false;
+        }
         if (periodFilter === "today" && !(leave.dateFrom <= today && leave.dateTo >= today))
           return false;
         if (periodFilter === "upcoming" && leave.dateFrom <= today) return false;
@@ -137,7 +153,7 @@ function LeaveRequestsPage() {
         if (a.status === "pending") return a.dateFrom.localeCompare(b.dateFrom);
         return requestTimestamp(b) - requestTimestamp(a) || b.dateFrom.localeCompare(a.dateFrom);
       });
-  }, [leaves, employeeById, search, statusFilter, periodFilter, dateFrom, dateTo, today]);
+  }, [leaves, employeeById, search, statusFilter, filterCompany, periodFilter, dateFrom, dateTo, today]);
 
   const visibleRequests = filteredRequests.slice(0, visibleCount);
   const hasFilters =
@@ -311,6 +327,21 @@ function LeaveRequestsPage() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+            </select>
+          </FilterField>
+
+          <FilterField label="Company">
+            <select
+              value={filterCompany}
+              onChange={(event) => setFilterCompany(event.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All companies ({companies.length})</option>
+              {companies.map((c) => (
+                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                  {c.name} {c.isMain ? "(Main)" : ""}
+                </option>
+              ))}
             </select>
           </FilterField>
 
