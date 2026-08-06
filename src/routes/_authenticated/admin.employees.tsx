@@ -506,10 +506,21 @@ function EmployeesListPage() {
       )}
 
       {empToPromote && (
-        <PromoteModal emp={empToPromote} depts={depts} onClose={() => setEmpToPromote(null)} />
+        <PromoteModal
+          emp={empToPromote}
+          depts={depts}
+          companies={companies}
+          onClose={() => setEmpToPromote(null)}
+        />
       )}
 
-      {showForm && <NewEmployeeForm departments={depts} onClose={() => setShowForm(false)} />}
+      {showForm && (
+        <NewEmployeeForm
+          departments={depts}
+          companies={companies}
+          onClose={() => setShowForm(false)}
+        />
+      )}
     </div>
   );
 }
@@ -544,16 +555,23 @@ function ShiftPreview({
 export function PromoteModal({
   emp,
   depts,
+  companies = [],
   onClose,
 }: {
   emp: Employee;
   depts: Department[];
+  companies?: Company[];
   onClose: () => void;
 }) {
   const [name, setName] = useState(emp.name ?? "");
   const [email, setEmail] = useState(emp.email ?? "");
   const [jobTitle, setJobTitle] = useState(emp.jobTitle ?? "");
   const [deptId, setDeptId] = useState(emp.deptId ?? "");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(
+    emp.companyIds && emp.companyIds.length > 0
+      ? emp.companyIds
+      : [emp.companyId || COMPANY_ID],
+  );
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
   const [state, setState] = useState(
     normalizeState(emp.state ?? depts.find((department) => department.id === emp.deptId)?.state),
@@ -578,6 +596,8 @@ export function PromoteModal({
         email: cleanEmail || emp.email,
         jobTitle: jobTitle.trim() || emp.jobTitle,
         deptId,
+        companyId: selectedCompanyIds[0] || COMPANY_ID,
+        companyIds: selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID],
         country,
         state,
         timezone: COUNTRY_TIMEZONES[country].timezone,
@@ -673,7 +693,7 @@ export function PromoteModal({
               )?.state;
               if (departmentState) setState(normalizeState(departmentState));
             }}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
           >
             <option value="">Select department</option>
             {depts.map((d) => (
@@ -682,6 +702,37 @@ export function PromoteModal({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Company Allocation</label>
+          <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
+            {(companies.length > 0
+              ? companies
+              : [{ id: COMPANY_ID, name: "Main Company", isMain: true }]
+            ).map((c) => {
+              const cId = c.id || COMPANY_ID;
+              const isChecked = selectedCompanyIds.includes(cId);
+              return (
+                <label
+                  key={cId}
+                  className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {
+                      setSelectedCompanyIds((prev) =>
+                        isChecked ? prev.filter((id) => id !== cId) : [...prev, cId],
+                      );
+                    }}
+                  />
+                  <span>
+                    {c.name} {c.isMain ? "(Main)" : ""}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
         </div>
         <div>
           <label className="text-sm font-medium">Employee location</label>
@@ -764,15 +815,18 @@ export function PromoteModal({
 }
 function NewEmployeeForm({
   departments,
+  companies = [],
   onClose,
 }: {
   departments: Department[];
+  companies?: Company[];
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([COMPANY_ID]);
   const [country, setCountry] = useState<CountryCode>("PH");
   const [state, setState] = useState(
     normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
@@ -801,7 +855,8 @@ function NewEmployeeForm({
     try {
       await Promise.all([
         setDoc(empRef, {
-          companyId: COMPANY_ID,
+          companyId: selectedCompanyIds[0] || COMPANY_ID,
+          companyIds: selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID],
           deptId,
           name: cleanName,
           email: cleanEmail,
@@ -949,7 +1004,7 @@ function NewEmployeeForm({
                   ),
                 );
               }}
-              className="mt-1 w-full rounded-md border px-3 py-2 bg-background"
+              className="mt-1 w-full rounded-md border px-3 py-2 bg-background font-medium"
             >
               <option value="">Select department</option>
               {departments.map((d) => (
@@ -958,6 +1013,37 @@ function NewEmployeeForm({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Company Allocation</label>
+            <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
+              {(companies.length > 0
+                ? companies
+                : [{ id: COMPANY_ID, name: "Main Company", isMain: true }]
+              ).map((c) => {
+                const cId = c.id || COMPANY_ID;
+                const isChecked = selectedCompanyIds.includes(cId);
+                return (
+                  <label
+                    key={cId}
+                    className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {
+                        setSelectedCompanyIds((prev) =>
+                          isChecked ? prev.filter((id) => id !== cId) : [...prev, cId],
+                        );
+                      }}
+                    />
+                    <span>
+                      {c.name} {c.isMain ? "(Main)" : ""}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium">Employee location</label>

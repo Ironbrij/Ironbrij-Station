@@ -77,6 +77,7 @@ function EmployeeDetail() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -90,6 +91,11 @@ function EmployeeDetail() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
     const unsubscribers = [
+      onSnapshot(collection(db(), "companies"), (snapshot) =>
+        setCompanies(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+        ),
+      ),
       onSnapshot(collection(db(), "employees"), (snapshot) => {
         setEmployees(
           snapshot.docs.map((item) => ({
@@ -811,6 +817,7 @@ function EmployeeDetail() {
         <PromoteModal
           emp={editingEmployee}
           depts={departments}
+          companies={companies}
           onClose={() => setEditingEmployee(null)}
         />
       )}
