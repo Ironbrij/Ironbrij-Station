@@ -364,6 +364,34 @@ export function getShiftConversions(employee: Employee, instant = new Date()) {
   }));
 }
 
+export function formatEmployeeShiftSummary(employee: Employee, instant = new Date()) {
+  const shiftTz = getShiftTimezone(employee);
+  const localTz = getEmployeeTimezone(employee);
+  const conversions = getShiftConversions(employee, instant);
+
+  const shiftConv = conversions.find((c) => c.value === shiftTz) || {
+    short: shiftTz.split("/")[1] || "Shift",
+    start: employee.shiftStartTime || "09:00",
+    end: employee.shiftEndTime || "17:00",
+  };
+  const localConv = conversions.find((c) => c.value === localTz);
+
+  const isCrossTimezone = shiftTz !== localTz && Boolean(localConv);
+
+  return {
+    shiftTz,
+    localTz,
+    isCrossTimezone,
+    shiftText: `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"}`,
+    shiftLabel: `${shiftConv.start}–${shiftConv.end} (${shiftConv.short})`,
+    localLabel: localConv ? `${localConv.start}–${localConv.end} (${localConv.short} local)` : "",
+    localStart: localConv?.start || employee.shiftStartTime || "09:00",
+    fullSummary: isCrossTimezone && localConv
+      ? `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"} (${shiftConv.short}) ➔ ${localConv.start}–${localConv.end} (${localConv.short} local)`
+      : `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"} (${shiftConv.short})`,
+  };
+}
+
 export function computeEmployeeLateness(
   punchValue: Date,
   employee: Employee,
@@ -437,12 +465,20 @@ export function getLiveAttendanceStatus(
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
     isScheduledDay && !firstIn && missingMinutes > effectiveGraceMinutes && now <= shift.end;
+  const isEarly = Boolean(lateness?.isEarly);
+  const minutesEarly = isEarly && firstIn && lateness
+    ? Math.floor(Math.abs((firstIn.timestamp.toDate().getTime() - lateness.scheduledAt.getTime()) / 1000) / 60)
+    : 0;
+
   return {
     latest,
     firstIn,
     isPunchedIn,
     isLate: lateness?.isLate ?? isMissingLate,
     minutesLate: lateness?.minutes ?? (isMissingLate ? missingMinutes : 0),
+    isEarly,
+    minutesEarly,
+    lateness,
     isMissingLate,
     isScheduledDay,
     shift,

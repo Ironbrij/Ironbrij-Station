@@ -337,10 +337,15 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 font-mono text-xs">{record.dateKey}</td>
                   <td className="p-3.5">
-                    <div className="font-semibold">
+                    <div className="font-semibold text-primary">
                       {formatInTimezone(record.scheduledAt, shiftTimezone)}
+                      <span className="text-[10px] font-normal text-muted-foreground ml-1">({shiftTimezone.split("/")[1] || "Shift"})</span>
                     </div>
-                    <div className="text-[10px] text-muted-foreground">{shiftTimezone}</div>
+                    {shiftTimezone !== employeeTimezone && (
+                      <div className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
+                        ➔ {formatInTimezone(record.scheduledAt, employeeTimezone)} ({employeeTimezone.split("/")[1] || "Local"})
+                      </div>
+                    )}
                   </td>
                   <td className="p-3.5">
                     <div className="font-semibold">
@@ -348,7 +353,7 @@ function LateArrivalsPage() {
                         ? formatInTimezone(record.punchedAt, employeeTimezone)
                         : "Waiting for punch"}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">{employeeTimezone}</div>
+                    <div className="text-[10px] text-muted-foreground">{employeeTimezone.split("/")[1] || "Local"}</div>
                   </td>
                   <td className="p-3.5 font-bold">
                     {record.kind === "missing" ? (

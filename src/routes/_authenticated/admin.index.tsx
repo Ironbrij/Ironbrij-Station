@@ -7,6 +7,7 @@ import { StatusDot } from "@/components/StatusDot";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   formatInTimezone,
+  formatEmployeeShiftSummary,
   getActiveEmployeeLeave,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
@@ -356,12 +357,13 @@ function AdminHome() {
                     visibleMembers.map((m) => {
                       const status = getEmpTodayStatus(m);
                       const countryData =
-                        COUNTRY_TIMEZONES[m.country ?? "NP"] || COUNTRY_TIMEZONES.NP;
+                        COUNTRY_TIMEZONES[m.country ?? "PH"] || COUNTRY_TIMEZONES.PH;
+                      const shiftSummary = formatEmployeeShiftSummary(m, now);
 
                       return (
                         <div
                           key={m.id}
-                          className="flex items-center justify-between p-2.5 rounded-lg border bg-secondary/20 hover:bg-secondary/40 transition-colors text-xs"
+                          className="flex items-center justify-between p-2.5 rounded-lg border bg-secondary/20 hover:bg-secondary/40 transition-colors text-xs gap-3"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <StatusDot status={status.type} />
@@ -373,16 +375,23 @@ function AdminHome() {
                               >
                                 {m.name}
                               </Link>
-                              <span className="text-[11px] text-muted-foreground">
-                                {m.jobTitle || "Member"} · {countryData.flag}
-                              </span>
-                              <span
-                                className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary"
-                                aria-label={`Shift ${m.shiftStartTime || "09:00"} to ${m.shiftEndTime || "17:00"}`}
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {m.jobTitle || "Member"} · {countryData.flag} {countryData.name}
+                              </div>
+                              <div
+                                className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary mt-0.5"
+                                title={shiftSummary.fullSummary}
                               >
-                                <Clock className="h-3 w-3" aria-hidden="true" />
-                                {m.shiftStartTime || "09:00"}–{m.shiftEndTime || "17:00"}
-                              </span>
+                                <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                <span className="truncate">
+                                  {shiftSummary.shiftLabel}
+                                  {shiftSummary.isCrossTimezone && (
+                                    <span className="text-amber-600 dark:text-amber-400 font-extrabold ml-1">
+                                      ➔ {shiftSummary.localLabel}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
@@ -396,8 +405,20 @@ function AdminHome() {
                               </span>
                             )}
                             {status.isLate && (
-                              <span className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                                title={
+                                  shiftSummary.isCrossTimezone
+                                    ? `Shift started at ${shiftSummary.localStart} local (${shiftSummary.shiftText} Sydney time)`
+                                    : `Shift started at ${shiftSummary.shiftText}`
+                                }
+                              >
                                 <AlertTriangle className="h-3 w-3" /> {status.minutesLate}m Late
+                                {shiftSummary.isCrossTimezone && (
+                                  <span className="text-[9px] font-normal opacity-90 ml-0.5">
+                                    (vs {shiftSummary.localStart} local)
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>

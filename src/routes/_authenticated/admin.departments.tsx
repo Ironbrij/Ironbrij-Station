@@ -12,6 +12,7 @@ import {
 import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   computeEmployeeLateness,
+  formatEmployeeShiftSummary,
   formatInTimezone,
   getEmployeeApprovedLeaveDates,
   getEmployeeApprovedLeaveForDate,
@@ -676,17 +677,29 @@ function DepartmentsPage() {
                               </div>
                             </div>
 
-                            <div className="pt-2 border-t flex items-center justify-between text-muted-foreground">
-                              <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                                <span>{countryInfo.flag}</span>
-                                <span>{countryInfo.name}</span>
-                                <span>· {normalizeState(e.state)}</span>
-                              </div>
-                              <div className="flex items-center gap-1 font-mono font-bold text-primary">
-                                <Clock className="h-3.5 w-3.5" />
-                                {e.shiftStartTime || "09:00"} - {e.shiftEndTime || "17:00"}
-                              </div>
-                            </div>
+                            {(() => {
+                              const summary = formatEmployeeShiftSummary(e);
+                              return (
+                                <div className="pt-2 border-t space-y-1 text-muted-foreground">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                                      <span>{countryInfo.flag}</span>
+                                      <span>{countryInfo.name}</span>
+                                      <span>· {normalizeState(e.state)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 font-mono font-bold text-primary">
+                                      <Clock className="h-3.5 w-3.5 shrink-0" />
+                                      <span>{summary.shiftLabel}</span>
+                                    </div>
+                                  </div>
+                                  {summary.isCrossTimezone && (
+                                    <div className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 text-right">
+                                      ➔ {summary.localLabel}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             <div className="pt-1 flex items-center justify-between border-t text-[11px]">
                               <span className="text-muted-foreground font-mono">{e.email}</span>
