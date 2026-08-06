@@ -154,14 +154,22 @@ export function isHolidayAssignedToEmployee(
   holiday: CompanyHoliday,
   employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">,
 ): boolean {
-  if (holiday.targetType === "all") return true;
-  if (holiday.targetType === "companies") {
+  // If companyIds are specified on the holiday, the employee must belong to at least one target company first
+  if (Array.isArray(holiday.companyIds) && holiday.companyIds.length > 0) {
     const empCompanyIds = [
       employee.companyId,
       ...(employee.companyIds || []),
     ].filter(Boolean) as string[];
-    return empCompanyIds.some((cId) => holiday.companyIds?.includes(cId));
+
+    const matchesCompany = empCompanyIds.some(
+      (cId) =>
+        holiday.companyIds?.includes(cId) ||
+        (cId === "default" && holiday.companyIds?.includes(COMPANY_ID)),
+    );
+    if (!matchesCompany) return false;
   }
+
+  if (holiday.targetType === "all" || holiday.targetType === "companies") return true;
   if (holiday.targetType === "departments")
     return Boolean(employee.deptId && holiday.departmentIds?.includes(employee.deptId));
   if (holiday.targetType === "states") {

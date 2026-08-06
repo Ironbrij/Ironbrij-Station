@@ -61,6 +61,7 @@ function CompanyPage() {
 
   const [newHoliday, setNewHoliday] = useState("");
   const [holidayName, setHolidayName] = useState("");
+  const [useCompanyScope, setUseCompanyScope] = useState(false);
   const [holidayTargetType, setHolidayTargetType] = useState<HolidayTargetType>("all");
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
@@ -71,6 +72,8 @@ function CompanyPage() {
   const [sendHolidayNotice, setSendHolidayNotice] = useState(true);
   const [holidayNoticeMode, setHolidayNoticeMode] = useState<"instant" | "scheduled">("instant");
   const [holidayNoticeAt, setHolidayNoticeAt] = useState("");
+  const [showTodayHolidayConfirmModal, setShowTodayHolidayConfirmModal] = useState(false);
+  const [todayHolidayCompanyId, setTodayHolidayCompanyId] = useState("all");
 
   const todayStr = ymd(new Date());
   const isTodayHoliday = company.holidays.includes(todayStr);
@@ -163,22 +166,46 @@ function CompanyPage() {
     }
   }
 
-  async function toggleTodayHoliday() {
-    const updatedHolidays = isTodayHoliday
-      ? company.holidays.filter((holiday) => holiday !== todayStr)
-      : [...company.holidays, todayStr].sort();
-    const updated = { ...company, holidays: updatedHolidays };
+  async function confirmTodayHoliday(targetCompId: string) {
+    let updatedHolidays: string[];
+    let updatedAssignments = [...(company.holidayAssignments ?? [])];
+
+    if (isTodayHoliday) {
+      updatedHolidays = company.holidays.filter((d) => d !== todayStr);
+      updatedAssignments = updatedAssignments.filter((a) => a.date !== todayStr);
+    } else if (targetCompId === "all") {
+      updatedHolidays = company.holidays.includes(todayStr)
+        ? company.holidays
+        : [...company.holidays, todayStr].sort();
+    } else {
+      updatedHolidays = company.holidays;
+      updatedAssignments.push({
+        id: `today-${todayStr}-${Date.now()}`,
+        date: todayStr,
+        name: "Instant Company Off",
+        targetType: "companies",
+        companyIds: [targetCompId],
+      });
+    }
+
+    const updated = {
+      ...company,
+      holidays: updatedHolidays,
+      holidayAssignments: updatedAssignments,
+    };
     setCompany(updated);
     await save(updated);
+    setShowTodayHolidayConfirmModal(false);
+    toast.success(
+      isTodayHoliday
+        ? "Today's holiday cancelled!"
+        : `Declared today (${todayStr}) as a Holiday! 🎉`,
+    );
   }
 
   async function addHoliday() {
     if (!newHoliday) return;
-    if (holidayTargetType === "all" && company.holidays.includes(newHoliday)) {
-      toast.error("That company-wide holiday already exists.");
-      return;
-    }
-    if (holidayTargetType === "companies" && selectedCompanyIds.length === 0) {
+    if (useCompanyScope && selectedCompanyIds.length === 0) {
       toast.error("Select at least one company.");
       return;
     }
@@ -212,7 +239,7 @@ function CompanyPage() {
     }
 
     let updated: Company;
-    if (holidayTargetType === "all") {
+    if (holidayTargetType === "all" && !useCompanyScope) {
       updated = { ...company, holidays: [...company.holidays, newHoliday].sort() };
     } else {
       const assignment: CompanyHoliday = {
@@ -220,13 +247,15 @@ function CompanyPage() {
         date: newHoliday,
         name: holidayName.trim() || "Company Holiday",
         targetType: holidayTargetType,
-        ...(holidayTargetType === "companies"
+        ...(useCompanyScope && selectedCompanyIds.length > 0
           ? { companyIds: selectedCompanyIds }
-          : holidayTargetType === "departments"
-            ? { departmentIds: selectedDepartmentIds }
-            : holidayTargetType === "states"
-              ? { stateCodes: selectedStateCodes }
-              : {
+          : {}),
+        ...(holidayTargetType === "departments"
+          ? { departmentIds: selectedDepartmentIds }
+          : holidayTargetType === "states"
+            ? { stateCodes: selectedStateCodes }
+            : holidayTargetType === "employees"
+              ? {
                   employeeIds: [
                     ...new Set(
                       employees
@@ -234,7 +263,8 @@ function CompanyPage() {
                         .flatMap((employee) => [employee.id, employee.authUid].filter(Boolean)),
                     ),
                   ] as string[],
-                }),
+                }
+              : {}),
       };
       updated = {
         ...company,
@@ -458,7 +488,7 @@ function CompanyPage() {
           </div>
           <button
             disabled={busy}
-            onClick={toggleTodayHoliday}
+            onClick={() => setShowTodayHolidayConfirmModal(true)}
             className={`btn-lift px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-2 shadow-sm ${
               isTodayHoliday ? "bg-rose-600 text-white" : "bg-purple-600 text-white"
             }`}
@@ -487,8 +517,7 @@ function CompanyPage() {
           <Calendar className="h-4 w-4" /> Assign a Company Holiday
         </h2>
         <p className="text-xs text-muted-foreground">
-          Only assigned employees will have regular punching disabled and their attendance status
-          shown as Holiday.
+          Select the company scope, then specify departments, states, or specific people for this holiday.
         </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -506,37 +535,37 @@ function CompanyPage() {
           />
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
-          {(
-            [
-              ["all", "Everyone"],
-              ["companies", "Companies"],
-              ["departments", "Departments"],
-              ["states", "States"],
-              ["employees", "Specific people"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setHolidayTargetType(value)}
-              className={`rounded-lg border px-3 py-2 text-xs font-bold ${
-                holidayTargetType === value
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "bg-background text-muted-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Step 1: Company Scope Selector */}
+        <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
+          <div className="text-xs font-extrabold text-primary flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5" /> 1. Target Company Scope
+          </div>
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="companyScope"
+                checked={!useCompanyScope}
+                onChange={() => {
+                  setUseCompanyScope(false);
+                  setSelectedCompanyIds([]);
+                }}
+              />
+              <span>All Companies</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="companyScope"
+                checked={useCompanyScope}
+                onChange={() => setUseCompanyScope(true)}
+              />
+              <span>Specific Companies ({selectedCompanyIds.length})</span>
+            </label>
+          </div>
 
-        {holidayTargetType === "companies" && (
-          <div className="rounded-lg border bg-secondary/20 p-3 space-y-2">
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <Building2 className="h-3.5 w-3.5" /> Select companies
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+          {useCompanyScope && (
+            <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t mt-2">
               {companies.map((c) => (
                 <label
                   key={c.id || c.name}
@@ -559,8 +588,38 @@ function CompanyPage() {
                 </label>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Step 2: Target Audience inside Company */}
+        <div className="space-y-2">
+          <div className="text-xs font-extrabold text-primary">
+            2. Target Audience inside Company
           </div>
-        )}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {(
+              [
+                ["all", "Everyone in Company"],
+                ["departments", "Specific Departments"],
+                ["states", "Specific States"],
+                ["employees", "Specific People"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setHolidayTargetType(value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-bold ${
+                  holidayTargetType === value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "bg-background text-muted-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {holidayTargetType === "departments" && (
           <div className="rounded-lg border bg-secondary/20 p-3 space-y-2">
@@ -866,7 +925,7 @@ function CompanyPage() {
         </button>
       </div>
 
-      {(showAddCompanyModal || editingCompany) && (
+      {showAddCompanyModal && (
         <CompanyModal
           companyToEdit={editingCompany}
           onClose={() => {
@@ -874,6 +933,71 @@ function CompanyPage() {
             setEditingCompany(null);
           }}
         />
+      )}
+
+      {showTodayHolidayConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-lift space-y-4 text-left border border-border">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-lg font-bold text-primary flex items-center gap-2">
+                <PartyPopper className="h-5 w-5 text-purple-600" />
+                {isTodayHoliday ? "Cancel Today's Holiday" : "Confirm Today's Holiday"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTodayHolidayConfirmModal(false)}
+                className="rounded p-1 hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-sm text-foreground font-medium">
+              {isTodayHoliday
+                ? `Are you sure you want to cancel today's holiday (${todayStr})? Regular shift schedules will resume.`
+                : `Are you sure you want to declare today (${todayStr}) as a Holiday? Employees will have regular punching disabled.`}
+            </p>
+
+            {!isTodayHoliday && (
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-xs font-bold text-muted-foreground">
+                  Apply Holiday To Company:
+                </label>
+                <select
+                  value={todayHolidayCompanyId}
+                  onChange={(e) => setTodayHolidayCompanyId(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="all">All Companies ({companies.length})</option>
+                  {companies.map((c) => (
+                    <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                      {c.name} {c.isMain ? "(Main)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => setShowTodayHolidayConfirmModal(false)}
+                className="rounded-lg border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmTodayHoliday(todayHolidayCompanyId)}
+                className={`rounded-lg px-5 py-2 text-xs font-bold text-white shadow-md ${
+                  isTodayHoliday ? "bg-rose-600 hover:bg-rose-700" : "bg-purple-600 hover:bg-purple-700"
+                }`}
+              >
+                {isTodayHoliday ? "Yes, Cancel Holiday" : "Yes, Declare Holiday"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

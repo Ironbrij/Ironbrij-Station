@@ -6,7 +6,7 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import { COMPANY_ID, type Company, type Department, type Employee, type LeaveRequest, type Punch } from "@/lib/types";
 import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,

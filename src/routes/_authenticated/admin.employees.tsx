@@ -293,6 +293,13 @@ function EmployeesListPage() {
   });
 
   const filtered = Array.from(uniqueEmps.values()).filter((e) => {
+    if (filterCompany !== "all") {
+      const matchComp =
+        e.companyId === filterCompany ||
+        e.companyIds?.includes(filterCompany) ||
+        (!e.companyId && (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
+      if (!matchComp) return false;
+    }
     if (filterDept && e.deptId !== filterDept) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
@@ -315,7 +322,7 @@ function EmployeesListPage() {
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="btn-lift rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+          className="btn-lift rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground font-bold"
         >
           + New Employee
         </button>
@@ -340,6 +347,19 @@ function EmployeesListPage() {
             </button>
           )}
         </div>
+        <select
+          value={filterCompany}
+          onChange={(e) => setFilterCompany(e.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm font-semibold sm:w-48 cursor-pointer"
+          aria-label="Filter employees by company"
+        >
+          <option value="all">All companies ({companies.length})</option>
+          {companies.map((c) => (
+            <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+              {c.name} {c.isMain ? "(Main)" : ""}
+            </option>
+          ))}
+        </select>
         <select
           value={filterDept}
           onChange={(e) => setFilterDept(e.target.value)}
