@@ -112,10 +112,14 @@ function LateArrivalsPage() {
 
   const records = useMemo(() => {
     const result: LateRecord[] = [];
+    const today = new Date();
+
     for (const employee of employees.filter((item) => item.status === "active")) {
       const list = employeePunches.get(employee.id) || [];
       const firstByShiftDate = new Map<string, Punch>();
       const shiftTimezone = getShiftTimezone(employee);
+      const todayKey = zonedDateKey(today, shiftTimezone);
+
       for (const punch of list) {
         if (punch.type !== "in" || !punch.timestamp) continue;
         const dateKey = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
@@ -123,12 +127,20 @@ function LateArrivalsPage() {
         if (!current || punch.timestamp.toMillis() < current.timestamp.toMillis())
           firstByShiftDate.set(dateKey, punch);
       }
+
       for (const [dateKey, punch] of firstByShiftDate) {
+        // Only show today's logs, not from the past
+        if (dateKey !== todayKey) continue;
+
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
         if (approvedLeave) continue;
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
+
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
-        if (!late.isLate && !punch.isExcused) continue;
+        const differenceSeconds = Math.floor((punch.timestamp.toDate().getTime() - late.scheduledAt.getTime()) / 1000);
+        const isEarly = differenceSeconds < 0;
+        const minutesEarly = isEarly ? Math.floor(Math.abs(differenceSeconds) / 60) : 0;
+
         result.push({
           id: punch.id,
           employee,
@@ -136,6 +148,8 @@ function LateArrivalsPage() {
           scheduledAt: late.scheduledAt,
           punchedAt: punch.timestamp.toDate(),
           minutesLate: late.minutes,
+          minutesEarly,
+          isEarly,
           kind: "arrival",
           isExcused: Boolean(punch.isExcused),
           punch,
@@ -145,7 +159,7 @@ function LateArrivalsPage() {
       const status = getLiveAttendanceStatus(
         employee,
         list,
-        now,
+        today,
         graceMinutes,
         company?.workingDays,
         getEmployeeHolidayDates(company, employee),
@@ -155,7 +169,9 @@ function LateArrivalsPage() {
         leaves,
         status.shift.dateKey,
       );
-      if (!approvedLeaveToday && status.isMissingLate) {
+
+      // Only show today's missing
+      if (status.shift.dateKey === todayKey && !approvedLeaveToday && status.isMissingLate) {
         result.push({
           id: `missing-${employee.id}-${status.shift.dateKey}`,
           employee,
@@ -166,27 +182,24 @@ function LateArrivalsPage() {
         });
       }
     }
-    return result.sort((a, b) => (b.punchedAt || now).getTime() - (a.punchedAt || now).getTime());
-  }, [employees, employeePunches, leaves, now, graceMinutes, company]);
+    return result.sort((a, b) => (b.punchedAt || today).getTime() - (a.punchedAt || today).getTime());
+  }, [employees, employeePunches, leaves, graceMinutes, company]);
 
   const filtered = useMemo(
     () =>
       records.filter((record) => {
         if (filterDept && record.employee.deptId !== filterDept) return false;
-        const age = now.getTime() - record.scheduledAt.getTime();
-        if (filterPeriod === "today")
-          return record.dateKey === zonedDateKey(now, getShiftTimezone(record.employee));
-        if (filterPeriod === "week") return age <= 7 * 86400000;
-        if (filterPeriod === "month") return age <= 31 * 86400000;
         return true;
       }),
-    [records, filterDept, filterPeriod, now],
+    [records, filterDept],
   );
 
   const missingCount = filtered.filter((record) => record.kind === "missing").length;
-  const arrivalCount = filtered.filter((record) => record.kind === "arrival" && !record.isExcused).length;
+  const arrivalCount = filtered.filter(
+    (record) => record.kind === "arrival" && !record.isExcused && !record.isEarly && record.minutesLate > 0,
+  ).length;
   const totalMinutes = filtered
-    .filter((record) => !record.isExcused)
+    .filter((record) => !record.isExcused && !record.isEarly)
     .reduce((sum, record) => sum + record.minutesLate, 0);
 
   async function toggleExcuse(punchId?: string, currentExcused?: boolean) {
@@ -272,20 +285,14 @@ function LateArrivalsPage() {
         <Stat label="Total late minutes" value={totalMinutes} tone="primary" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(["today", "week", "month", "all"] as const).map((period) => (
-          <button
-            key={period}
-            onClick={() => setFilterPeriod(period)}
-            className={`rounded-md px-3 py-1.5 text-xs font-bold capitalize ${filterPeriod === period ? "bg-primary text-primary-foreground" : "border bg-card"}`}
-          >
-            {period}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
+          ● Today's Punctuality Dashboard
+        </span>
         <select
           value={filterDept}
           onChange={(event) => setFilterDept(event.target.value)}
-          className="ml-auto rounded-md border bg-card px-3 py-1.5 text-xs"
+          className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold"
         >
           <option value="">All departments</option>
           {departments.map((department) => (
@@ -304,7 +311,7 @@ function LateArrivalsPage() {
               <th className="p-3.5">Shift date</th>
               <th className="p-3.5">Scheduled</th>
               <th className="p-3.5">Actual punch</th>
-              <th className="p-3.5">Lateness</th>
+              <th className="p-3.5">Lateness / Early</th>
               <th className="p-3.5">Status</th>
               <th className="p-3.5 text-right">Action</th>
             </tr>
@@ -343,23 +350,43 @@ function LateArrivalsPage() {
                     </div>
                     <div className="text-[10px] text-muted-foreground">{employeeTimezone}</div>
                   </td>
-                  <td className="p-3.5 font-bold text-amber-600">
-                    {record.isExcused ? (
+                  <td className="p-3.5 font-bold">
+                    {record.kind === "missing" ? (
+                      <span className="text-rose-600">—</span>
+                    ) : record.isEarly ? (
+                      <span className="text-emerald-600 font-extrabold">
+                        +{record.minutesEarly} min
+                      </span>
+                    ) : record.isExcused ? (
                       <span className="text-emerald-600 line-through">
                         {record.minutesLate} min
                       </span>
+                    ) : record.minutesLate === 0 ? (
+                      <span className="text-emerald-600 font-extrabold">
+                        On time
+                      </span>
                     ) : (
-                      `${record.minutesLate} min`
+                      <span className="text-rose-600 font-extrabold">
+                        {record.minutesLate} min
+                      </span>
                     )}
                   </td>
                   <td className="p-3.5">
-                    {record.isExcused ? (
+                    {record.kind === "missing" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-600">
+                        <UserX className="h-3.5 w-3.5" /> Missing
+                      </span>
+                    ) : record.isEarly ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Arrived early
+                      </span>
+                    ) : record.isExcused ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
                       </span>
-                    ) : record.kind === "missing" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-600">
-                        <UserX className="h-3.5 w-3.5" /> Missing
+                    ) : record.minutesLate === 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> On time
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
@@ -369,17 +396,21 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 text-right">
                     {record.kind === "arrival" && record.punch ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
-                        className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
-                          record.isExcused
-                            ? "bg-secondary text-muted-foreground hover:bg-muted"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {record.isExcused ? "Un-excuse" : "Mark Not Late"}
-                      </button>
+                      !record.isEarly && record.minutesLate > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
+                          className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
+                            record.isExcused
+                              ? "bg-secondary text-muted-foreground hover:bg-muted"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          }`}
+                        >
+                          {record.isExcused ? "Un-excuse" : "Mark Not Late"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground font-semibold">No action needed</span>
+                      )
                     ) : (
                       <button
                         type="button"
