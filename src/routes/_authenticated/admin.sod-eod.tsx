@@ -22,7 +22,7 @@ import {
   reportingRequirementLabel,
   requiredReportTypes,
 } from "@/lib/daily-reports";
-import { DEFAULT_LOCAL_TIMEZONE, zonedDateKey } from "@/lib/attendance";
+import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 import type {
   DailyReport,
   DailyReportType,
