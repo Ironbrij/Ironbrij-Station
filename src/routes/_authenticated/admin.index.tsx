@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import type { DailyReport, Department, Employee, LeaveRequest, Punch, ReportingSettings } from "@/lib/types";
+import {
+  DEFAULT_REPORTING_SETTINGS,
+  isReportDeadlinePassed,
+  reportDocumentId,
+} from "@/lib/daily-reports";
 import { StatusDot } from "@/components/StatusDot";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
@@ -54,6 +59,9 @@ function AdminHome() {
   const [todayPunches, setTodayPunches] = useState<Punch[]>([]);
   const [historicalRecent, setHistoricalRecent] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [dailyReports, setDailyReports] = useState<DailyReport[]>([]);
+  const [reportingSettings, setReportingSettings] =
+    useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
 
   // Dashboard UI States
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
@@ -89,11 +97,23 @@ function AdminHome() {
         setLeaves(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, "id">) }))),
     );
 
+    const un5 = onSnapshot(collection(db(), "dailyReports"), (s) =>
+      setDailyReports(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DailyReport, "id">) }))),
+    );
+
+    const un6 = onSnapshot(doc(db(), "reportingSettings", "default"), (s) => {
+      if (s.exists()) {
+        setReportingSettings({ ...DEFAULT_REPORTING_SETTINGS, ...(s.data() as ReportingSettings) });
+      }
+    });
+
     return () => {
       un1();
       un2();
       un3();
       un4();
+      un5();
+      un6();
     };
   }, []);
 
@@ -360,6 +380,41 @@ function AdminHome() {
                         COUNTRY_TIMEZONES[m.country ?? "PH"] || COUNTRY_TIMEZONES.PH;
                       const shiftSummary = formatEmployeeShiftSummary(m, now);
 
+                      const getReportBadgeStatus = (emp: Employee, type: "sod" | "eod") => {
+                        const req = emp.reportingRequirement || "sod_eod";
+                        const isRequired =
+                          req === "sod_eod" ||
+                          (type === "sod" && req === "sod_only") ||
+                          (type === "eod" && req === "eod_only");
+
+                        if (!isRequired) return "none";
+
+                        const tz = getEmployeeTimezone(emp);
+                        const todayKey = zonedDateKey(now, tz);
+                        const reportId = reportDocumentId(emp.authUid || emp.id, todayKey, type);
+                        const isSubmitted = dailyReports.some(
+                          (r) =>
+                            r.id === reportId ||
+                            (r.userId === (emp.authUid || emp.id) &&
+                              r.reportDate === todayKey &&
+                              r.reportType === type),
+                        );
+
+                        if (isSubmitted) return "submitted";
+
+                        const isMissed = isReportDeadlinePassed(
+                          emp,
+                          type,
+                          todayKey,
+                          reportingSettings,
+                          now,
+                        );
+                        return isMissed ? "missed" : "awaiting";
+                      };
+
+                      const sodStatus = getReportBadgeStatus(m, "sod");
+                      const eodStatus = getReportBadgeStatus(m, "eod");
+
                       return (
                         <div
                           key={m.id}
@@ -368,15 +423,53 @@ function AdminHome() {
                           <div className="flex items-center gap-2.5 min-w-0">
                             <StatusDot status={status.type} />
                             <div className="truncate">
-                              <Link
-                                to="/admin/employees/$id"
-                                params={{ id: m.id }}
-                                className="font-bold text-foreground hover:underline truncate block"
-                              >
-                                {m.name}
-                              </Link>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <Link
+                                  to="/admin/employees/$id"
+                                  params={{ id: m.id }}
+                                  className="font-bold text-foreground hover:underline truncate block"
+                                >
+                                  {m.name}
+                                </Link>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {sodStatus === "submitted" && (
+                                    <span
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 text-white font-extrabold text-[9px] shadow-xs"
+                                      title="SOD Submitted Today"
+                                    >
+                                      S
+                                    </span>
+                                  )}
+                                  {sodStatus === "missed" && (
+                                    <span
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 text-white font-extrabold text-[9px] shadow-xs"
+                                      title="SOD Missed Today"
+                                    >
+                                      S
+                                    </span>
+                                  )}
+                                  {eodStatus === "submitted" && (
+                                    <span
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 text-white font-extrabold text-[9px] shadow-xs"
+                                      title="EOD Submitted Today"
+                                    >
+                                      E
+                                    </span>
+                                  )}
+                                  {eodStatus === "missed" && (
+                                    <span
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 text-white font-extrabold text-[9px] shadow-xs"
+                                      title="EOD Missed Today"
+                                    >
+                                      E
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
                               <div className="text-[11px] text-muted-foreground truncate">
-                                {m.jobTitle || "Member"} · {countryData.flag} {shiftSummary.localCode}
+                                {m.jobTitle || "Member"} · {countryData.name} ({shiftSummary.localCode})
                               </div>
                               <div
                                 className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary mt-0.5"
