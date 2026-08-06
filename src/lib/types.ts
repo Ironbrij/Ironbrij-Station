@@ -1,5 +1,8 @@
 import type { Timestamp } from "firebase/firestore";
 
+export const DEFAULT_LOGO =
+  "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg";
+
 export type PunchType = "in" | "out" | "extra_in" | "extra_out";
 
 export type HolidayTargetType = "all" | "departments" | "states" | "employees";

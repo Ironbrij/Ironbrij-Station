@@ -4,6 +4,8 @@ import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc } from "fireb
 import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
+  DEFAULT_LOGO,
+  type Company,
   type Department,
   type Employee,
   type LeaveRequest,
@@ -33,6 +35,7 @@ import {
   Download,
   FileText,
   Calendar,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
@@ -180,6 +183,18 @@ function DepartmentsPage() {
       toast.success("Department default state updated");
     } catch (err) {
       toast.error("Failed to update state: " + (err as Error).message);
+    }
+  }
+
+  async function updateDepartmentCompany(id: string, companyId: string) {
+    try {
+      await updateDoc(doc(db(), "departments", id), { companyId });
+      setDepts((prev) =>
+        prev.map((d) => (d.id === id ? { ...d, companyId } : d)),
+      );
+      toast.success("Department company updated");
+    } catch (err) {
+      toast.error("Failed to update department company: " + (err as Error).message);
     }
   }
 
@@ -451,9 +466,18 @@ function DepartmentsPage() {
     URL.revokeObjectURL(url);
     toast.success(`Downloaded filtered department attendance (${rows.length} records).`);
   }
-  const visibleDepartments = allReportDeptId
-    ? depts.filter((department) => department.id === allReportDeptId)
-    : depts;
+  const visibleDepartments = depts.filter((department) => {
+    if (allReportDeptId && department.id !== allReportDeptId) return false;
+    if (filterCompanyId !== "all") {
+      const matchComp =
+        department.companyId === filterCompanyId ||
+        (!department.companyId &&
+          (filterCompanyId === COMPANY_ID ||
+            companies.find((c) => c.id === filterCompanyId)?.isMain));
+      if (!matchComp) return false;
+    }
+    return true;
+  });
   const selectedDepartmentName = allReportDeptId
     ? depts.find((department) => department.id === allReportDeptId)?.name || "Selected department"
     : "All departments";
@@ -463,12 +487,28 @@ function DepartmentsPage() {
       <div>
         <h1 className="text-2xl font-bold text-primary">Departments & Team Cards</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose a department and date range, then download only the matching attendance data.
+          Filter departments by company, choose date ranges, and download attendance reports.
         </p>
       </div>
 
       <section className="rounded-xl border bg-card p-4 shadow-lift">
-        <div className="grid gap-4 md:grid-cols-[minmax(220px,1fr)_minmax(180px,0.65fr)_auto] md:items-end">
+        <div className="grid gap-4 md:grid-cols-3 md:items-end">
+          <label className="block text-xs font-bold text-muted-foreground">
+            Company Filter
+            <select
+              value={filterCompanyId}
+              onChange={(event) => setFilterCompanyId(event.target.value)}
+              className="mt-1 block w-full cursor-pointer rounded-lg border bg-background px-3 py-2.5 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">All companies ({companies.length})</option>
+              {companies.map((c) => (
+                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                  {c.name} {c.isMain ? "(Main)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="block text-xs font-bold text-muted-foreground">
             Department to export
             <select
@@ -486,26 +526,28 @@ function DepartmentsPage() {
             </select>
           </label>
 
-          <label className="block text-xs font-bold text-muted-foreground">
-            Attendance period
-            <select
-              value={allReportDays}
-              onChange={(event) => setAllReportDays(Number(event.target.value))}
-              className="mt-1 block w-full cursor-pointer rounded-lg border bg-background px-3 py-2.5 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              <option value={7}>Past 7 days</option>
-              <option value={30}>Past 30 days</option>
-              <option value={90}>Past 90 days</option>
-            </select>
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="block text-xs font-bold text-muted-foreground flex-1">
+              Attendance period
+              <select
+                value={allReportDays}
+                onChange={(event) => setAllReportDays(Number(event.target.value))}
+                className="mt-1 block w-full cursor-pointer rounded-lg border bg-background px-3 py-2.5 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              >
+                <option value={7}>Past 7 days</option>
+                <option value={30}>Past 30 days</option>
+                <option value={90}>Past 90 days</option>
+              </select>
+            </label>
 
-          <button
-            type="button"
-            onClick={() => downloadAllDepartmentsCsv(allReportDays, allReportDeptId)}
-            className="btn-lift inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
-          >
-            <Download className="h-4 w-4" /> Download Filtered CSV
-          </button>
+            <button
+              type="button"
+              onClick={() => downloadAllDepartmentsCsv(allReportDays, allReportDeptId)}
+              className="btn-lift inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 shrink-0 mt-5"
+            >
+              <Download className="h-4 w-4" /> CSV
+            </button>
+          </div>
         </div>
         <div className="mt-3 rounded-lg bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
           Showing <span className="font-bold text-foreground">{selectedDepartmentName}</span> ·{" "}
@@ -513,6 +555,7 @@ function DepartmentsPage() {
           selected
         </div>
       </section>
+
       <form
         onSubmit={add}
         className="grid gap-2 bg-card p-4 rounded-xl border shadow-lift sm:grid-cols-[1fr_180px_180px_auto]"
@@ -572,6 +615,13 @@ function DepartmentsPage() {
           const isExpanded = expandedDeptId === d.id || visibleDepartments.length <= 2;
           const selectedDays = reportDaysMap[d.id] || 30; // Default to 30 days (1 month)
 
+          const comp = companies.find(
+            (c) =>
+              c.id === d.companyId ||
+              (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
+          );
+          const compLogo = comp?.logoUrl || DEFAULT_LOGO;
+
           return (
             <div
               key={d.id}
@@ -579,7 +629,31 @@ function DepartmentsPage() {
             >
               {/* Department Card Top Header */}
               <div className="p-4 bg-secondary/30 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b">
-                <div className="flex-1 flex items-center gap-3">
+                <div className="flex-1 flex items-center gap-3 flex-wrap">
+                  {/* Company Logo & Dropdown */}
+                  <div className="flex items-center gap-1.5 bg-background border px-2 py-1 rounded-lg shadow-xs shrink-0">
+                    <img
+                      src={compLogo}
+                      alt={comp?.name || "Company Logo"}
+                      className="h-6 w-6 rounded-full object-cover border bg-background shrink-0"
+                    />
+                    <select
+                      value={d.companyId || COMPANY_ID}
+                      onChange={(e) => updateDepartmentCompany(d.id, e.target.value)}
+                      className="bg-transparent text-xs font-extrabold text-primary outline-none cursor-pointer max-w-[140px] truncate"
+                      title="Change assigned company"
+                    >
+                      {companies.map((c) => (
+                        <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                          {c.name} {c.isMain ? "(Main)" : ""}
+                        </option>
+                      ))}
+                      {companies.length === 0 && (
+                        <option value={COMPANY_ID}>Main Company</option>
+                      )}
+                    </select>
+                  </div>
+
                   <input
                     defaultValue={d.name}
                     onBlur={(e) => rename(d.id, e.target.value)}
