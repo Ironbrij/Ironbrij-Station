@@ -369,26 +369,38 @@ export function formatEmployeeShiftSummary(employee: Employee, instant = new Dat
   const localTz = getEmployeeTimezone(employee);
   const conversions = getShiftConversions(employee, instant);
 
+  const getCode = (tz: string) => {
+    if (tz.includes("Sydney")) return "AU";
+    if (tz.includes("Manila")) return "PH";
+    if (tz.includes("Kathmandu")) return "NP";
+    return tz.split("/")[1] || "TZ";
+  };
+
+  const shiftCode = getCode(shiftTz);
+  const localCode = getCode(localTz);
+
   const shiftConv = conversions.find((c) => c.value === shiftTz) || {
-    short: shiftTz.split("/")[1] || "Shift",
     start: employee.shiftStartTime || "09:00",
     end: employee.shiftEndTime || "17:00",
   };
   const localConv = conversions.find((c) => c.value === localTz);
 
   const isCrossTimezone = shiftTz !== localTz && Boolean(localConv);
+  const shiftText = `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"}`;
 
   return {
     shiftTz,
     localTz,
+    shiftCode,
+    localCode,
     isCrossTimezone,
-    shiftText: `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"}`,
-    shiftLabel: `${shiftConv.start}–${shiftConv.end} (${shiftConv.short})`,
-    localLabel: localConv ? `${localConv.start}–${localConv.end} (${localConv.short} local)` : "",
+    shiftText,
+    shiftLabel: `${shiftText} ${shiftCode}`,
+    localLabel: localConv ? `${localConv.start}–${localConv.end} ${localCode}` : "",
     localStart: localConv?.start || employee.shiftStartTime || "09:00",
     fullSummary: isCrossTimezone && localConv
-      ? `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"} (${shiftConv.short}) ➔ ${localConv.start}–${localConv.end} (${localConv.short} local)`
-      : `${employee.shiftStartTime || "09:00"}–${employee.shiftEndTime || "17:00"} (${shiftConv.short})`,
+      ? `${shiftText} ${shiftCode} (${localConv.start}–${localConv.end} ${localCode})`
+      : `${shiftText} ${shiftCode}`,
   };
 }
 

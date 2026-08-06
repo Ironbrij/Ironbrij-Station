@@ -376,18 +376,18 @@ function AdminHome() {
                                 {m.name}
                               </Link>
                               <div className="text-[11px] text-muted-foreground truncate">
-                                {m.jobTitle || "Member"} · {countryData.flag} {countryData.name}
+                                {m.jobTitle || "Member"} · {countryData.flag} {shiftSummary.localCode}
                               </div>
                               <div
                                 className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary mt-0.5"
                                 title={shiftSummary.fullSummary}
                               >
                                 <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
-                                <span className="truncate">
+                                <span>
                                   {shiftSummary.shiftLabel}
                                   {shiftSummary.isCrossTimezone && (
-                                    <span className="text-amber-600 dark:text-amber-400 font-extrabold ml-1">
-                                      ➔ {shiftSummary.localLabel}
+                                    <span className="text-amber-600 dark:text-amber-400 font-bold ml-1.5">
+                                      ({shiftSummary.localLabel})
                                     </span>
                                   )}
                                 </span>
@@ -407,18 +407,9 @@ function AdminHome() {
                             {status.isLate && (
                               <span
                                 className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
-                                title={
-                                  shiftSummary.isCrossTimezone
-                                    ? `Shift started at ${shiftSummary.localStart} local (${shiftSummary.shiftText} Sydney time)`
-                                    : `Shift started at ${shiftSummary.shiftText}`
-                                }
+                                title={`Shift started at ${shiftSummary.localStart} ${shiftSummary.localCode}`}
                               >
                                 <AlertTriangle className="h-3 w-3" /> {status.minutesLate}m Late
-                                {shiftSummary.isCrossTimezone && (
-                                  <span className="text-[9px] font-normal opacity-90 ml-0.5">
-                                    (vs {shiftSummary.localStart} local)
-                                  </span>
-                                )}
                               </span>
                             )}
                           </div>

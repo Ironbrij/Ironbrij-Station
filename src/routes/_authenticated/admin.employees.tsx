@@ -98,6 +98,7 @@ function EmployeesListPage() {
   const [depts, setDepts] = useState<Department[]>([]);
   const [todayPunches, setTodayPunches] = useState<Punch[]>([]);
   const [filterDept, setFilterDept] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [empToPromote, setEmpToPromote] = useState<Employee | null>(null);
@@ -108,20 +109,28 @@ function EmployeesListPage() {
     if (authLoading || !user) return;
 
     const un1 = onSnapshot(
-      collection(db(), "employees"),
-      (s) => setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
-      (err) => console.error("Failed to load employees:", err),
-    );
-    const un2 = onSnapshot(
-      collection(db(), "departments"),
-      (s) => setDepts(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
-      (err) => console.error("Failed to load departments:", err),
+      query(collection(db(), "employees")),
+      (snap) => {
+        setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Employee));
+      },
+      (err) => console.error("Employees sub err:", err),
     );
 
+    const un2 = onSnapshot(
+      collection(db(), "departments"),
+      (snap) => {
+        setDepts(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Department));
+      },
+      (err) => console.error("Depts sub err:", err),
+    );
+
+    const todayStr = zonedDateKey(new Date(), DEFAULT_SHIFT_TIMEZONE);
     const un3 = onSnapshot(
-      collection(db(), "punches"),
-      (s) => setTodayPunches(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
-      (err) => console.error("Failed to load today's punches:", err),
+      query(collection(db(), "punches"), where("date", "==", todayStr)),
+      (snap) => {
+        setTodayPunches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Punch));
+      },
+      (err) => console.error("Punches sub err:", err),
     );
 
     return () => {
@@ -132,21 +141,25 @@ function EmployeesListPage() {
   }, [user, authLoading]);
 
   function getPunchStatus(empId: string): "in" | "out" {
-    const list = todayPunches
-      .filter((p) => p.employeeId === empId && (p.type === "in" || p.type === "out"))
-      .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
-    return list[list.length - 1]?.type === "in" ? "in" : "out";
+    const userPunches = todayPunches.filter((p) => p.employeeId === empId);
+    if (userPunches.length === 0) return "out";
+    userPunches.sort((a, b) => {
+      const tA = a.timestamp?.toMillis() || 0;
+      const tB = b.timestamp?.toMillis() || 0;
+      return tA - tB;
+    });
+    return userPunches[userPunches.length - 1].type === "in" ? "in" : "out";
   }
 
   async function handleCopyInviteLink(emp: Employee) {
     try {
+      let token = "";
       const q = query(
         collection(db(), "invites"),
         where("employeeId", "==", emp.id),
         where("used", "==", false),
       );
       const snap = await getDocs(q);
-      let token = "";
       if (!snap.empty) {
         token = snap.docs[0].id;
       } else {
@@ -202,9 +215,17 @@ function EmployeesListPage() {
     }
   });
 
-  const filtered = Array.from(uniqueEmps.values()).filter(
-    (e) => !filterDept || e.deptId === filterDept,
-  );
+  const filtered = Array.from(uniqueEmps.values()).filter((e) => {
+    if (filterDept && e.deptId !== filterDept) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = e.name.toLowerCase().includes(q);
+      const matchEmail = (e.email || "").toLowerCase().includes(q);
+      const matchTitle = (e.jobTitle || "").toLowerCase().includes(q);
+      return matchName || matchEmail || matchTitle;
+    }
+    return true;
+  });
 
   return (
     <div>
@@ -223,11 +244,29 @@ function EmployeesListPage() {
         </button>
       </div>
 
-      <div className="mt-6 flex gap-2">
+      <div className="mt-6 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search employee by name, email, or job title..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm font-medium pr-8"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-2.5 text-xs text-muted-foreground hover:text-foreground font-bold"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <select
           value={filterDept}
           onChange={(e) => setFilterDept(e.target.value)}
-          className="rounded-md border px-3 py-2 text-sm"
+          className="rounded-md border px-3 py-2 text-sm font-medium"
         >
           <option value="">All departments</option>
           {depts.map((d) => (
