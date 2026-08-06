@@ -32,6 +32,7 @@ import {
   Filter,
   AlertTriangle,
   ShieldCheck,
+  Building2,
   X,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -57,6 +58,7 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 function AdminHome() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [todayPunches, setTodayPunches] = useState<Punch[]>([]);
   const [historicalRecent, setHistoricalRecent] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
@@ -65,6 +67,7 @@ function AdminHome() {
     useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
 
   // Dashboard UI States
+  const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [expandedDeptMap, setExpandedDeptMap] = useState<Record<string, boolean>>({});
@@ -112,6 +115,10 @@ function AdminHome() {
   }, []);
 
   useEffect(() => {
+    const un0 = onSnapshot(collection(db(), "companies"), (s) =>
+      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
+    );
+
     const un1 = onSnapshot(collection(db(), "employees"), (s) =>
       setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
@@ -141,6 +148,7 @@ function AdminHome() {
     });
 
     return () => {
+      un0();
       un1();
       un2();
       un3();
@@ -263,9 +271,17 @@ function AdminHome() {
   }
   // Filtered department list based on user selection
   const filteredDepartments = useMemo(() => {
-    if (filterDeptId === "all") return departments;
-    return departments.filter((d) => d.id === filterDeptId);
-  }, [departments, filterDeptId]);
+    return departments.filter((d) => {
+      if (filterDeptId !== "all" && d.id !== filterDeptId) return false;
+      if (filterCompanyId !== "all") {
+        const matchesComp =
+          d.companyId === filterCompanyId ||
+          (!d.companyId && (filterCompanyId === COMPANY_ID || companies.find((c) => c.id === filterCompanyId)?.isMain));
+        if (!matchesComp) return false;
+      }
+      return true;
+    });
+  }, [departments, filterDeptId, filterCompanyId, companies]);
 
   const todayActivityFeed = useMemo(() => {
     return todayPunches
@@ -294,6 +310,22 @@ function AdminHome() {
 
         {/* Global Filters */}
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={filterCompanyId}
+              onChange={(e) => setFilterCompanyId(e.target.value)}
+              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
+            >
+              <option value="all">All Companies ({companies.length})</option>
+              {companies.map((c) => (
+                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                  {c.name} {c.isMain ? "(Main)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
             <Filter className="h-3.5 w-3.5 text-muted-foreground" />
             <select

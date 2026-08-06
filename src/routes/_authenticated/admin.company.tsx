@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import {
   Building2,
   Calendar,
@@ -41,7 +41,9 @@ const DEFAULT_LOGO =
   "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg";
 
 function CompanyPage() {
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState<Company>({
+    id: COMPANY_ID,
     name: "ironbrij",
     defaultShiftHours: 8,
     holidays: [],
@@ -49,10 +51,14 @@ function CompanyPage() {
     workingDays: [1, 2, 3, 4, 5],
     lateGraceMinutes: 5,
     logoUrl: DEFAULT_LOGO,
+    isMain: true,
   });
   const [departments, setDepartments] = useState<Department[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [busy, setBusy] = useState(false);
+  const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+
   const [newHoliday, setNewHoliday] = useState("");
   const [holidayName, setHolidayName] = useState("");
   const [holidayTargetType, setHolidayTargetType] = useState<HolidayTargetType>("all");
@@ -69,19 +75,47 @@ function CompanyPage() {
   const isTodayHoliday = company.holidays.includes(todayStr);
 
   useEffect(() => {
-    const unsubCompany = onSnapshot(doc(db(), "companies", COMPANY_ID), (snapshot) => {
-      if (!snapshot.exists()) return;
-      const data = snapshot.data() as Company;
-      setCompany({
-        name: data.name || "ironbrij",
-        defaultShiftHours: data.defaultShiftHours ?? 8,
-        holidays: data.holidays ?? [],
-        holidayAssignments: data.holidayAssignments ?? [],
-        workingDays: data.workingDays ?? [1, 2, 3, 4, 5],
-        lateGraceMinutes: Math.max(5, data.lateGraceMinutes ?? 5),
-        logoUrl: data.logoUrl || DEFAULT_LOGO,
-      });
+    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snapshot) => {
+      const list = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<Company, "id">),
+      }));
+
+      // Ensure main company document exists in list
+      if (!list.some((c) => c.id === COMPANY_ID)) {
+        const defaultCompany: Company = {
+          id: COMPANY_ID,
+          name: "ironbrij (Main)",
+          defaultShiftHours: 8,
+          holidays: [],
+          workingDays: [1, 2, 3, 4, 5],
+          lateGraceMinutes: 5,
+          logoUrl: DEFAULT_LOGO,
+          isMain: true,
+          createdAt: new Date().toISOString(),
+        };
+        setDoc(doc(db(), "companies", COMPANY_ID), defaultCompany).catch(() => {});
+        setCompanies([defaultCompany, ...list]);
+      } else {
+        setCompanies(list);
+      }
+
+      const mainComp = list.find((c) => c.id === COMPANY_ID || c.isMain);
+      if (mainComp) {
+        setCompany({
+          ...mainComp,
+          name: mainComp.name || "ironbrij",
+          defaultShiftHours: mainComp.defaultShiftHours ?? 8,
+          holidays: mainComp.holidays ?? [],
+          holidayAssignments: mainComp.holidayAssignments ?? [],
+          workingDays: mainComp.workingDays ?? [1, 2, 3, 4, 5],
+          lateGraceMinutes: Math.max(5, mainComp.lateGraceMinutes ?? 5),
+          logoUrl: mainComp.logoUrl || DEFAULT_LOGO,
+          isMain: true,
+        });
+      }
     });
+
     const unsubDepartments = onSnapshot(collection(db(), "departments"), (snapshot) =>
       setDepartments(
         snapshot.docs.map((item) => ({
@@ -90,6 +124,7 @@ function CompanyPage() {
         })),
       ),
     );
+
     const unsubEmployees = onSnapshot(collection(db(), "employees"), (snapshot) =>
       setEmployees(
         snapshot.docs.map((item) => ({
@@ -98,8 +133,9 @@ function CompanyPage() {
         })),
       ),
     );
+
     return () => {
-      unsubCompany();
+      unsubCompanies();
       unsubDepartments();
       unsubEmployees();
     };
@@ -323,13 +359,84 @@ function CompanyPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-          <Building2 className="h-6 w-6" /> Company Settings & Holiday Manager
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Assign holidays to everyone, departments, multiple states, or specific people.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+            <Building2 className="h-6 w-6" /> Company Management & Holidays
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Create companies, set logos, and allocate departments and employees.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAddCompanyModal(true)}
+          className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm flex items-center gap-1.5 shrink-0"
+        >
+          <Building2 className="h-4 w-4" /> + Create New Company
+        </button>
+      </div>
+
+      {/* Companies List */}
+      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
+        <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-primary" /> Active Companies ({companies.length})
+        </h3>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {companies.map((c) => {
+            const compDepts = departments.filter(
+              (d) => d.companyId === c.id || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
+            ).length;
+            const compEmps = employees.filter(
+              (e) =>
+                e.companyId === c.id ||
+                e.companyIds?.includes(c.id || "") ||
+                (!e.companyId && (c.id === COMPANY_ID || c.isMain)),
+            ).length;
+
+            return (
+              <div
+                key={c.id || c.name}
+                className="rounded-xl border p-4 bg-secondary/20 hover:bg-secondary/40 transition-colors flex items-start gap-3 justify-between"
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <img
+                    src={c.logoUrl || DEFAULT_LOGO}
+                    alt={c.name}
+                    className="h-10 w-10 rounded-full object-cover border shrink-0 bg-background"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-sm text-foreground truncate block">
+                        {c.name}
+                      </span>
+                      {(c.id === COMPANY_ID || c.isMain) && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-primary/15 text-primary border border-primary/20 shrink-0">
+                          Main
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {compEmps} Employees · {compDepts} Departments
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                      Shift: {c.defaultShiftHours || 8}h · Grace: {c.lateGraceMinutes || 5}m
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingCompany(c)}
+                  className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors shrink-0"
+                >
+                  Edit
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
@@ -719,6 +826,159 @@ function CompanyPage() {
           {busy ? "Saving Settings..." : "Save Company Settings"}
         </button>
       </div>
+
+      {(showAddCompanyModal || editingCompany) && (
+        <CompanyModal
+          companyToEdit={editingCompany}
+          onClose={() => {
+            setShowAddCompanyModal(false);
+            setEditingCompany(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CompanyModal({
+  companyToEdit,
+  onClose,
+}: {
+  companyToEdit?: Company | null;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(companyToEdit?.name ?? "");
+  const [code, setCode] = useState(companyToEdit?.code ?? "");
+  const [logoUrl, setLogoUrl] = useState(companyToEdit?.logoUrl ?? DEFAULT_LOGO);
+  const [defaultShiftHours, setDefaultShiftHours] = useState(companyToEdit?.defaultShiftHours ?? 8);
+  const [lateGraceMinutes, setLateGraceMinutes] = useState(companyToEdit?.lateGraceMinutes ?? 5);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSaveCompany(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Company name is required");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (companyToEdit?.id) {
+        await updateDoc(doc(db(), "companies", companyToEdit.id), {
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          logoUrl: logoUrl.trim() || DEFAULT_LOGO,
+          defaultShiftHours: Number(defaultShiftHours) || 8,
+          lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
+        });
+        toast.success(`Updated ${name}`);
+      } else {
+        const compRef = doc(collection(db(), "companies"));
+        await setDoc(compRef, {
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          logoUrl: logoUrl.trim() || DEFAULT_LOGO,
+          defaultShiftHours: Number(defaultShiftHours) || 8,
+          lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
+          workingDays: [0, 1, 2, 3, 4, 5],
+          holidays: [],
+          isMain: false,
+          createdAt: new Date().toISOString(),
+        });
+        toast.success(`Created company ${name}`);
+      }
+      onClose();
+    } catch (err) {
+      toast.error("Failed to save company: " + (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <form
+        onSubmit={handleSaveCompany}
+        className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift space-y-4 text-left max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between border-b pb-3">
+          <h3 className="text-lg font-bold text-primary">
+            {companyToEdit ? "Edit Company Settings" : "Create New Company"}
+          </h3>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-muted">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Company Name *</label>
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. SavyKids AU"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Short Code (Optional)</label>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. SK-AU"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium uppercase"
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Logo Image URL</label>
+          <input
+            value={logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="https://..."
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+          />
+          {logoUrl && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Logo preview:</span>
+              <img src={logoUrl} alt="Preview" className="h-8 w-8 rounded-full border object-cover" />
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium">Default Shift (Hours)</label>
+            <input
+              type="number"
+              value={defaultShiftHours}
+              onChange={(e) => setDefaultShiftHours(Number(e.target.value))}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Late Grace (Minutes)</label>
+            <input
+              type="number"
+              value={lateGraceMinutes}
+              onChange={(e) => setLateGraceMinutes(Number(e.target.value))}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
+            Cancel
+          </button>
+          <button
+            disabled={busy}
+            className="rounded-md bg-primary text-primary-foreground px-5 py-2 text-sm font-bold shadow-xs hover:bg-primary/90"
+          >
+            {busy ? "Saving..." : companyToEdit ? "Save Changes" : "Create Company"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

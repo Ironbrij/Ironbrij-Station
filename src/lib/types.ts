@@ -15,18 +15,22 @@ export interface CompanyHoliday {
 }
 
 export interface Company {
+  id?: string;
   name: string;
+  code?: string;
   logoUrl?: string;
   defaultShiftHours: number;
   holidays: string[]; // Legacy company-wide YYYY-MM-DD dates
   holidayAssignments?: CompanyHoliday[];
   workingDays: number[]; // 0=Sun..6=Sat
   lateGraceMinutes?: number;
+  isMain?: boolean;
+  createdAt?: string;
 }
 
 export interface Department {
   id: string;
-  companyId: string;
+  companyId?: string; // Belongs to specific company ID (defaults to COMPANY_ID for legacy)
   name: string;
   state?: string;
 }
@@ -43,6 +47,7 @@ export type DailyReportStatus = "submitted";
 export interface Employee {
   id: string;
   companyId: string;
+  companyIds?: string[]; // Multi-company membership (can belong to 1 or more companies)
   deptId: string;
   name: string;
   email: string;
@@ -65,20 +70,18 @@ export interface Employee {
 
 export interface ReportQuestion {
   id: string;
-  reportType: DailyReportType;
-  question: string;
+  text: string;
+  type: "text" | "textarea";
   required: boolean;
   order: number;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 export interface ReportingSettings {
-  sodDeadline: string;
-  eodDeadline: string;
-  lockAfterDeadline: boolean;
-  updatedAt?: string;
-  updatedBy?: string;
+  sodEnabled: boolean;
+  eodEnabled: boolean;
+  sodDeadlineTime: string;
+  eodDeadlineTime: string;
+  questions: ReportQuestion[];
 }
 
 export interface DailyReportAnswer {
@@ -90,23 +93,20 @@ export interface DailyReportAnswer {
 export interface DailyReport {
   id: string;
   userId: string;
-  employeeId: string;
   userName: string;
   userEmail: string;
-  reportType: DailyReportType;
   reportDate: string;
+  reportType: DailyReportType;
   answers: DailyReportAnswer[];
   submittedAt: Timestamp;
-  status: DailyReportStatus;
   timezone: string;
-  submittedLate?: boolean;
+  submittedLate: boolean;
+  status: DailyReportStatus;
 }
 
 export interface Punch {
   id: string;
   employeeId: string;
-  employeeName?: string;
-  date?: string; // YYYY-MM-DD
   type: PunchType;
   timestamp: Timestamp;
   source: "app" | "auto";
@@ -151,7 +151,8 @@ export interface CompanyNotice {
   title: string;
   message: string;
   priority: "info" | "warning" | "urgent";
-  targetType: "all" | "dept" | "states" | "employee";
+  targetType: "all" | "dept" | "states" | "employee" | "companies";
+  targetCompanyIds?: string[];
   targetDeptId?: string;
   targetDeptIds?: string[];
   targetStateCodes?: string[];

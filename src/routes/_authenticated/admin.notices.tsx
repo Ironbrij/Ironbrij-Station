@@ -47,6 +47,8 @@ function NotificationsPage() {
   const [priority, setPriority] = useState<CompanyNotice["priority"]>("info");
   const [targetType, setTargetType] = useState<CompanyNotice["targetType"]>("all");
   const [targetId, setTargetId] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [deliveryMode, setDeliveryMode] = useState<"instant" | "scheduled">("instant");
@@ -58,6 +60,11 @@ function NotificationsPage() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
     const unsubscribers = [
+      onSnapshot(collection(db(), "companies"), (snapshot) =>
+        setCompanies(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+        ),
+      ),
       onSnapshot(collection(db(), "employees"), (snapshot) =>
         setEmployees(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
@@ -156,6 +163,12 @@ function NotificationsPage() {
 
   function recipientLabel(notice: CompanyNotice) {
     if (!notice.targetType || notice.targetType === "all") return "Everyone";
+    if (notice.targetType === "companies") {
+      const names = companies
+        .filter((c) => notice.targetCompanyIds?.includes(c.id || ""))
+        .map((c) => c.name);
+      return names.length ? `${names.join(", ")}` : "Selected companies";
+    }
     if (notice.targetType === "dept") {
       const departmentIds = notice.targetDeptIds?.length
         ? notice.targetDeptIds
@@ -184,9 +197,14 @@ function NotificationsPage() {
       .filter((name): name is string => Boolean(name));
     return names.length ? names.join(", ") : "Selected employees";
   }
+
   async function publish(event: React.FormEvent) {
     event.preventDefault();
     if (!title.trim() || !message.trim()) return;
+    if (targetType === "companies" && selectedCompanyIds.length === 0) {
+      toast.error("Select at least one company.");
+      return;
+    }
     if (targetType === "dept" && !targetId) {
       toast.error("Select a department.");
       return;
@@ -216,6 +234,7 @@ function NotificationsPage() {
         message: message.trim(),
         priority,
         targetType,
+        ...(targetType === "companies" ? { targetCompanyIds: selectedCompanyIds } : {}),
         ...(targetType === "dept" ? { targetDeptId: targetId } : {}),
         ...(targetType === "states" ? { targetStateCodes: selectedStateCodes } : {}),
         ...(targetType === "employee"
@@ -366,12 +385,36 @@ function NotificationsPage() {
                 className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
               >
                 <option value="all">Everyone</option>
+                <option value="companies">Specific Companies</option>
                 <option value="dept">Department</option>
                 <option value="states">One or more states</option>
                 <option value="employee">Specific employees</option>
               </select>
             </label>
           </div>
+
+          {targetType === "companies" && (
+            <div className="space-y-2 rounded-lg border bg-secondary/20 p-3">
+              <label className="text-xs font-bold text-muted-foreground">Select Companies</label>
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                {companies.map((c) => (
+                  <label key={c.id || c.name} className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedCompanyIds.includes(c.id || COMPANY_ID)}
+                      onChange={() => {
+                        const id = c.id || COMPANY_ID;
+                        setSelectedCompanyIds((prev) =>
+                          prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
+                        );
+                      }}
+                    />
+                    <span>{c.name} {c.isMain ? "(Main)" : ""}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <fieldset className="space-y-2 rounded-lg border p-3">
             <legend className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
               <CalendarClock className="h-3.5 w-3.5" /> Delivery time

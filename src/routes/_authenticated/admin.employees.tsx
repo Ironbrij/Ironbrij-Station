@@ -183,10 +183,12 @@ function EmployeesPage() {
 }
 
 function EmployeesListPage() {
-  const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [depts, setDepts] = useState<Department[]>([]);
-  const [todayPunches, setTodayPunches] = useState<Punch[]>([]);
+  const [employees, setEmployees] = useState<Employee[] | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [punches, setPunches] = useState<Punch[]>([]);
   const [filterDept, setFilterDept] = useState("");
+  const [filterCompany, setFilterCompany] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
@@ -197,23 +199,6 @@ function EmployeesListPage() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    const un1 = onSnapshot(
-      query(collection(db(), "employees")),
-      (snap) => {
-        setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Employee));
-      },
-      (err) => console.error("Employees sub err:", err),
-    );
-
-    const un2 = onSnapshot(
-      collection(db(), "departments"),
-      (snap) => {
-        setDepts(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Department));
-      },
-      (err) => console.error("Depts sub err:", err),
-    );
-
-    const todayStr = zonedDateKey(new Date(), DEFAULT_SHIFT_TIMEZONE);
     const un3 = onSnapshot(
       query(collection(db(), "punches"), where("date", "==", todayStr)),
       (snap) => {

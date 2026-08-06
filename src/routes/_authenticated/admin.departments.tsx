@@ -61,10 +61,13 @@ export const Route = createFileRoute("/_authenticated/admin/departments")({
 function DepartmentsPage() {
   const [depts, setDepts] = useState<Department[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [name, setName] = useState("");
   const [departmentState, setDepartmentState] = useState("N/A");
+  const [deptCompanyId, setDeptCompanyId] = useState<string>(COMPANY_ID);
+  const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
   const [saving, setSaving] = useState(false);
   const [expandedDeptId, setExpandedDeptId] = useState<string | null>(null);
   const [reportDaysMap, setReportDaysMap] = useState<Record<string, number>>({});
@@ -74,6 +77,10 @@ function DepartmentsPage() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+
+    const u0 = onSnapshot(collection(db(), "companies"), (s) => {
+      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) })));
+    });
 
     const u1 = onSnapshot(
       collection(db(), "departments"),
@@ -112,6 +119,7 @@ function DepartmentsPage() {
     );
 
     return () => {
+      u0();
       u1();
       u2();
       u3();
@@ -129,8 +137,9 @@ function DepartmentsPage() {
       const deptRef = doc(collection(db(), "departments"));
       const deptId = deptRef.id;
 
+      const selectedCompanyId = deptCompanyId || COMPANY_ID;
       await setDoc(deptRef, {
-        companyId: COMPANY_ID,
+        companyId: selectedCompanyId,
         name: cleanName,
         state: departmentState,
         createdAt: new Date().toISOString(),
@@ -138,7 +147,7 @@ function DepartmentsPage() {
 
       const newDept: Department = {
         id: deptId,
-        companyId: COMPANY_ID,
+        companyId: selectedCompanyId,
         name: cleanName,
         state: departmentState,
       };
@@ -506,14 +515,29 @@ function DepartmentsPage() {
       </section>
       <form
         onSubmit={add}
-        className="grid gap-2 bg-card p-4 rounded-xl border shadow-lift sm:grid-cols-[1fr_220px_auto]"
+        className="grid gap-2 bg-card p-4 rounded-xl border shadow-lift sm:grid-cols-[1fr_180px_180px_auto]"
       >
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New department name (e.g. IT, Engineering, Sales)"
-          className="flex-1 rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
+          className="flex-1 rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20 font-medium"
         />
+
+        <select
+          value={deptCompanyId}
+          onChange={(e) => setDeptCompanyId(e.target.value)}
+          className="rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20 font-semibold"
+          aria-label="Department company"
+        >
+          {companies.map((c) => (
+            <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+              {c.name} {c.isMain ? "(Main)" : ""}
+            </option>
+          ))}
+          {companies.length === 0 && <option value={COMPANY_ID}>Main Company</option>}
+        </select>
+
         <select
           value={departmentState}
           onChange={(event) => setDepartmentState(event.target.value)}
@@ -530,7 +554,7 @@ function DepartmentsPage() {
           disabled={saving}
           className="btn-lift rounded-md bg-primary text-primary-foreground px-5 py-2 text-sm font-bold"
         >
-          {saving ? "Saving..." : "Add Department"}
+          {saving ? "Saving…" : "+ Add Department"}
         </button>
       </form>
 
