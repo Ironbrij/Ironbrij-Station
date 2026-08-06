@@ -308,6 +308,7 @@ function MakeEmployeeModal({
         shiftTimezone,
         status: "active",
         inviteStatus: "accepted",
+        reportingRequirement: "sod_eod",
         authUid: user.uid,
         photoUrl: user.photoUrl || user.photoURL || user.picture || "",
         createdAt: new Date().toISOString(),

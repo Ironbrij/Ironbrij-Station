@@ -71,11 +71,8 @@ function AdminSodEodPage() {
     sod: "",
     eod: "",
   });
-  const [employeeFilter, setEmployeeFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | DailyReportType>("all");
-  const [dateFilter, setDateFilter] = useState(() =>
-    zonedDateKey(new Date(), DEFAULT_LOCAL_TIMEZONE),
-  );
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<Employee | null>(null);
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const seededDefaults = useRef(false);
@@ -276,60 +273,37 @@ function AdminSodEodPage() {
       .catch((error) => toast.error("Could not reorder questions: " + error.message));
   }
 
-  const reportRows = useMemo(() => {
-    if (!employees || !reports) return [];
-    const reportMap = new Map(reports.map((report) => [report.id, report]));
-    const rows: ReportRow[] = [];
-    const now = new Date(clock);
+  const todayStats = useMemo(() => {
+    if (!employees || !reports) return { submitted: 0, missed: 0, waiting: 0 };
+    let submitted = 0;
+    let missed = 0;
+    let waiting = 0;
+    const today = new Date(clock);
 
-    for (const report of reports) {
-      if (dateFilter && report.reportDate !== dateFilter) continue;
-      rows.push({
-        id: report.id,
-        userId: report.userId,
-        userName: report.userName,
-        userEmail: report.userEmail,
-        reportType: report.reportType,
-        reportDate: report.reportDate,
-        status: "submitted",
-        report,
-      });
-    }
+    for (const employee of employees.filter((item) => item.status === "active")) {
+      const tz = getEmployeeTimezone(employee);
+      const todayKey = zonedDateKey(today, tz);
+      const req = employee.reportingRequirement || "none";
+      const requiredTypes = requiredReportTypes(req);
 
-    if (dateFilter) {
-      for (const employee of employees) {
+      for (const reportType of requiredTypes) {
         const userId = employee.authUid || employee.id;
-        for (const reportType of requiredReportTypes(employee.reportingRequirement)) {
-          const id = reportDocumentId(userId, dateFilter, reportType);
-          if (reportMap.has(id)) continue;
-          const missed = isReportDeadlinePassed(employee, reportType, dateFilter, settings, now);
-          rows.push({
-            id,
-            userId,
-            userName: employee.name,
-            userEmail: employee.email,
-            reportType,
-            reportDate: dateFilter,
-            status: missed ? "missed" : "not_submitted",
-          });
+        const reportId = reportDocumentId(userId, todayKey, reportType);
+        const found = reports.some((r) => r.id === reportId);
+        if (found) {
+          submitted++;
+        } else {
+          const isMissed = isReportDeadlinePassed(employee, reportType, todayKey, settings, today);
+          if (isMissed) {
+            missed++;
+          } else {
+            waiting++;
+          }
         }
       }
     }
-
-    return rows
-      .filter((row) => employeeFilter === "all" || row.userId === employeeFilter)
-      .filter((row) => typeFilter === "all" || row.reportType === typeFilter)
-      .sort(
-        (a, b) =>
-          b.reportDate.localeCompare(a.reportDate) ||
-          a.userName.localeCompare(b.userName) ||
-          a.reportType.localeCompare(b.reportType),
-      );
-  }, [clock, dateFilter, employeeFilter, employees, reports, settings, typeFilter]);
-
-  const submittedCount = reportRows.filter((row) => row.status === "submitted").length;
-  const missedCount = reportRows.filter((row) => row.status === "missed").length;
-  const waitingCount = reportRows.filter((row) => row.status === "not_submitted").length;
+    return { submitted, missed, waiting };
+  }, [employees, reports, clock, settings]);
 
   return (
     <div className="space-y-8">
@@ -400,61 +374,6 @@ function AdminSodEodPage() {
         </div>
       </section>
 
-      <section className="rounded-xl border bg-card p-5 sm:p-6">
-        <h2 className="text-lg font-semibold">User requirements</h2>
-        <p className="mb-4 text-sm text-muted-foreground">
-          Choose which reports each employee must complete.
-        </p>
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full min-w-[680px] text-left text-sm">
-            <thead className="bg-muted/60 text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Requirement</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {employees === null ? (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
-                    Loading employees...
-                  </td>
-                </tr>
-              ) : employees.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
-                    No employees found.
-                  </td>
-                </tr>
-              ) : (
-                employees.map((employee) => (
-                  <tr key={employee.id}>
-                    <td className="px-4 py-3 font-medium">{employee.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{employee.email}</td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={employee.reportingRequirement || "none"}
-                        onChange={(event) =>
-                          updateRequirement(employee, event.target.value as ReportingRequirement)
-                        }
-                        className="w-full max-w-xs rounded-lg border bg-background px-3 py-2"
-                      >
-                        {REQUIREMENT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Report questions</h2>
@@ -484,109 +403,166 @@ function AdminSodEodPage() {
         </div>
       </section>
 
-      <section className="rounded-xl border bg-card p-5 sm:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <section className="rounded-xl border bg-card p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
           <div>
-            <h2 className="text-lg font-semibold">Submitted and required reports</h2>
-            <p className="text-sm text-muted-foreground">Reports are read-only after submission.</p>
+            <h2 className="text-lg font-semibold">Employee Daily Reports & Requirements</h2>
+            <p className="text-sm text-muted-foreground">
+              Monitor today's SOD/EOD submissions and configure requirements per employee.
+            </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <select
-              value={employeeFilter}
-              onChange={(event) => setEmployeeFilter(event.target.value)}
-              className="rounded-lg border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All users</option>
-              {(employees || []).map((employee) => (
-                <option key={employee.id} value={employee.authUid || employee.id}>
-                  {employee.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value as "all" | DailyReportType)}
-              className="rounded-lg border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All report types</option>
-              <option value="sod">SOD</option>
-              <option value="eod">EOD</option>
-            </select>
+          <div className="w-full sm:w-72">
             <input
-              type="date"
-              value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
-              className="rounded-lg border bg-background px-3 py-2 text-sm"
+              type="text"
+              placeholder="Search employee..."
+              value={employeeSearch}
+              onChange={(e) => setEmployeeSearch(e.target.value)}
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
             />
           </div>
         </div>
 
-        <div className="my-4 grid grid-cols-3 gap-2 text-center text-sm">
-          <Summary label="Submitted" value={submittedCount} />
-          <Summary label="Missed" value={missedCount} />
-          <Summary label="Awaiting" value={waitingCount} />
+        <div className="grid grid-cols-3 gap-2 text-center text-sm bg-secondary/20 p-2.5 rounded-lg">
+          <Summary label="Submitted Today" value={todayStats.submitted} />
+          <Summary label="Missed Today" value={todayStats.missed} />
+          <Summary label="Awaiting Today" value={todayStats.waiting} />
         </div>
 
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full min-w-[800px] text-left text-sm">
             <thead className="bg-muted/60 text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Submitted</th>
+                <th className="px-4 py-3">Today's SOD</th>
+                <th className="px-4 py-3">Today's EOD</th>
+                <th className="px-4 py-3">Reporting Requirement</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {reports === null || employees === null ? (
+              {employees === null || reports === null ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    Loading reports...
-                  </td>
-                </tr>
-              ) : reportRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    No reports match these filters.
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                    Loading employees and reports...
                   </td>
                 </tr>
               ) : (
-                reportRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="px-4 py-3">{row.reportDate}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{row.userName}</div>
-                      <div className="text-xs text-muted-foreground">{row.userEmail}</div>
-                    </td>
-                    <td className="px-4 py-3">{reportTypeLabel(row.reportType)}</td>
-                    <td className="px-4 py-3">
-                      <ReportStatusBadge status={row.status} />
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {row.report ? formatTimestamp(row.report.submittedAt) : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {row.report ? (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedReport(row.report!)}
-                          className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium"
-                        >
-                          <Eye className="h-4 w-4" /> View
-                        </button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No submission</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                (() => {
+                  const filteredEmployees = employees.filter((emp) => {
+                    if (emp.status !== "active") return false;
+                    if (employeeSearch) {
+                      const query = employeeSearch.toLowerCase().trim();
+                      return (
+                        emp.name.toLowerCase().includes(query) ||
+                        emp.email.toLowerCase().includes(query)
+                      );
+                    }
+                    return true;
+                  });
+
+                  if (filteredEmployees.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                          No employees found matching the search.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredEmployees.map((employee) => {
+                    const getTodayReportStatus = (emp: Employee, type: "sod" | "eod") => {
+                      const req = emp.reportingRequirement || "none";
+                      const isRequired =
+                        req === "sod_eod" ||
+                        (type === "sod" && req === "sod_only") ||
+                        (type === "eod" && req === "eod_only");
+
+                      if (!isRequired) return "not_required";
+
+                      const tz = getEmployeeTimezone(emp);
+                      const todayKey = zonedDateKey(new Date(clock), tz);
+                      const reportId = reportDocumentId(emp.authUid || emp.id, todayKey, type);
+                      const found = reports.some((r) => r.id === reportId);
+
+                      if (found) return "submitted";
+
+                      const missed = isReportDeadlinePassed(
+                        emp,
+                        type,
+                        todayKey,
+                        settings,
+                        new Date(clock),
+                      );
+                      return missed ? "missed" : "not_submitted";
+                    };
+
+                    const sodStatus = getTodayReportStatus(employee, "sod");
+                    const eodStatus = getTodayReportStatus(employee, "eod");
+
+                    return (
+                      <tr key={employee.id} className="hover:bg-secondary/25">
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEmployeeForHistory(employee)}
+                            className="font-bold text-primary hover:underline text-left block"
+                          >
+                            {employee.name}
+                          </button>
+                          <div className="text-xs text-muted-foreground">{employee.email}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <ReportStatusBadge status={sodStatus} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <ReportStatusBadge status={eodStatus} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={employee.reportingRequirement || "none"}
+                            onChange={(event) =>
+                              updateRequirement(
+                                employee,
+                                event.target.value as ReportingRequirement,
+                              )
+                            }
+                            className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold"
+                          >
+                            {REQUIREMENT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEmployeeForHistory(employee)}
+                            className="inline-flex items-center gap-1 rounded-lg border bg-secondary/80 hover:bg-secondary px-3 py-1.5 text-xs font-bold"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> View History
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()
               )}
             </tbody>
           </table>
         </div>
       </section>
+
+      {selectedEmployeeForHistory && (
+        <ReportHistoryModal
+          employee={selectedEmployeeForHistory}
+          reports={reports || []}
+          onViewReport={(report) => setSelectedReport(report)}
+          onClose={() => setSelectedEmployeeForHistory(null)}
+        />
+      )}
 
       {selectedReport && (
         <ReportModal report={selectedReport} onClose={() => setSelectedReport(null)} />
@@ -781,4 +757,102 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
 function formatTimestamp(value: DailyReport["submittedAt"]) {
   if (!value?.toDate) return "Processing...";
   return value.toDate().toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function ReportHistoryModal({
+  employee,
+  reports,
+  onViewReport,
+  onClose,
+}: {
+  employee: Employee;
+  reports: DailyReport[];
+  onViewReport: (report: DailyReport) => void;
+  onClose: () => void;
+}) {
+  const empReports = useMemo(() => {
+    const userId = employee.authUid || employee.id;
+    return reports
+      .filter((r) => r.userId === userId || r.employeeId === employee.id)
+      .sort((a, b) => b.reportDate.localeCompare(a.reportDate) || a.reportType.localeCompare(b.reportType));
+  }, [employee, reports]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-xs"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl space-y-4">
+        <div className="flex items-start justify-between border-b pb-3">
+          <div>
+            <h3 className="text-lg font-bold text-foreground">Report History: {employee.name}</h3>
+            <p className="text-xs text-muted-foreground">{employee.email}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto rounded-lg border">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-secondary text-xs uppercase font-semibold text-muted-foreground">
+              <tr>
+                <th className="px-4 py-2.5">Date</th>
+                <th className="px-4 py-2.5">Type</th>
+                <th className="px-4 py-2.5">Timing</th>
+                <th className="px-4 py-2.5">Submitted At</th>
+                <th className="px-4 py-2.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-xs">
+              {empReports.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                    No reports submitted yet.
+                  </td>
+                </tr>
+              ) : (
+                empReports.map((report) => (
+                  <tr key={report.id} className="hover:bg-secondary/35">
+                    <td className="px-4 py-3 font-semibold">{report.reportDate}</td>
+                    <td className="px-4 py-3 font-extrabold capitalize">{reportTypeLabel(report.reportType)}</td>
+                    <td className="px-4 py-3">
+                      {report.submittedLate ? (
+                        <span className="text-rose-600 font-semibold">Late</span>
+                      ) : (
+                        <span className="text-emerald-600 font-semibold">On time</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {formatTimestamp(report.submittedAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onViewReport(report)}
+                        className="inline-flex items-center gap-1 rounded-md border bg-primary/5 px-2 py-1 font-bold text-primary hover:bg-primary/10"
+                      >
+                        <Eye className="h-3 w-3" /> View Answers
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-end pt-2 border-t">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border bg-secondary px-4 py-2 text-xs font-bold text-foreground hover:bg-muted"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
