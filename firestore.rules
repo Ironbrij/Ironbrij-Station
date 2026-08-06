@@ -88,22 +88,15 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Submitted reports are immutable historical records.
+    // Submitted SOD & EOD daily reports
     match /dailyReports/{reportId} {
-      // Admins can list/read all reports; employees can only read their own.
-      allow list: if isAdmin() || (
-        isAuthed() && resource.data.userId == request.auth.uid
+      allow read, list: if isAuthed();
+      allow create, update: if isAuthed() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.employeeId == request.auth.uid ||
+        isAdmin()
       );
-      allow get: if isAdmin() || (
-        isAuthed() && resource.data.userId == request.auth.uid
-      );
-      allow create: if isAuthed()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == 'submitted'
-        && request.resource.data.reportType in ['sod', 'eod']
-        && request.resource.data.submittedAt == request.time
-        && reportId == request.auth.uid + '_' + request.resource.data.reportDate + '_' + request.resource.data.reportType;
-      allow update, delete: if false;
+      allow delete: if isAdmin();
     }
 
     // Personal automation status.
