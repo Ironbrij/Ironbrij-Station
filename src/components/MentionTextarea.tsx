@@ -44,6 +44,7 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
   const [query, setQuery] = useState("");
   const [triggerIndex, setTriggerIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [dropPosition, setDropPosition] = useState<"bottom" | "top">("bottom");
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -104,6 +105,19 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
       return nameMatch || tagMatch || subtitleMatch || deptMatch;
     });
   }, [isOpen, triggerIndex, query, candidates]);
+
+  // Determine smart drop position (render above if space below is limited)
+  useEffect(() => {
+    if (isOpen && textareaRef.current) {
+      const rect = textareaRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 220 && rect.top > 220) {
+        setDropPosition("top");
+      } else {
+        setDropPosition("bottom");
+      }
+    }
+  }, [isOpen]);
 
   // Reset selected index when filtered list changes
   useEffect(() => {
@@ -230,12 +244,14 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
       {isOpen && filteredCandidates.length > 0 && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 mt-1 max-h-56 w-full max-w-md overflow-y-auto rounded-xl border bg-popover p-1.5 shadow-xl ring-1 ring-black/10 animate-in fade-in zoom-in-95 duration-100"
-          style={{ top: "100%", left: 0 }}
+          className={`absolute z-[99999] max-h-56 w-full max-w-md overflow-y-auto rounded-xl border bg-popover p-1.5 shadow-2xl ring-1 ring-black/10 animate-in fade-in zoom-in-95 duration-100 ${
+            dropPosition === "top" ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+          style={{ left: 0 }}
         >
-          <div className="px-2 py-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center justify-between border-b pb-1 mb-1">
+          <div className="px-2 py-1 text-[11px] font-bold tracking-wider text-muted-foreground uppercase flex items-center justify-between border-b pb-1 mb-1">
             <span>Tag Person or Department</span>
-            <span className="text-[10px] font-normal text-muted-foreground">↑↓ Navigate • ↵ Select</span>
+            <span className="text-[10px] font-semibold text-muted-foreground">↑↓ Navigate • ↵ Select</span>
           </div>
 
           <div className="space-y-0.5">
@@ -254,13 +270,13 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
                     isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent hover:text-accent-foreground text-foreground"
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "hover:bg-accent hover:text-accent-foreground text-foreground font-semibold"
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-medium ${
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-bold ${
                         isSelected
                           ? "bg-primary-foreground/20 text-primary-foreground"
                           : isPerson
@@ -272,11 +288,11 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
                     </div>
 
                     <div className="truncate">
-                      <div className="font-semibold truncate flex items-center gap-1.5">
-                        <span>{candidate.name}</span>
+                      <div className="font-bold truncate flex items-center gap-1.5">
+                        <span className="font-bold">{candidate.name}</span>
                         {isPerson && candidate.deptName && (
                           <span
-                            className={`text-[10px] px-1.5 py-0.2 rounded font-normal truncate ${
+                            className={`text-[10px] px-1.5 py-0.2 rounded font-semibold truncate ${
                               isSelected
                                 ? "bg-primary-foreground/20 text-primary-foreground"
                                 : "bg-muted text-muted-foreground"
@@ -289,7 +305,7 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
                       {candidate.subtitle && (
                         <div
                           className={`text-[11px] truncate ${
-                            isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
+                            isSelected ? "text-primary-foreground/80 font-medium" : "text-muted-foreground"
                           }`}
                         >
                           {candidate.subtitle}
@@ -299,7 +315,7 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
                   </div>
 
                   <span
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
                       isSelected
                         ? "bg-primary-foreground/20 text-primary-foreground"
                         : isPerson

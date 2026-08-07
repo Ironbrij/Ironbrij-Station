@@ -17,7 +17,7 @@ function EmployeeLayout() {
     { to: "/app/leave", label: "Leave" },
     { to: "/app/sod-eod", label: "SOD & EOD" },
     { to: "/app/notices", label: "Notifications" },
-    { to: "/app/automation", label: "Automation" },
+    { to: "/app/automation", label: "Help & Feedback" },
   ];
 
   if (isAdmin) {

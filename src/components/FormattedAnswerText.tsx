@@ -39,7 +39,7 @@ export const FormattedAnswerText: React.FC<FormattedAnswerTextProps> = ({
         return (
           <span
             key={index}
-            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold mx-0.5 transition-colors align-baseline ${
+            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-bold mx-0.5 transition-colors align-baseline ${
               isDept
                 ? "bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50"
                 : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50"
@@ -50,7 +50,7 @@ export const FormattedAnswerText: React.FC<FormattedAnswerTextProps> = ({
             ) : (
               <User className="h-3 w-3 shrink-0 text-blue-600 dark:text-blue-400" />
             )}
-            <span>{part}</span>
+            <span className="font-bold">{part}</span>
           </span>
         );
       })}
