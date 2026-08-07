@@ -64,17 +64,15 @@ export function deadlineForReport(
   return zonedDateTimeToDate(date, deadline, getEmployeeTimezone(employee));
 }
 
+// Deadlines disabled: Users can submit SOD & EOD reports at any time
 export function isReportDeadlinePassed(
-  employee: Employee,
-  type: DailyReportType,
-  date: string,
-  settings: ReportingSettings,
-  now = new Date(),
+  _employee: Employee,
+  _type: DailyReportType,
+  _date: string,
+  _settings: ReportingSettings,
+  _now = new Date(),
 ) {
-  const employeeToday = reportDateForEmployee(employee, now);
-  if (date < employeeToday) return true;
-  if (date > employeeToday) return false;
-  return now.getTime() > deadlineForReport(employee, type, date, settings).getTime();
+  return false;
 }
 
 export function reportDisplayStatus(input: {
@@ -84,6 +82,5 @@ export function reportDisplayStatus(input: {
 }) {
   if (!input.required) return "not_required" as const;
   if (input.report) return "submitted" as const;
-  if (input.deadlinePassed) return "missed" as const;
   return "not_submitted" as const;
 }

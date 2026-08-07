@@ -204,17 +204,6 @@ function EmployeeSodEodPage() {
       return;
     }
 
-    const deadlinePassed = isReportDeadlinePassed(
-      activeEmp,
-      type,
-      reportDate,
-      settings,
-      new Date(clock),
-    );
-    if (deadlinePassed && settings.lockAfterDeadline) {
-      toast.error(`${reportTypeLabel(type)} submissions are locked after the deadline.`);
-      return;
-    }
     if (
       !window.confirm(
         "Are you sure you want to submit this report? You will not be able to edit it afterward.",
@@ -338,14 +327,6 @@ function EmployeeSodEodPage() {
         <div className="grid gap-5 lg:grid-cols-2">
           {requiredTypes.map((type) => {
             const report = reportForToday(type);
-            const deadlinePassed = isReportDeadlinePassed(
-              activeEmp,
-              type,
-              reportDate,
-              settings,
-              new Date(clock),
-            );
-            const locked = deadlinePassed && settings.lockAfterDeadline && !report;
             const isOpen = openType === type;
             const typeQuestions = questionsFor(type);
 
@@ -354,11 +335,8 @@ function EmployeeSodEodPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-lg font-semibold">{reportTypeLabel(type)}</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Deadline {type === "sod" ? settings.sodDeadline : settings.eodDeadline}
-                    </p>
                   </div>
-                  <UserStatusBadge report={report} deadlinePassed={deadlinePassed} />
+                  <UserStatusBadge report={report} deadlinePassed={false} />
                 </div>
 
                 {recentlySubmitted === type && (
@@ -369,17 +347,8 @@ function EmployeeSodEodPage() {
 
                 {report ? (
                   <SubmittedReport report={report} />
-                ) : locked ? (
-                  <div className="mt-5 rounded-lg border p-4 text-sm text-muted-foreground">
-                    The deadline has passed and late submissions are locked.
-                  </div>
                 ) : (
                   <div className="mt-5">
-                    {deadlinePassed && (
-                      <p className="mb-3 text-sm text-muted-foreground">
-                        The deadline has passed. A late submission is still allowed.
-                      </p>
-                    )}
                     <button
                       type="button"
                       onClick={() => setOpenType(isOpen ? null : type)}

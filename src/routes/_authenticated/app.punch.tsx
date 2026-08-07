@@ -412,14 +412,6 @@ function PunchPage() {
       const reportId = reportDocumentId(user.uid, reportDate, type);
       const reportRef = doc(db(), "dailyReports", reportId);
 
-      const deadlinePassed = isReportDeadlinePassed(
-        employee,
-        type,
-        reportDate,
-        DEFAULT_REPORTING_SETTINGS,
-        new Date(),
-      );
-
       await setDoc(
         reportRef,
         sanitizeFirestoreObject({
@@ -434,7 +426,7 @@ function PunchPage() {
           submittedAt: serverTimestamp(),
           status: "submitted",
           timezone: getEmployeeTimezone(employee),
-          submittedLate: deadlinePassed,
+          submittedLate: false,
         }),
         { merge: true },
       );
