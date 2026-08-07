@@ -171,10 +171,28 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           });
         }
 
-        const dispatchedEmails: string[] = [];
+        // Build HTML content for answer notes
+        const notesHtml = answersWithMentions
+          .map((ans) => {
+            const qText = escapeHtml(ans.question);
+            const formattedAns = formatMentionsInHtml(ans.answer);
+            return `
+              <div style="margin-bottom: 16px;">
+                <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+                  Question: ${qText}
+                </div>
+                <div style="background-color: #ffffff; border-left: 3px solid #4f46e5; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; border-radius: 0 8px 8px 0; padding: 14px 16px; font-size: 14px; line-height: 1.6; color: #1e293b;">
+                  ${formattedAns}
+                </div>
+              </div>
+            `;
+          })
+          .join("");
 
-        // Build HTML email for each recipient
-        for (const recipient of targetRecipients) {
+        const plainAnswerText = answersWithMentions.map((a) => `${a.question}: ${a.answer}`).join("\n\n");
+
+        // Format mentions array so n8n "Split Mentions" node receives an item for each employee
+        const n8nMentions = targetRecipients.map((recipient) => {
           const recipientName = escapeHtml(recipient.name);
           const authorName = escapeHtml(body.authorName);
           const reportDate = escapeHtml(body.reportDate);
@@ -182,24 +200,6 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           const isDept = recipient.targetType === "department";
 
           const subject = `Mentioned in ${reportTypeShort} Report by ${body.authorName} (${body.reportDate})`;
-
-          // Combine answers with mentions into formatted HTML list
-          const notesHtml = answersWithMentions
-            .map((ans) => {
-              const qText = escapeHtml(ans.question);
-              const formattedAns = formatMentionsInHtml(ans.answer);
-              return `
-                <div style="margin-bottom: 16px;">
-                  <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
-                    Question: ${qText}
-                  </div>
-                  <div style="background-color: #ffffff; border-left: 3px solid #4f46e5; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; border-radius: 0 8px 8px 0; padding: 14px 16px; font-size: 14px; line-height: 1.6; color: #1e293b;">
-                    ${formattedAns}
-                  </div>
-                </div>
-              `;
-            })
-            .join("");
 
           const html = `
 <!DOCTYPE html>
@@ -285,34 +285,43 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
 </html>
           `.trim();
 
-          const n8nPayload = {
-            reportId: body.reportId,
-            reportType: body.reportType || "sod",
-            reportDate: body.reportDate,
-            authorName: body.authorName,
-            authorEmail: body.authorEmail,
-            email: {
-              to: recipient.email,
-              subject,
-              html,
-            },
+          return {
+            email: recipient.email,
+            recipientEmail: recipient.email,
+            name: recipient.name,
+            targetName: recipient.targetName,
+            targetType: recipient.targetType,
+            answer: plainAnswerText,
+            subject,
+            html,
+            message: html,
           };
+        });
 
-          // Post to n8n webhook
-          fetch(webhookUrl, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(n8nPayload),
-          }).catch((err) => console.error("n8n mention notification webhook error:", err));
+        // Single batch payload to n8n webhook matching n8n $json.body.mentions and Split Mentions node
+        const n8nWebhookPayload = {
+          reportId: body.reportId,
+          reportType: body.reportType || "sod",
+          reportDate: body.reportDate,
+          authorName: body.authorName,
+          authorEmail: body.authorEmail,
+          authorDeptName: body.authorDeptName,
+          answer: plainAnswerText,
+          mentions: n8nMentions,
+        };
 
-          dispatchedEmails.push(recipient.email);
-        }
+        // Post to n8n webhook once with all mentions array
+        fetch(webhookUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(n8nWebhookPayload),
+        }).catch((err) => console.error("n8n mention notification webhook error:", err));
 
         return Response.json({
           ok: true,
-          mentionsCount: answersWithMentions.length,
-          dispatchedToCount: dispatchedEmails.length,
-          dispatchedTo: dispatchedEmails,
+          mentionsCount: n8nMentions.length,
+          dispatchedToCount: targetRecipients.length,
+          dispatchedTo: targetRecipients.map((r) => r.email),
           message: "Mention notifications dispatched successfully to n8n webhook",
         });
       },
