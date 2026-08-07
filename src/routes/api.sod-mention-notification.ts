@@ -133,7 +133,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
         if (Array.isArray(body.recipients) && body.recipients.length > 0) {
           for (const rec of body.recipients) {
             const cleanEmail = rec.email?.trim().toLowerCase();
-            if (cleanEmail && cleanEmail !== body.authorEmail.toLowerCase() && !seenEmails.has(cleanEmail)) {
+            if (cleanEmail && !seenEmails.has(cleanEmail)) {
               seenEmails.add(cleanEmail);
               targetRecipients.push({
                 email: cleanEmail,
@@ -149,7 +149,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
             for (const mention of answerObj.mentions || []) {
               if (mention.type === "person" && mention.email) {
                 const cleanEmail = mention.email.trim().toLowerCase();
-                if (cleanEmail !== body.authorEmail.toLowerCase() && !seenEmails.has(cleanEmail)) {
+                if (cleanEmail && !seenEmails.has(cleanEmail)) {
                   seenEmails.add(cleanEmail);
                   targetRecipients.push({
                     email: cleanEmail,

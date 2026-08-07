@@ -162,11 +162,10 @@ export function extractMentionsFromText(
 export function resolveMentionRecipients(
   mentions: MentionItem[],
   employees: Employee[],
-  authorEmail?: string,
+  _authorEmail?: string,
 ): Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> {
   const recipients: Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> = [];
   const seenEmails = new Set<string>();
-  const cleanAuthorEmail = authorEmail?.trim().toLowerCase();
 
   for (const m of mentions) {
     if (m.type === "person") {
@@ -174,7 +173,7 @@ export function resolveMentionRecipients(
         (e) => e.id === m.id || e.authUid === m.id || e.name.toLowerCase() === m.name.toLowerCase(),
       );
       const email = (emp?.email || m.email || "").trim().toLowerCase();
-      if (email && email !== cleanAuthorEmail && !seenEmails.has(email)) {
+      if (email && !seenEmails.has(email)) {
         seenEmails.add(email);
         recipients.push({
           email,
@@ -190,7 +189,7 @@ export function resolveMentionRecipients(
       );
       for (const emp of deptEmployees) {
         const email = emp.email?.trim().toLowerCase();
-        if (email && email !== cleanAuthorEmail && !seenEmails.has(email)) {
+        if (email && !seenEmails.has(email)) {
           seenEmails.add(email);
           recipients.push({
             email,
