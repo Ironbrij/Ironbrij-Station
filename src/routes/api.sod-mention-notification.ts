@@ -102,8 +102,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
 
         const webhookUrl =
           process.env.N8N_SOD_MENTION_WEBHOOK_URL ||
-          process.env.N8N_LEAVE_WEBHOOK_URL ||
-          process.env.N8N_INVITE_WEBHOOK_URL;
+          "https://vmi3182726.contaboserver.net/webhook/time-station-sod-mention";
 
         if (!webhookUrl) {
           return Response.json(
