@@ -24,7 +24,7 @@ import { MentionTextarea } from "@/components/MentionTextarea";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
-import { resolveMentionRecipients } from "@/lib/mentions";
+import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
 import type { PersonalAutomationProfile } from "@/lib/personal-automation";
 import type { Department, Employee, MentionItem, Punch } from "@/lib/types";
 
@@ -179,17 +179,20 @@ function HelpFeedbackAutomationPage() {
 
     setSubmittingHelp(true);
     try {
-      await addDoc(collection(db(), "helpRequests"), {
-        userId: user.uid,
-        employeeId: employee.id,
-        employeeName: employee.name,
-        employeeEmail: employee.email,
-        subject: helpSubject.trim(),
-        message: helpMessage.trim(),
-        mentions: helpMentions,
-        createdAt: new Date().toISOString(),
-        status: "open",
-      });
+      await addDoc(
+        collection(db(), "helpRequests"),
+        sanitizeFirestoreObject({
+          userId: user.uid,
+          employeeId: employee.id,
+          employeeName: employee.name || "",
+          employeeEmail: employee.email || "",
+          subject: helpSubject.trim(),
+          message: helpMessage.trim(),
+          ...(helpMentions.length > 0 ? { mentions: helpMentions } : {}),
+          createdAt: new Date().toISOString(),
+          status: "open",
+        }),
+      );
 
       // Dispatch mention email notifications if any mentions exist
       if (helpMentions.length > 0) {
@@ -218,16 +221,19 @@ function HelpFeedbackAutomationPage() {
 
     setSubmittingFeedback(true);
     try {
-      await addDoc(collection(db(), "feedback"), {
-        userId: user.uid,
-        employeeId: employee.id,
-        employeeName: employee.name,
-        employeeEmail: employee.email,
-        category: feedbackCategory,
-        message: feedbackMessage.trim(),
-        mentions: feedbackMentions,
-        createdAt: new Date().toISOString(),
-      });
+      await addDoc(
+        collection(db(), "feedback"),
+        sanitizeFirestoreObject({
+          userId: user.uid,
+          employeeId: employee.id,
+          employeeName: employee.name || "",
+          employeeEmail: employee.email || "",
+          category: feedbackCategory,
+          message: feedbackMessage.trim(),
+          ...(feedbackMentions.length > 0 ? { mentions: feedbackMentions } : {}),
+          createdAt: new Date().toISOString(),
+        }),
+      );
 
       // Dispatch mention email notifications if any mentions exist
       if (feedbackMentions.length > 0) {

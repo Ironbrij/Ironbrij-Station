@@ -81,6 +81,15 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Help Requests & User Feedback
+    match /helpRequests/{id} {
+      allow read, write: if true;
+    }
+
+    match /feedback/{id} {
+      allow read, write: if true;
+    }
+
     // Personal automation status
     match /automationProfiles/{token} {
       allow read: if true;
