@@ -151,9 +151,57 @@ export function extractMentionsFromText(
       if (candidate.deptId) mentionItem.deptId = candidate.deptId;
       if (candidate.deptName) mentionItem.deptName = candidate.deptName;
       if (candidate.companyId) mentionItem.companyId = candidate.companyId;
+      if (candidate.email) mentionItem.email = candidate.email;
       foundMentions.push(mentionItem);
     }
   }
 
   return foundMentions;
+}
+
+export function resolveMentionRecipients(
+  mentions: MentionItem[],
+  employees: Employee[],
+  authorEmail?: string,
+): Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> {
+  const recipients: Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> = [];
+  const seenEmails = new Set<string>();
+  const cleanAuthorEmail = authorEmail?.trim().toLowerCase();
+
+  for (const m of mentions) {
+    if (m.type === "person") {
+      const emp = employees.find(
+        (e) => e.id === m.id || e.authUid === m.id || e.name.toLowerCase() === m.name.toLowerCase(),
+      );
+      const email = (emp?.email || m.email || "").trim().toLowerCase();
+      if (email && email !== cleanAuthorEmail && !seenEmails.has(email)) {
+        seenEmails.add(email);
+        recipients.push({
+          email,
+          name: emp?.name || m.name,
+          targetName: m.name,
+          targetType: "person",
+        });
+      }
+    } else if (m.type === "department") {
+      const deptId = m.deptId || m.id;
+      const deptEmployees = employees.filter(
+        (e) => e.status !== "inactive" && e.deptId === deptId,
+      );
+      for (const emp of deptEmployees) {
+        const email = emp.email?.trim().toLowerCase();
+        if (email && email !== cleanAuthorEmail && !seenEmails.has(email)) {
+          seenEmails.add(email);
+          recipients.push({
+            email,
+            name: emp.name,
+            targetName: m.name,
+            targetType: "department",
+          });
+        }
+      }
+    }
+  }
+
+  return recipients;
 }

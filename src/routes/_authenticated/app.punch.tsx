@@ -22,7 +22,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { MentionTextarea } from "@/components/MentionTextarea";
-import { sanitizeFirestoreObject } from "@/lib/mentions";
+import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
 import { formatDurationHMS } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -119,6 +119,8 @@ function PunchPage() {
     return () => clearInterval(t);
   }, []);
 
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+
   useEffect(() => {
     const unsubCompany = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
       if (s.exists()) setCompany(s.data() as Company);
@@ -129,10 +131,14 @@ function PunchPage() {
     const u2 = onSnapshot(collection(db(), "notices"), (s) =>
       setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
     );
+    const u3 = onSnapshot(collection(db(), "employees"), (s) =>
+      setAllEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
+    );
     return () => {
       unsubCompany();
       u1();
       u2();
+      u3();
     };
   }, []);
 
@@ -434,11 +440,12 @@ function PunchPage() {
       );
 
       toast.success(
-        `Your ${type.toUpperCase()} report has been saved & sent to SOD & EOD tab! 📝`,
+        `Your ${type.toUpperCase()} report has been saved.`,
       );
 
       // Trigger n8n notification for @mentions asynchronously
       if (allReportMentions.length > 0 && user) {
+        const recipients = resolveMentionRecipients(allReportMentions, allEmployees, employee.email);
         user
           .getIdToken()
           .then((idToken) => {
@@ -450,10 +457,13 @@ function PunchPage() {
               },
               body: JSON.stringify({
                 reportId,
+                reportType: type,
                 reportDate,
                 authorName: employee.name,
                 authorEmail: employee.email,
+                authorDeptName: depts.find((d) => d.id === employee.deptId)?.name,
                 answers: reportAnswers,
+                recipients,
               }),
             }).catch((err) => console.error("Notepad mention notification error:", err));
           })

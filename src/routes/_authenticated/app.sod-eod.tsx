@@ -34,7 +34,7 @@ import type {
 } from "@/lib/types";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
-import { sanitizeFirestoreObject } from "@/lib/mentions";
+import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
 
 export const Route = createFileRoute("/_authenticated/app/sod-eod")({
   head: () => ({ meta: [{ title: "SOD & EOD Reports - Time Station" }] }),
@@ -264,6 +264,7 @@ function EmployeeSodEodPage() {
 
       // Trigger n8n notification for @mentions asynchronously
       if (allReportMentions.length > 0 && user) {
+        const recipients = resolveMentionRecipients(allReportMentions, employees, activeEmp.email);
         user
           .getIdToken()
           .then((idToken) => {
@@ -275,10 +276,13 @@ function EmployeeSodEodPage() {
               },
               body: JSON.stringify({
                 reportId,
+                reportType: type,
                 reportDate,
                 authorName: activeEmp.name,
                 authorEmail: activeEmp.email,
+                authorDeptName: departments.find((d) => d.id === activeEmp.deptId)?.name,
                 answers: reportAnswers,
+                recipients,
               }),
             }).catch((err) => console.error("Mention notification error:", err));
           })

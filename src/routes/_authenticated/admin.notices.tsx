@@ -270,7 +270,7 @@ function NotificationsPage() {
       const names = companies
         .filter((c) => notice.targetCompanyIds?.includes(c.id || ""))
         .map((c) => c.name);
-      return names.length ? `🏢 Companies: ${names.join(", ")}` : "Selected companies";
+      return names.length ? `Companies: ${names.join(", ")}` : "Selected companies";
     }
     if (notice.targetType === "dept") {
       const departmentIds = notice.targetDeptIds?.length
@@ -282,12 +282,12 @@ function NotificationsPage() {
         .filter((item) => departmentIds.includes(item.id))
         .map((item) => item.name);
       return names.length
-        ? `🏛️ Dept: ${names.join(", ")}`
+        ? `Department: ${names.join(", ")}`
         : "Selected department";
     }
     if (notice.targetType === "states") {
       return notice.targetStateCodes?.length
-        ? `📍 States: ${notice.targetStateCodes.join(", ")}`
+        ? `States: ${notice.targetStateCodes.join(", ")}`
         : "Selected states";
     }
     const recipientIds = notice.targetEmployeeIds?.length
@@ -299,7 +299,7 @@ function NotificationsPage() {
       .map((id) => employees.find((item) => item.id === id || item.authUid === id)?.name)
       .filter((name): name is string => Boolean(name));
     return names.length
-      ? `👤 ${names.length} Specific Employee${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? "..." : ""})`
+      ? `${names.length} Specific Employee${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? "..." : ""})`
       : "Selected employees";
   }
 
@@ -398,10 +398,10 @@ function NotificationsPage() {
             onChange={(e) => setPageCompanyFilter(e.target.value)}
             className="rounded-lg border bg-background px-3 py-1.5 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="all">🌐 All Companies</option>
+            <option value="all">All Companies</option>
             {companies.map((c) => (
               <option key={c.id || COMPANY_ID} value={c.id || COMPANY_ID}>
-                🏢 {c.name} {c.isMain ? "(Main)" : ""}
+                {c.name} {c.isMain ? "(Main)" : ""}
               </option>
             ))}
           </select>
@@ -536,11 +536,11 @@ function NotificationsPage() {
                 }}
                 className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
               >
-                <option value="all">🌐 Everyone (All Companies)</option>
-                <option value="companies">🏢 Specific Companies</option>
-                <option value="dept">🏛️ Specific Department</option>
-                <option value="states">📍 One or more states</option>
-                <option value="employee">👤 Specific Employees / People</option>
+                <option value="all">Everyone (All Companies)</option>
+                <option value="companies">Specific Companies</option>
+                <option value="dept">Specific Department</option>
+                <option value="states">One or more states</option>
+                <option value="employee font-semibold">Specific Employees</option>
               </select>
             </label>
           </div>
@@ -615,7 +615,7 @@ function NotificationsPage() {
                   if (compDepts.length === 0) return null;
 
                   return (
-                    <optgroup key={compId} label={`🏢 ${comp.name}`}>
+                    <optgroup key={compId} label={comp.name}>
                       {compDepts.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name}
@@ -723,7 +723,7 @@ function NotificationsPage() {
                     onChange={(e) => setEmpFilterCompanyId(e.target.value)}
                     className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
                   >
-                    <option value="all">🏢 All Companies</option>
+                    <option value="all">All Companies</option>
                     {companies.map((c) => (
                       <option key={c.id || COMPANY_ID} value={c.id || COMPANY_ID}>
                         {c.name}
@@ -736,7 +736,7 @@ function NotificationsPage() {
                     onChange={(e) => setEmpFilterDeptId(e.target.value)}
                     className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
                   >
-                    <option value="all">🏛️ All Departments</option>
+                    <option value="all">All Departments</option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name}

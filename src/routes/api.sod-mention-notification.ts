@@ -1,8 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { MentionItem } from "@/lib/types";
 
+type MentionRecipient = {
+  email: string;
+  name: string;
+  targetName: string;
+  targetType: "person" | "department";
+};
+
 type SodMentionNotificationInput = {
   reportId: string;
+  reportType?: "sod" | "eod";
   reportDate: string;
   authorName: string;
   authorEmail: string;
@@ -13,6 +21,7 @@ type SodMentionNotificationInput = {
     answer: string;
     mentions?: MentionItem[];
   }>;
+  recipients?: MentionRecipient[];
 };
 
 function validText(value: unknown, maxLength = 1000): value is string {
@@ -29,10 +38,9 @@ function escapeHtml(value: string) {
 
 function formatMentionsInHtml(text: string): string {
   const safeText = escapeHtml(text);
-  // Highlight @mentions in HTML text as styled inline pills
   return safeText.replace(
     /(@[A-Za-z0-9_.\- ]+?)(?=\s|$|[.,!?;:]|<)/g,
-    '<span style="background-color: #dbeafe; color: #1e40af; font-weight: 600; padding: 2px 6px; border-radius: 4px; display: inline-block;">$1</span>',
+    '<span style="background-color: #e0e7ff; color: #3730a3; font-weight: 600; padding: 2px 6px; border-radius: 4px; display: inline-block;">$1</span>',
   );
 }
 
@@ -89,7 +97,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           !validText(body.authorEmail, 254) ||
           !Array.isArray(body.answers)
         ) {
-          return Response.json({ ok: false, error: "Invalid SOD mention notification request" }, { status: 400 });
+          return Response.json({ ok: false, error: "Invalid mention notification request" }, { status: 400 });
         }
 
         const webhookUrl =
@@ -99,11 +107,13 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
 
         if (!webhookUrl) {
           return Response.json(
-            { ok: false, configured: false, error: "n8n notification webhook URL is not configured" },
+            { ok: false, configured: false, error: "Notification webhook URL is not configured" },
             { status: 531 },
           );
         }
 
+        const reportTypeLabel = body.reportType === "eod" ? "End of Day (EOD)" : "Start of Day (SOD)";
+        const reportTypeShort = (body.reportType || "sod").toUpperCase();
         const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
         const reportUrl = `${appUrl}/app/sod-eod`;
 
@@ -116,24 +126,82 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           return Response.json({ ok: true, mentionsCount: 0, message: "No mentions found to notify" });
         }
 
-        // Collect distinct mentioned items
-        const allMentions = answersWithMentions.flatMap((a) => a.mentions || []);
+        // Build list of target recipient emails
+        const targetRecipients: MentionRecipient[] = [];
+        const seenEmails = new Set<string>();
+
+        if (Array.isArray(body.recipients) && body.recipients.length > 0) {
+          for (const rec of body.recipients) {
+            const cleanEmail = rec.email?.trim().toLowerCase();
+            if (cleanEmail && cleanEmail !== body.authorEmail.toLowerCase() && !seenEmails.has(cleanEmail)) {
+              seenEmails.add(cleanEmail);
+              targetRecipients.push({
+                email: cleanEmail,
+                name: rec.name || cleanEmail.split("@")[0],
+                targetName: rec.targetName || rec.name,
+                targetType: rec.targetType || "person",
+              });
+            }
+          }
+        } else {
+          // Fallback if recipients array wasn't passed directly
+          for (const answerObj of answersWithMentions) {
+            for (const mention of answerObj.mentions || []) {
+              if (mention.type === "person" && mention.email) {
+                const cleanEmail = mention.email.trim().toLowerCase();
+                if (cleanEmail !== body.authorEmail.toLowerCase() && !seenEmails.has(cleanEmail)) {
+                  seenEmails.add(cleanEmail);
+                  targetRecipients.push({
+                    email: cleanEmail,
+                    name: mention.name,
+                    targetName: mention.name,
+                    targetType: "person",
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        if (targetRecipients.length === 0) {
+          return Response.json({
+            ok: true,
+            mentionsCount: 0,
+            message: "No external recipient emails found to notify",
+          });
+        }
+
         const dispatchedEmails: string[] = [];
 
-        // Build elegant HTML email for each answer note
-        for (const answerObj of answersWithMentions) {
-          const questionText = escapeHtml(answerObj.question);
-          const formattedAnswerHtml = formatMentionsInHtml(answerObj.answer);
+        // Build HTML email for each recipient
+        for (const recipient of targetRecipients) {
+          const recipientName = escapeHtml(recipient.name);
+          const authorName = escapeHtml(body.authorName);
+          const reportDate = escapeHtml(body.reportDate);
+          const targetTagName = escapeHtml(recipient.targetName);
+          const isDept = recipient.targetType === "department";
 
-          for (const mention of answerObj.mentions || []) {
-            const isDept = mention.type === "department";
-            const targetName = escapeHtml(mention.name);
-            const authorName = escapeHtml(body.authorName);
-            const reportDate = escapeHtml(body.reportDate);
+          const subject = `Mentioned in ${reportTypeShort} Report by ${body.authorName} (${body.reportDate})`;
 
-            const subject = `📌 You were mentioned by ${body.authorName} in SOD Report (${body.reportDate})`;
+          // Combine answers with mentions into formatted HTML list
+          const notesHtml = answersWithMentions
+            .map((ans) => {
+              const qText = escapeHtml(ans.question);
+              const formattedAns = formatMentionsInHtml(ans.answer);
+              return `
+                <div style="margin-bottom: 16px;">
+                  <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+                    Question: ${qText}
+                  </div>
+                  <div style="background-color: #ffffff; border-left: 3px solid #4f46e5; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; border-radius: 0 8px 8px 0; padding: 14px 16px; font-size: 14px; line-height: 1.6; color: #1e293b;">
+                    ${formattedAns}
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
 
-            const html = `
+          const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -141,27 +209,24 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f6f9; padding: 30px 15px;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 30px 15px;">
     <tr>
       <td align="center">
-        <table width="100%" max-width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+        <table width="100%" max-width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
           
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 32px 28px; text-align: left;">
+            <td style="background-color: #1e293b; padding: 24px 28px; text-align: left;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
-                    <span style="background: rgba(255,255,255,0.15); color: #93c5fd; font-size: 11px; font-weight: 700; text-transform: uppercase; tracking: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;">
-                      Time Station • SOD Mention
+                    <span style="color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Time Station • Daily Report Notification
                     </span>
-                    <h1 style="color: #ffffff; font-size: 22px; font-weight: 800; margin: 12px 0 4px 0; line-height: 1.3;">
-                      You were mentioned in a report! 👋
+                    <h1 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 8px 0 0 0; line-height: 1.3;">
+                      Mention in ${escapeHtml(reportTypeLabel)}
                     </h1>
-                    <p style="color: #cbd5e1; font-size: 13px; margin: 0;">
-                      ${authorName} tagged ${isDept ? "department" : "you"} in today's Start of Day update.
-                    </p>
                   </td>
                 </tr>
               </table>
@@ -171,38 +236,31 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           <!-- Content Body -->
           <tr>
             <td style="padding: 28px;">
-              <!-- Author Card -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border-radius: 12px; padding: 14px 18px; border: 1px solid #f1f5f9; margin-bottom: 24px;">
+              <p style="font-size: 14px; margin: 0 0 20px 0; color: #334155;">
+                Hello <strong>${recipientName}</strong>,
+              </p>
+              <p style="font-size: 14px; margin: 0 0 20px 0; color: #334155; line-height: 1.5;">
+                <strong>${authorName}</strong> mentioned ${isDept ? `the <strong>${targetTagName}</strong> department` : "you"} in their ${escapeHtml(reportTypeLabel)} report on <strong>${reportDate}</strong>.
+              </p>
+
+              <!-- Author Info Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px;">
                 <tr>
-                  <td>
-                    <span style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; display: block; margin-bottom: 2px;">Report By</span>
-                    <strong style="font-size: 15px; color: #0f172a;">${authorName}</strong>
-                    ${body.authorDeptName ? `<span style="font-size: 13px; color: #64748b;"> • ${escapeHtml(body.authorDeptName)}</span>` : ""}
-                  </td>
-                  <td align="right">
-                    <span style="font-size: 12px; font-weight: 600; color: #3b82f6; background: #eff6ff; padding: 4px 10px; border-radius: 6px;">
-                      📅 ${reportDate}
-                    </span>
+                  <td style="font-size: 13px; color: #334155;">
+                    Submitted by <strong>${authorName}</strong> ${body.authorDeptName ? `(${escapeHtml(body.authorDeptName)})` : ""} on <strong>${reportDate}</strong>
                   </td>
                 </tr>
               </table>
 
-              <!-- Question & Answer Box -->
-              <div style="margin-bottom: 24px;">
-                <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; tracking: 0.5px; margin-bottom: 8px;">
-                  Question: ${questionText}
-                </div>
-                <div style="background-color: #ffffff; border-left: 4px solid #3b82f6; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; border-radius: 0 12px 12px 0; padding: 18px; font-size: 14px; line-height: 1.6; color: #334155;">
-                  ${formattedAnswerHtml}
-                </div>
-              </div>
+              <!-- Notes Box -->
+              ${notesHtml}
 
-              <!-- Call to Action Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 28px;">
+              <!-- Action Button -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 24px;">
                 <tr>
                   <td align="center">
-                    <a href="${reportUrl}" target="_blank" style="background-color: #2563eb; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 28px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 12px rgba(37,99,235,0.25);">
-                      View SOD & EOD Dashboard →
+                    <a href="${reportUrl}" target="_blank" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; display: inline-block;">
+                      Open Report in Time Station →
                     </a>
                   </td>
                 </tr>
@@ -212,12 +270,9 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 28px; text-align: center;">
-              <p style="font-size: 12px; color: #94a3b8; margin: 0 0 4px 0;">
-                Sent automatically by <strong>Time Station</strong> team notifications.
-              </p>
-              <p style="font-size: 11px; color: #cbd5e1; margin: 0;">
-                If you have questions, log into your Time Station app dashboard.
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 28px; text-align: center;">
+              <p style="font-size: 12px; color: #64748b; margin: 0;">
+                Time Station Reporting System
               </p>
             </td>
           </tr>
@@ -228,38 +283,37 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
   </table>
 </body>
 </html>
-            `.trim();
+          `.trim();
 
-            const n8nPayload = {
-              reportId: body.reportId,
-              reportDate: body.reportDate,
-              authorName: body.authorName,
-              authorEmail: body.authorEmail,
-              mentionedTarget: mention.name,
-              mentionedType: mention.type,
-              email: {
-                to: mention.email || `${mention.name.toLowerCase().replace(/\s+/g, ".")}@company.com`,
-                subject,
-                html,
-              },
-            };
+          const n8nPayload = {
+            reportId: body.reportId,
+            reportType: body.reportType || "sod",
+            reportDate: body.reportDate,
+            authorName: body.authorName,
+            authorEmail: body.authorEmail,
+            email: {
+              to: recipient.email,
+              subject,
+              html,
+            },
+          };
 
-            // Post to n8n webhook
-            fetch(webhookUrl, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(n8nPayload),
-            }).catch((err) => console.error("n8n SOD mention notification webhook error:", err));
+          // Post to n8n webhook
+          fetch(webhookUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(n8nPayload),
+          }).catch((err) => console.error("n8n mention notification webhook error:", err));
 
-            dispatchedEmails.push(mention.name);
-          }
+          dispatchedEmails.push(recipient.email);
         }
 
         return Response.json({
           ok: true,
-          mentionsCount: allMentions.length,
+          mentionsCount: answersWithMentions.length,
+          dispatchedToCount: dispatchedEmails.length,
           dispatchedTo: dispatchedEmails,
-          message: "SOD mention notifications sent to n8n webhook",
+          message: "Mention notifications dispatched successfully to n8n webhook",
         });
       },
     },
