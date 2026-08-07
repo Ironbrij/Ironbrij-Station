@@ -18,8 +18,11 @@ import {
   type CompanyNotice,
   type Department,
   type LeaveRequest,
+  type MentionItem,
   type Punch,
 } from "@/lib/types";
+import { MentionTextarea } from "@/components/MentionTextarea";
+import { sanitizeFirestoreObject } from "@/lib/mentions";
 import { formatDurationHMS } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -376,6 +379,8 @@ function PunchPage() {
   const [showNotepadModal, setShowNotepadModal] = useState<"sod" | "eod" | null>(null);
   const [sodAnswers, setSodAnswers] = useState<Record<string, string>>({});
   const [eodAnswers, setEodAnswers] = useState<Record<string, string>>({});
+  const [sodMentions, setSodMentions] = useState<Record<string, MentionItem[]>>({});
+  const [eodMentions, setEodMentions] = useState<Record<string, MentionItem[]>>({});
   const [savingNotepad, setSavingNotepad] = useState(false);
 
   async function submitNotepadReport(type: "sod" | "eod") {
@@ -383,12 +388,19 @@ function PunchPage() {
     setSavingNotepad(true);
     try {
       const answersMap = type === "sod" ? sodAnswers : eodAnswers;
+      const mentionsMap = type === "sod" ? sodMentions : eodMentions;
       const questionsList = DEFAULT_REPORT_QUESTIONS[type];
-      const reportAnswers = questionsList.map((q) => ({
-        questionId: q.id,
-        question: q.question,
-        answer: answersMap[q.id]?.trim() || "",
-      }));
+      const reportAnswers = questionsList.map((q) => {
+        const mList = mentionsMap[q.id] || [];
+        return {
+          questionId: q.id,
+          question: q.question,
+          answer: answersMap[q.id]?.trim() || "",
+          ...(mList.length > 0 ? { mentions: mList } : {}),
+        };
+      });
+
+      const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
 
       const reportDate = reportDateForEmployee(employee, new Date());
       const reportId = reportDocumentId(user.uid, reportDate, type);
@@ -404,28 +416,58 @@ function PunchPage() {
 
       await setDoc(
         reportRef,
-        {
+        sanitizeFirestoreObject({
           userId: user.uid,
           employeeId: employee.id,
-          userName: employee.name,
-          userEmail: employee.email,
+          userName: employee.name || "",
+          userEmail: employee.email || "",
           reportType: type,
           reportDate,
           answers: reportAnswers,
+          ...(allReportMentions.length > 0 ? { mentions: allReportMentions } : {}),
           submittedAt: serverTimestamp(),
           status: "submitted",
           timezone: getEmployeeTimezone(employee),
           submittedLate: deadlinePassed,
-        },
+        }),
         { merge: true },
       );
 
       toast.success(
         `Your ${type.toUpperCase()} report has been saved & sent to SOD & EOD tab! 📝`,
       );
+
+      // Trigger n8n notification for @mentions asynchronously
+      if (allReportMentions.length > 0 && user) {
+        user
+          .getIdToken()
+          .then((idToken) => {
+            fetch("/api/sod-mention-notification", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                reportId,
+                reportDate,
+                authorName: employee.name,
+                authorEmail: employee.email,
+                answers: reportAnswers,
+              }),
+            }).catch((err) => console.error("Notepad mention notification error:", err));
+          })
+          .catch((err) => console.error("IdToken error:", err));
+      }
+
       setShowNotepadModal(null);
-      if (type === "sod") setSodAnswers({});
-      else setEodAnswers({});
+      if (type === "sod") {
+        setSodAnswers({});
+        setSodMentions({});
+      } else {
+        setEodAnswers({});
+        setEodMentions({});
+      }
     } catch (err) {
       console.error("Notepad save error:", err);
       toast.error("Could not save report: " + (err as Error).message);
@@ -889,13 +931,19 @@ function PunchPage() {
                       </span>
                       <span className="text-[10px] text-amber-600 font-semibold">Required</span>
                     </label>
-                    <textarea
+                    <MentionTextarea
                       rows={3}
                       value={currentAnswers[question.id] || ""}
-                      onChange={(e) =>
-                        setAnswersFunc((prev) => ({ ...prev, [question.id]: e.target.value }))
-                      }
-                      placeholder="Type your answer here..."
+                      onChange={(val, mList) => {
+                        setAnswersFunc((prev) => ({ ...prev, [question.id]: val }));
+                        if (showNotepadModal === "sod") {
+                          setSodMentions((prev) => ({ ...prev, [question.id]: mList }));
+                        } else {
+                          setEodMentions((prev) => ({ ...prev, [question.id]: mList }));
+                        }
+                      }}
+                      currentEmployee={employee}
+                      placeholder="Type your answer here... (Type @ to mention team/dept)"
                       className="w-full resize-y rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium text-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                     />
                   </div>

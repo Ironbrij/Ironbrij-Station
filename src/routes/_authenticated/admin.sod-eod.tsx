@@ -23,6 +23,7 @@ import {
   requiredReportTypes,
 } from "@/lib/daily-reports";
 import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
+import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import type {
   Company,
   DailyReport,
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/_authenticated/admin/sod-eod")({
   component: AdminSodEodPage,
 });
 
-type ReportRowStatus = "submitted" | "missed" | "not_submitted";
+type ReportRowStatus = "submitted" | "missed" | "not_submitted" | "not_required";
 
 type ReportRow = {
   id: string;
@@ -217,7 +218,7 @@ function AdminSodEodPage() {
   function questionsFor(type: DailyReportType) {
     return (questions || [])
       .filter((question) => question.reportType === type)
-      .sort((a, b) => a.order - b.order);
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
   async function addQuestion(type: DailyReportType) {
@@ -243,7 +244,7 @@ function AdminSodEodPage() {
 
   async function editQuestion(question: ReportQuestion, text: string) {
     const clean = text.trim();
-    if (!clean || clean === question.question) return;
+    if (!clean || clean === (question.question || question.text)) return;
     await updateDoc(doc(db(), "reportQuestions", question.id), {
       question: clean,
       updatedAt: new Date().toISOString(),
@@ -258,13 +259,15 @@ function AdminSodEodPage() {
   }
 
   async function deleteQuestion(question: ReportQuestion) {
-    if (!window.confirm(`Delete this question?\n\n${question.question}`)) return;
+    const qText = question.question || question.text || "";
+    if (!window.confirm(`Delete this question?\n\n${qText}`)) return;
     await deleteDoc(doc(db(), "reportQuestions", question.id)).catch((error) =>
       toast.error("Could not delete question: " + error.message),
     );
   }
 
   async function moveQuestion(question: ReportQuestion, direction: -1 | 1) {
+    if (!question.reportType) return;
     const list = questionsFor(question.reportType);
     const currentIndex = list.findIndex((item) => item.id === question.id);
     const target = list[currentIndex + direction];
@@ -624,7 +627,7 @@ function QuestionEditor(props: {
           props.questions.map((question, index) => (
             <div key={question.id} className="rounded-lg border p-3">
               <textarea
-                defaultValue={question.question}
+                defaultValue={question.question || question.text || ""}
                 onBlur={(event) => props.onEdit(question, event.target.value)}
                 className="min-h-16 w-full resize-y rounded-md border bg-background px-3 py-2 text-sm"
               />
@@ -763,9 +766,11 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
           {report.answers.map((answer, index) => (
             <div key={`${answer.questionId}-${index}`} className="rounded-lg border p-4">
               <div className="text-sm font-semibold">{answer.question}</div>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                {answer.answer || "No answer provided"}
-              </div>
+              <FormattedAnswerText
+                text={answer.answer}
+                mentions={answer.mentions}
+                className="mt-2 text-sm text-muted-foreground"
+              />
             </div>
           ))}
         </div>

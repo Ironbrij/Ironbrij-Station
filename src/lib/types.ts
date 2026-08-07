@@ -50,12 +50,12 @@ export type DailyReportStatus = "submitted";
 
 export interface Employee {
   id: string;
-  companyId: string;
+  companyId?: string;
   companyIds?: string[]; // Multi-company membership (can belong to 1 or more companies)
-  deptId: string;
+  deptId?: string;
   name: string;
   email: string;
-  jobTitle: string;
+  jobTitle?: string;
   status: EmployeeStatus;
   authUid?: string;
   photoUrl?: string;
@@ -74,29 +74,46 @@ export interface Employee {
 
 export interface ReportQuestion {
   id: string;
-  text: string;
-  type: "text" | "textarea";
-  required: boolean;
-  order: number;
+  question?: string;
+  text?: string;
+  reportType?: DailyReportType;
+  type?: "text" | "textarea";
+  required?: boolean;
+  order?: number;
 }
 
 export interface ReportingSettings {
-  sodEnabled: boolean;
-  eodEnabled: boolean;
-  sodDeadlineTime: string;
-  eodDeadlineTime: string;
-  questions: ReportQuestion[];
+  sodEnabled?: boolean;
+  eodEnabled?: boolean;
+  sodDeadline?: string;
+  eodDeadline?: string;
+  sodDeadlineTime?: string;
+  eodDeadlineTime?: string;
+  lockAfterDeadline?: boolean;
+  questions?: ReportQuestion[];
+}
+
+export interface MentionItem {
+  id: string; // employeeId or departmentId
+  type: "person" | "department";
+  name: string;
+  displayTag: string; // e.g. "@Bevet Smith" or "@Engineering"
+  deptId?: string;
+  deptName?: string;
+  companyId?: string;
 }
 
 export interface DailyReportAnswer {
   questionId: string;
   question: string;
   answer: string;
+  mentions?: MentionItem[];
 }
 
 export interface DailyReport {
   id: string;
   userId: string;
+  employeeId?: string;
   userName: string;
   userEmail: string;
   reportDate: string;
@@ -106,6 +123,7 @@ export interface DailyReport {
   timezone: string;
   submittedLate: boolean;
   status: DailyReportStatus;
+  mentions?: MentionItem[];
 }
 
 export interface Punch {

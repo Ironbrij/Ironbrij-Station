@@ -20,8 +20,7 @@ service cloud.firestore {
 
     // Registered Users Collection
     match /users/{uid} {
-      allow read: if isAuthed();
-      allow write: if isAuthed() && (isOwner(uid) || isAdmin());
+      allow read, write: if isAuthed();
     }
 
     // Admins Collection
@@ -30,16 +29,9 @@ service cloud.firestore {
       allow write: if isAuthed() && (isOwner(uid) || isAdmin());
     }
 
-    // Employees Collection (Contains department ID, hourly rates, shift times, country, timezone)
+    // Employees Collection
     match /employees/{empId} {
-      allow read: if isAuthed();
-      allow create: if isAuthed();
-      allow update: if isAdmin() || (
-        isAuthed() &&
-        request.resource.data.get('reportingRequirement', 'none') ==
-          resource.data.get('reportingRequirement', 'none')
-      );
-      allow delete: if isAdmin();
+      allow read, write: if isAuthed();
     }
 
     // Company & Departments Settings
@@ -65,42 +57,31 @@ service cloud.firestore {
 
     // Punches (Clock In / Clock Out / Overtime)
     match /punches/{id} {
-      allow read: if isAuthed();
-      allow create: if isAuthed();
-      allow update, delete: if isAdmin();
+      allow read, create: if isAuthed();
+      allow update, delete: if isAdmin() || isAuthed();
     }
 
     // Leave Requests
     match /leaveRequests/{id} {
-      allow read: if isAuthed();
-      allow create: if isAuthed();
-      allow update, delete: if isAdmin();
+      allow read, create: if isAuthed();
+      allow update, delete: if isAdmin() || isAuthed();
     }
 
     // SOD & EOD configuration and question bank
     match /reportingSettings/{id} {
-      allow read: if isAuthed();
-      allow create, update, delete: if isAdmin();
+      allow read, write: if isAuthed();
     }
 
     match /reportQuestions/{id} {
-      allow read: if isAuthed();
-      allow create, update, delete: if isAdmin();
+      allow read, write: if isAuthed();
     }
 
     // Submitted SOD & EOD daily reports
     match /dailyReports/{reportId} {
-      allow read, list: if isAuthed();
-      allow create, update: if isAuthed() && (
-        request.resource.data.userId == request.auth.uid ||
-        request.resource.data.employeeId == request.auth.uid ||
-        isAdmin()
-      );
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // Personal automation status.
-    // The random document ID is the private API token.
+    // Personal automation status
     match /automationProfiles/{token} {
       allow read: if true;
       allow create, update, delete: if isAuthed();

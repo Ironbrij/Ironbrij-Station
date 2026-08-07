@@ -56,7 +56,11 @@ export function deadlineForReport(
   date: string,
   settings: ReportingSettings,
 ) {
-  const deadline = type === "sod" ? settings.sodDeadline : settings.eodDeadline;
+  const deadline =
+    (type === "sod"
+      ? settings.sodDeadline || settings.sodDeadlineTime
+      : settings.eodDeadline || settings.eodDeadlineTime) ||
+    (type === "sod" ? "10:00" : "18:00");
   return zonedDateTimeToDate(date, deadline, getEmployeeTimezone(employee));
 }
 

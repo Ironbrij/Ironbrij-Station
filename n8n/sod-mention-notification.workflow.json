@@ -1,0 +1,146 @@
+{
+  "name": "Time Station - SOD @Mentions Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "time-station-sod-mention",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "sod-mention-webhook",
+      "name": "SOD Mention Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "time-station-sod-mention"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-mentions",
+              "leftValue": "={{ $json.body.mentions.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-mentions-exist",
+      "name": "Has Mentions?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.mentions",
+        "options": {}
+      },
+      "id": "split-mentions",
+      "name": "Split Mentions",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [500, -100]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email || $json.recipientEmail }}",
+        "subject": "=You were mentioned in SOD Report by {{ $('SOD Mention Webhook').item.json.body.authorName }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family: Arial, sans-serif; padding: 20px; color: #333;\"><h2 style=\"color: #2563eb;\">📌 SOD Mention Notification</h2><p>Hello <strong>{{ $json.name }}</strong>,</p><p><strong>{{ $('SOD Mention Webhook').item.json.body.authorName }}</strong> mentioned you/your department in their Start of Day (SOD) report for <strong>{{ $('SOD Mention Webhook').item.json.body.reportDate }}</strong>.</p><div style=\"background: #f3f4f6; padding: 15px; border-left: 4px solid #2563eb; margin: 15px 0;\"><p style=\"font-size: 13px; font-weight: bold; color: #6b7280; margin-0 0 5px 0;\">Note:</p><p style=\"font-size: 14px; margin: 0;\">{{ $('SOD Mention Webhook').item.json.body.answer }}</p></div><p style=\"font-size: 12px; color: #6b7280;\">Sent from Time Station • SOD & EOD System</p></div>",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Time Station Notifications"
+        }
+      },
+      "id": "send-mention-email",
+      "name": "Send Gmail Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [740, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"SOD mentions processed successfully\",\n  \"count\": {{ $json.body.mentions ? $json.body.mentions.length : 0 }}\n}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [500, 140]
+    }
+  ],
+  "connections": {
+    "SOD Mention Webhook": {
+      "main": [
+        [
+          {
+            "node": "Has Mentions?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Mentions?": {
+      "main": [
+        [
+          {
+            "node": "Split Mentions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Mentions": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

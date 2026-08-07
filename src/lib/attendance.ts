@@ -1,4 +1,4 @@
-import type { Company, CompanyHoliday, Employee, LeaveRequest, Punch } from "./types";
+import { COMPANY_ID, type Company, type CompanyHoliday, type Employee, type LeaveRequest, type Punch } from "./types";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },

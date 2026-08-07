@@ -5,8 +5,8 @@ import {
   doc,
   onSnapshot,
   query,
-  runTransaction,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { CheckCircle2, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
@@ -28,9 +28,13 @@ import type {
   DailyReportAnswer,
   DailyReportType,
   Employee,
+  MentionItem,
   ReportQuestion,
   ReportingSettings,
 } from "@/lib/types";
+import { MentionTextarea } from "@/components/MentionTextarea";
+import { FormattedAnswerText } from "@/components/FormattedAnswerText";
+import { sanitizeFirestoreObject } from "@/lib/mentions";
 
 export const Route = createFileRoute("/_authenticated/app/sod-eod")({
   head: () => ({ meta: [{ title: "SOD & EOD Reports - Time Station" }] }),
@@ -45,6 +49,12 @@ function EmployeeSodEodPage() {
   const [reports, setReports] = useState<DailyReport[] | null>(null);
   const [openType, setOpenType] = useState<DailyReportType | null>(null);
   const [answers, setAnswers] = useState<Record<DailyReportType, Record<string, string>>>({
+    sod: {},
+    eod: {},
+  });
+  const [structuredMentions, setStructuredMentions] = useState<
+    Record<DailyReportType, Record<string, MentionItem[]>>
+  >({
     sod: {},
     eod: {},
   });
@@ -173,7 +183,7 @@ function EmployeeSodEodPage() {
     const list = questions && questions.length > 0 ? questions : defaultQuestions;
     return list
       .filter((question) => question.reportType === type)
-      .sort((a, b) => a.order - b.order);
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 
   function reportForToday(type: DailyReportType) {
@@ -190,7 +200,7 @@ function EmployeeSodEodPage() {
       (question) => question.required && !typeAnswers[question.id]?.trim(),
     );
     if (missing) {
-      toast.error(`Please answer: ${missing.question}`);
+      toast.error(`Please answer: ${missing.question || missing.text || ""}`);
       return;
     }
 
@@ -213,36 +223,67 @@ function EmployeeSodEodPage() {
       return;
     }
 
-    const reportAnswers: DailyReportAnswer[] = typeQuestions.map((question) => ({
-      questionId: question.id,
-      question: question.question,
-      answer: typeAnswers[question.id]?.trim() || "",
-    }));
-    const reportId = reportDocumentId(user.uid, reportDate, type);
+    const reportAnswers: DailyReportAnswer[] = typeQuestions.map((question) => {
+      const ansText = typeAnswers[question.id]?.trim() || "";
+      const mList = structuredMentions[type][question.id] || [];
+      return {
+        questionId: question.id,
+        question: question.question || question.text || "",
+        answer: ansText,
+        ...(mList.length > 0 ? { mentions: mList } : {}),
+      };
+    });
+
+    const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
+
+    const reportRef = doc(db(), "dailyReports", reportId);
     setSubmitting(type);
     try {
-      await runTransaction(db(), async (transaction) => {
-        const reportRef = doc(db(), "dailyReports", reportId);
-        const existing = await transaction.get(reportRef);
-        if (existing.exists()) throw new Error("This report has already been submitted.");
-        transaction.set(reportRef, {
+      await setDoc(
+        reportRef,
+        sanitizeFirestoreObject({
           userId: user.uid,
           employeeId: activeEmp.id,
-          userName: activeEmp.name,
-          userEmail: activeEmp.email,
+          userName: activeEmp.name || "",
+          userEmail: activeEmp.email || "",
           reportType: type,
           reportDate,
           answers: reportAnswers,
+          ...(allReportMentions.length > 0 ? { mentions: allReportMentions } : {}),
           submittedAt: serverTimestamp(),
           status: "submitted",
           timezone: getEmployeeTimezone(activeEmp),
           submittedLate: deadlinePassed,
-        });
-      });
+        }),
+        { merge: true },
+      );
       setRecentlySubmitted(type);
       setOpenType(null);
       window.setTimeout(() => setRecentlySubmitted(null), 3500);
       toast.success(`Your ${reportTypeLabel(type)} report has been submitted successfully.`);
+
+      // Trigger n8n notification for @mentions asynchronously
+      if (allReportMentions.length > 0 && user) {
+        user
+          .getIdToken()
+          .then((idToken) => {
+            fetch("/api/sod-mention-notification", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${idToken}`,
+              },
+              body: JSON.stringify({
+                reportId,
+                reportDate,
+                authorName: activeEmp.name,
+                authorEmail: activeEmp.email,
+                answers: reportAnswers,
+              }),
+            }).catch((err) => console.error("Mention notification error:", err));
+          })
+          .catch((err) => console.error("IdToken error:", err));
+      }
     } catch (error) {
       toast.error("Could not submit report: " + (error as Error).message);
     } finally {
@@ -356,19 +397,28 @@ function EmployeeSodEodPage() {
                         ) : (
                           typeQuestions.map((question) => (
                             <label key={question.id} className="block text-sm font-medium">
-                              {question.question}{" "}
+                              {question.question || question.text}{" "}
                               {question.required && <span aria-label="required">*</span>}
-                              <textarea
+                              <MentionTextarea
                                 value={answers[type][question.id] || ""}
-                                onChange={(event) =>
+                                onChange={(val, mList) => {
                                   setAnswers((current) => ({
                                     ...current,
-                                    [type]: { ...current[type], [question.id]: event.target.value },
-                                  }))
-                                }
+                                    [type]: { ...current[type], [question.id]: val },
+                                  }));
+                                  setStructuredMentions((current) => ({
+                                    ...current,
+                                    [type]: { ...current[type], [question.id]: mList },
+                                  }));
+                                }}
+                                currentEmployee={activeEmp}
                                 rows={3}
-                                className="mt-1.5 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm"
-                                placeholder={question.required ? "Required" : "Optional"}
+                                className="mt-1.5 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                                placeholder={
+                                  question.required
+                                    ? "Type @ to mention team members or departments..."
+                                    : "Optional (Type @ to mention)"
+                                }
                               />
                             </label>
                           ))
@@ -432,7 +482,7 @@ function EmployeeSodEodPage() {
                       <button
                         type="button"
                         onClick={() => setSelectedReport(report)}
-                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium"
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium hover:bg-muted"
                       >
                         <Eye className="h-4 w-4" /> View
                       </button>
@@ -484,9 +534,11 @@ function SubmittedReport({ report }: { report: DailyReport }) {
       {report.answers.map((answer, index) => (
         <div key={`${answer.questionId}-${index}`} className="rounded-lg border p-3">
           <div className="text-sm font-medium">{answer.question}</div>
-          <div className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-            {answer.answer || "No answer provided"}
-          </div>
+          <FormattedAnswerText
+            text={answer.answer}
+            mentions={answer.mentions}
+            className="mt-1 text-sm text-muted-foreground"
+          />
         </div>
       ))}
     </div>
@@ -508,7 +560,7 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
               {report.reportDate} - {formatSubmissionTime(report)}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border p-2">
+          <button type="button" onClick={onClose} className="rounded-lg border p-2 hover:bg-muted">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -516,9 +568,11 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
           {report.answers.map((answer, index) => (
             <div key={`${answer.questionId}-${index}`} className="rounded-lg border p-4">
               <div className="text-sm font-semibold">{answer.question}</div>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                {answer.answer || "No answer provided"}
-              </div>
+              <FormattedAnswerText
+                text={answer.answer}
+                mentions={answer.mentions}
+                className="mt-2 text-sm text-muted-foreground"
+              />
             </div>
           ))}
         </div>

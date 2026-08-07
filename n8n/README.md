@@ -1,20 +1,58 @@
-# Employee invite email workflow
+# Time Station - n8n Workflows
 
-1. Import `invite-email.workflow.json` into n8n.
-2. Open **Send Invite with Gmail** and connect the Gmail account that should send invitations.
-3. Activate the workflow and copy its production webhook URL.
-4. Set that URL as `N8N_INVITE_WEBHOOK_URL` in the Time Station deployment.
-5. Set `APP_URL` to the public Time Station URL.
+This directory contains pre-configured n8n workflow JSON files that can be directly imported into your n8n instance.
 
-When an admin creates an employee, Time Station stores one invite token and sends that exact
-activation link to n8n. If email delivery fails, the employee record remains saved and the admin can
-copy the same activation link from the confirmation dialog.
+---
 
-## Personal attendance API
+## 1. Employee Invite Email Workflow (`invite-email.workflow.json`)
 
-Employees can open **Automation** in Time Station and create a private status URL. Use that URL in
-an n8n HTTP Request after a Schedule Trigger. The response includes the employee's current
-`attendance.status`, latest `attendance.event`, and unique `attendance.eventId`.
+### How to Host & Setup:
+1. Open your n8n dashboard -> **Workflows** -> **Import from File**.
+2. Select `invite-email.workflow.json`.
+3. Open the **Send Invite with Gmail** node and connect your sending Gmail / SMTP credential.
+4. Toggle the workflow to **Active**.
+5. Copy the Webhook Production URL (e.g. `https://your-n8n-instance.com/webhook/time-station-employee-invite`).
+6. Set `N8N_INVITE_WEBHOOK_URL` in your Time Station deployment environment variables.
 
-Only continue the workflow when `attendance.eventId` changes. Then branch on `punch_in` or
-`punch_out`. Regenerating or revoking the URL immediately disables the old URL.
+---
+
+## 2. SOD @Mentions Notification Workflow (`sod-mention-notification.workflow.json`)
+
+### How to Host & Setup:
+1. Open your n8n dashboard -> **Workflows** -> **Import from File**.
+2. Select `sod-mention-notification.workflow.json`.
+3. Open the **Send Gmail Notification** node and connect your sending Gmail / SMTP credential.
+4. Toggle the workflow to **Active**.
+5. Copy the Webhook Production URL (e.g. `https://your-n8n-instance.com/webhook/time-station-sod-mention`).
+6. Set `N8N_SOD_MENTION_WEBHOOK_URL` in your Time Station deployment environment variables when enabling email notifications for @mentions.
+
+---
+
+## Expected Webhook Payload for SOD @Mentions:
+
+```json
+{
+  "reportId": "emp_123_2026-08-07_sod",
+  "reportType": "sod",
+  "reportDate": "2026-08-07",
+  "authorName": "Bevet Smith",
+  "authorEmail": "bevet@company.com",
+  "question": "Is there anything important the team should know?",
+  "answer": "Hey @Engineering and @Alex, please check the deployment today.",
+  "mentions": [
+    {
+      "id": "dept_eng",
+      "type": "department",
+      "name": "Engineering",
+      "displayTag": "@Engineering"
+    },
+    {
+      "id": "emp_456",
+      "type": "person",
+      "name": "Alex Johnson",
+      "displayTag": "@Alex Johnson",
+      "email": "alex@company.com"
+    }
+  ]
+}
+```

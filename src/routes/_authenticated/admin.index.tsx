@@ -9,6 +9,7 @@ import {
   reportDocumentId,
 } from "@/lib/daily-reports";
 import { StatusDot } from "@/components/StatusDot";
+import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   formatInTimezone,
@@ -784,9 +785,11 @@ function AdminHome() {
                       className="rounded-lg border p-3.5 bg-background"
                     >
                       <div className="text-xs font-bold text-foreground">{answer.question}</div>
-                      <div className="mt-1.5 whitespace-pre-wrap text-xs text-muted-foreground font-medium">
-                        {answer.answer || "No answer provided"}
-                      </div>
+                      <FormattedAnswerText
+                        text={answer.answer}
+                        mentions={answer.mentions}
+                        className="mt-1.5 text-xs text-muted-foreground font-medium"
+                      />
                     </div>
                   ))}
                 </div>
