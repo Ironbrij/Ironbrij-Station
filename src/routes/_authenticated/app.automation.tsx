@@ -132,14 +132,68 @@ function HelpFeedbackAutomationPage() {
   );
 
   // Helper to trigger mention emails using the same n8n webhook API
+  type MentionRecipient = {
+    email: string;
+    name: string;
+    targetName: string;
+    targetType: "person" | "department";
+  };
+
+  // Helper to trigger email notifications using the n8n webhook API
   async function triggerMentionEmails(
     title: string,
     messageText: string,
     mentionsList: MentionItem[],
   ) {
-    if (!user || !employee || mentionsList.length === 0) return;
-    const recipients = resolveMentionRecipients(mentionsList, employees, employee.email);
-    if (recipients.length === 0) return;
+    if (!user || !employee) return;
+
+    // 1. Resolve @mentions recipients if any exist
+    const mentionRecipients = resolveMentionRecipients(mentionsList, employees, employee.email);
+
+    // 2. Resolve Admin / Support recipients
+    const adminRecipients: MentionRecipient[] = [];
+    const adminEmails = new Set<string>();
+
+    employees.forEach((emp) => {
+      if (
+        emp.role === "admin" &&
+        emp.email &&
+        emp.email.toLowerCase() !== employee.email.toLowerCase()
+      ) {
+        adminEmails.add(emp.email.toLowerCase());
+        adminRecipients.push({
+          email: emp.email.toLowerCase(),
+          name: emp.name,
+          targetName: "Support Team",
+          targetType: "person",
+        });
+      }
+    });
+
+    // Default admin fallback emails if no admin employee snapshot available
+    const defaultAdmins = ["pabibek9@gmail.com", "bibekparajuli05@gmail.com", "louis@ironbrij.com.au"];
+    for (const dEmail of defaultAdmins) {
+      if (dEmail !== employee.email.toLowerCase() && !adminEmails.has(dEmail)) {
+        adminEmails.add(dEmail);
+        adminRecipients.push({
+          email: dEmail,
+          name: "Support Admin",
+          targetName: "Support Team",
+          targetType: "person",
+        });
+      }
+    }
+
+    // Combine recipients (mentions + admins) avoiding duplicates
+    const allRecipientsMap = new Map<string, MentionRecipient>();
+    [...mentionRecipients, ...adminRecipients].forEach((rec) => {
+      if (!allRecipientsMap.has(rec.email.toLowerCase())) {
+        allRecipientsMap.set(rec.email.toLowerCase(), rec);
+      }
+    });
+
+    const finalRecipients = Array.from(allRecipientsMap.values());
+    if (finalRecipients.length === 0) return;
 
     try {
       const idToken = await user.getIdToken();
@@ -164,11 +218,11 @@ function HelpFeedbackAutomationPage() {
               mentions: mentionsList,
             },
           ],
-          recipients,
+          recipients: finalRecipients,
         }),
       });
     } catch (err) {
-      console.error("Help/Feedback mention notification error:", err);
+      console.error("Help/Feedback notification error:", err);
     }
   }
 
@@ -194,14 +248,12 @@ function HelpFeedbackAutomationPage() {
         }),
       );
 
-      // Dispatch mention email notifications if any mentions exist
-      if (helpMentions.length > 0) {
-        await triggerMentionEmails(
-          `Help Request: ${helpSubject.trim()}`,
-          helpMessage.trim(),
-          helpMentions,
-        );
-      }
+      // Dispatch email notifications for support & tagged mentions
+      await triggerMentionEmails(
+        `Help Request: ${helpSubject.trim()}`,
+        helpMessage.trim(),
+        helpMentions,
+      );
 
       setHelpSubject("");
       setHelpMessage("");
@@ -235,14 +287,12 @@ function HelpFeedbackAutomationPage() {
         }),
       );
 
-      // Dispatch mention email notifications if any mentions exist
-      if (feedbackMentions.length > 0) {
-        await triggerMentionEmails(
-          `Feedback (${feedbackCategory})`,
-          feedbackMessage.trim(),
-          feedbackMentions,
-        );
-      }
+      // Dispatch email notifications for support & tagged mentions
+      await triggerMentionEmails(
+        `Feedback (${feedbackCategory})`,
+        feedbackMessage.trim(),
+        feedbackMentions,
+      );
 
       setFeedbackMessage("");
       setFeedbackMentions([]);
