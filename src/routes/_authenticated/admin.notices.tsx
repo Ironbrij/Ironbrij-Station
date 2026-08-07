@@ -10,10 +10,21 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
-import { CalendarClock, Megaphone, Trash2 } from "lucide-react";
+import {
+  Building2,
+  CalendarClock,
+  CheckSquare,
+  Filter,
+  Megaphone,
+  Search,
+  Trash2,
+  User,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import type { Company, CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import { COMPANY_ID } from "@/lib/types";
 import { formatInTimezone, getEmployeeTimezone } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
@@ -30,7 +41,7 @@ export const Route = createFileRoute("/_authenticated/admin/notices")({
   component: NotificationsPage,
 });
 
-const NOTICE_PAGE_SIZE = 5;
+const NOTICE_PAGE_SIZE = 10;
 
 function NotificationsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -42,6 +53,11 @@ function NotificationsPage() {
   const [hasMoreNotices, setHasMoreNotices] = useState(false);
   const [loadingNotices, setLoadingNotices] = useState(true);
   const [now, setNow] = useState(() => new Date());
+
+  // Global Page Filters
+  const [pageCompanyFilter, setPageCompanyFilter] = useState("all");
+
+  // Form State
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [priority, setPriority] = useState<CompanyNotice["priority"]>("info");
@@ -51,6 +67,12 @@ function NotificationsPage() {
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+
+  // Employee Audience Filter Controls
+  const [empSearchQuery, setEmpSearchQuery] = useState("");
+  const [empFilterCompanyId, setEmpFilterCompanyId] = useState("all");
+  const [empFilterDeptId, setEmpFilterDeptId] = useState("all");
+
   const [deliveryMode, setDeliveryMode] = useState<"instant" | "scheduled">("instant");
   const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -135,14 +157,70 @@ function NotificationsPage() {
     };
   }, []);
 
+  // Map company helper
+  const companyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    companies.forEach((c) => map.set(c.id || COMPANY_ID, c.name));
+    return map;
+  }, [companies]);
+
+  // Map department helper
+  const deptMap = useMemo(() => {
+    const map = new Map<string, string>();
+    departments.forEach((d) => map.set(d.id, d.name));
+    return map;
+  }, [departments]);
+
+  // Late alerts calculation
   const alerts = useMemo(
     () => buildAdminLateAlerts({ employees, punches, leaves, company, now }),
     [employees, punches, leaves, now, company],
   );
+
   const unreadAlerts = useMemo(
     () => alerts.filter((alert) => !readLateIds.has(alert.id)),
     [alerts, readLateIds],
   );
+
+  // Filtered Late Alerts based on Top Company Filter
+  const filteredLateAlerts = useMemo(() => {
+    if (pageCompanyFilter === "all") return unreadAlerts;
+    return unreadAlerts.filter(({ employee }) => {
+      const empCompanyIds = [
+        employee.companyId,
+        ...(employee.companyIds || []),
+      ].filter(Boolean) as string[];
+      if (empCompanyIds.length === 0) empCompanyIds.push(COMPANY_ID);
+      return empCompanyIds.includes(pageCompanyFilter);
+    });
+  }, [unreadAlerts, pageCompanyFilter]);
+
+  // Filtered Announcements History based on Top Company Filter
+  const filteredNotices = useMemo(() => {
+    if (pageCompanyFilter === "all") return notices;
+    return notices.filter((notice) => {
+      if (!notice.targetType || notice.targetType === "all") return true;
+      if (notice.targetType === "companies") {
+        return notice.targetCompanyIds?.includes(pageCompanyFilter);
+      }
+      if (notice.targetType === "dept") {
+        const dept = departments.find((d) => d.id === notice.targetDeptId);
+        const deptCompId = dept?.companyId || COMPANY_ID;
+        return deptCompId === pageCompanyFilter;
+      }
+      if (notice.targetType === "employee") {
+        const targetEmpIds = notice.targetEmployeeIds || (notice.targetEmployeeId ? [notice.targetEmployeeId] : []);
+        return targetEmpIds.some((empId) => {
+          const emp = employees.find((e) => e.id === empId || e.authUid === empId);
+          if (!emp) return false;
+          const empCompIds = [emp.companyId, ...(emp.companyIds || [])].filter(Boolean);
+          if (empCompIds.length === 0) empCompIds.push(COMPANY_ID);
+          return empCompIds.includes(pageCompanyFilter);
+        });
+      }
+      return true;
+    });
+  }, [notices, pageCompanyFilter, departments, employees]);
 
   function markLateAlertRead(id: string) {
     setReadLateIds(markLateAlertsRead([id]));
@@ -161,13 +239,38 @@ function NotificationsPage() {
     [employees],
   );
 
+  // Filtered employee candidates for specific employee picker
+  const filteredEmployeeAudience = useMemo(() => {
+    return employees.filter((emp) => {
+      // Company filter
+      if (empFilterCompanyId !== "all") {
+        const empCompIds = [emp.companyId, ...(emp.companyIds || [])].filter(Boolean);
+        if (empCompIds.length === 0) empCompIds.push(COMPANY_ID);
+        if (!empCompIds.includes(empFilterCompanyId)) return false;
+      }
+      // Department filter
+      if (empFilterDeptId !== "all") {
+        if (emp.deptId !== empFilterDeptId) return false;
+      }
+      // Search query
+      if (empSearchQuery.trim()) {
+        const q = empSearchQuery.toLowerCase().trim();
+        const nameMatch = emp.name.toLowerCase().includes(q);
+        const emailMatch = emp.email.toLowerCase().includes(q);
+        const jobMatch = emp.jobTitle?.toLowerCase().includes(q);
+        if (!nameMatch && !emailMatch && !jobMatch) return false;
+      }
+      return true;
+    });
+  }, [employees, empFilterCompanyId, empFilterDeptId, empSearchQuery]);
+
   function recipientLabel(notice: CompanyNotice) {
     if (!notice.targetType || notice.targetType === "all") return "Everyone";
     if (notice.targetType === "companies") {
       const names = companies
         .filter((c) => notice.targetCompanyIds?.includes(c.id || ""))
         .map((c) => c.name);
-      return names.length ? `${names.join(", ")}` : "Selected companies";
+      return names.length ? `🏢 Companies: ${names.join(", ")}` : "Selected companies";
     }
     if (notice.targetType === "dept") {
       const departmentIds = notice.targetDeptIds?.length
@@ -179,12 +282,12 @@ function NotificationsPage() {
         .filter((item) => departmentIds.includes(item.id))
         .map((item) => item.name);
       return names.length
-        ? `${names.join(", ")} department${names.length === 1 ? "" : "s"}`
+        ? `🏛️ Dept: ${names.join(", ")}`
         : "Selected department";
     }
     if (notice.targetType === "states") {
       return notice.targetStateCodes?.length
-        ? notice.targetStateCodes.join(", ")
+        ? `📍 States: ${notice.targetStateCodes.join(", ")}`
         : "Selected states";
     }
     const recipientIds = notice.targetEmployeeIds?.length
@@ -195,7 +298,9 @@ function NotificationsPage() {
     const names = recipientIds
       .map((id) => employees.find((item) => item.id === id || item.authUid === id)?.name)
       .filter((name): name is string => Boolean(name));
-    return names.length ? names.join(", ") : "Selected employees";
+    return names.length
+      ? `👤 ${names.length} Specific Employee${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? "..." : ""})`
+      : "Selected employees";
   }
 
   async function publish(event: React.FormEvent) {
@@ -254,6 +359,7 @@ function NotificationsPage() {
       setTargetId("");
       setSelectedStateCodes([]);
       setSelectedEmployeeIds([]);
+      setSelectedCompanyIds([]);
       setDeliveryMode("instant");
       setScheduledAt("");
       toast.success(
@@ -271,17 +377,48 @@ function NotificationsPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">Notifications</h1>
-        <p className="text-sm text-muted-foreground">
-          Live attendance warnings and company announcements.
-        </p>
+    <div className="space-y-8 max-w-7xl mx-auto">
+      {/* Top Header with Global Company Filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+            <Megaphone className="h-6 w-6 text-primary" /> Notifications & Announcements
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Live attendance warnings, targeted announcements, and company notifications.
+          </p>
+        </div>
+
+        {/* Global Company Filter Dropdown */}
+        <div className="flex items-center gap-2 bg-card p-2 rounded-xl border shadow-xs">
+          <Building2 className="h-4 w-4 text-primary shrink-0 ml-1" />
+          <span className="text-xs font-bold text-muted-foreground shrink-0">Company Filter:</span>
+          <select
+            value={pageCompanyFilter}
+            onChange={(e) => setPageCompanyFilter(e.target.value)}
+            className="rounded-lg border bg-background px-3 py-1.5 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">🌐 All Companies</option>
+            {companies.map((c) => (
+              <option key={c.id || COMPANY_ID} value={c.id || COMPANY_ID}>
+                🏢 {c.name} {c.isMain ? "(Main)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
+      {/* Late Alerts Section */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-foreground">Late alerts</h2>
+          <h2 className="font-semibold text-foreground flex items-center gap-2">
+            <span>Late alerts</span>
+            {pageCompanyFilter !== "all" && (
+              <span className="text-xs font-normal text-muted-foreground">
+                (Filtered by {companyMap.get(pageCompanyFilter) || "Company"})
+              </span>
+            )}
+          </h2>
           <div className="flex items-center gap-3 text-xs">
             {unreadAlerts.length > 0 && (
               <button
@@ -293,17 +430,17 @@ function NotificationsPage() {
               </button>
             )}
             <Link to="/admin/late" className="font-medium text-foreground hover:underline">
-              Full late log
+              Full late log →
             </Link>
           </div>
         </div>
-        {unreadAlerts.length === 0 ? (
+        {filteredLateAlerts.length === 0 ? (
           <div className="rounded-lg border p-4 text-sm text-muted-foreground">
-            No new late alerts.
+            No new late alerts {pageCompanyFilter !== "all" ? "for this company" : ""}.
           </div>
         ) : (
           <div className="divide-y rounded-lg border bg-card">
-            {unreadAlerts.map(({ id, employee, status }) => (
+            {filteredLateAlerts.map(({ id, employee, status }) => (
               <Link
                 key={id}
                 to="/admin/employees/$id"
@@ -312,10 +449,14 @@ function NotificationsPage() {
                 className="flex flex-col gap-2 px-4 py-3 hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
-                  <div className="font-medium text-foreground">{employee.name}</div>
+                  <div className="font-medium text-foreground flex items-center gap-2">
+                    <span>{employee.name}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-semibold">
+                      {companyMap.get(employee.companyId || COMPANY_ID) || "Company"}
+                    </span>
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {departments.find((item) => item.id === employee.deptId)?.name ||
-                      "No department"}
+                    {deptMap.get(employee.deptId) || "No department"}
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
@@ -334,31 +475,40 @@ function NotificationsPage() {
         )}
       </section>
 
+      {/* Main Publishing Form & History */}
       <section className="grid lg:grid-cols-5 gap-6 items-start">
+        {/* Announcement Publisher Form */}
         <form
           onSubmit={publish}
-          className="lg:col-span-2 rounded-xl border bg-card p-5 shadow-lift space-y-3"
+          className="lg:col-span-2 rounded-xl border bg-card p-5 shadow-lift space-y-4"
         >
           <h2 className="font-bold text-primary flex items-center gap-2">
             <Megaphone className="h-4 w-4" /> Publish announcement
           </h2>
+
           <label className="block text-xs font-bold text-muted-foreground">
-            Title
+            Title *
             <input
+              required
+              placeholder="Announcement title..."
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
             />
           </label>
+
           <label className="block text-xs font-bold text-muted-foreground">
-            Message
+            Message *
             <textarea
+              required
+              placeholder="Write notice message..."
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               rows={4}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
             />
           </label>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-bold text-muted-foreground">
               Priority
@@ -372,8 +522,9 @@ function NotificationsPage() {
                 <option value="urgent">Urgent</option>
               </select>
             </label>
+
             <label className="text-xs font-bold text-muted-foreground">
-              Audience
+              Audience Target
               <select
                 value={targetType}
                 onChange={(event) => {
@@ -381,96 +532,103 @@ function NotificationsPage() {
                   setTargetId("");
                   setSelectedStateCodes([]);
                   setSelectedEmployeeIds([]);
+                  setSelectedCompanyIds([]);
                 }}
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
               >
-                <option value="all">Everyone</option>
-                <option value="companies">Specific Companies</option>
-                <option value="dept">Department</option>
-                <option value="states">One or more states</option>
-                <option value="employee">Specific employees</option>
+                <option value="all">🌐 Everyone (All Companies)</option>
+                <option value="companies">🏢 Specific Companies</option>
+                <option value="dept">🏛️ Specific Department</option>
+                <option value="states">📍 One or more states</option>
+                <option value="employee">👤 Specific Employees / People</option>
               </select>
             </label>
           </div>
 
+          {/* Target: Specific Companies */}
           {targetType === "companies" && (
             <div className="space-y-2 rounded-lg border bg-secondary/20 p-3">
-              <label className="text-xs font-bold text-muted-foreground">Select Companies</label>
-              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                {companies.map((c) => (
-                  <label key={c.id || c.name} className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedCompanyIds.includes(c.id || COMPANY_ID)}
-                      onChange={() => {
-                        const id = c.id || COMPANY_ID;
-                        setSelectedCompanyIds((prev) =>
-                          prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
-                        );
-                      }}
-                    />
-                    <span>{c.name} {c.isMain ? "(Main)" : ""}</span>
-                  </label>
-                ))}
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5 text-primary" /> Select Companies ({selectedCompanyIds.length})
+                </label>
+                <div className="flex gap-2 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCompanyIds(companies.map((c) => c.id || COMPANY_ID))}
+                    className="text-primary hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCompanyIds([])}
+                    className="text-muted-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto">
+                {companies.map((c) => {
+                  const compId = c.id || COMPANY_ID;
+                  const isSelected = selectedCompanyIds.includes(compId);
+                  return (
+                    <label
+                      key={compId}
+                      className={`flex items-center gap-2 text-xs font-semibold p-2 rounded-md cursor-pointer transition-colors ${
+                        isSelected ? "bg-primary/10 border border-primary/30 text-primary" : "hover:bg-muted"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setSelectedCompanyIds((prev) =>
+                            prev.includes(compId) ? prev.filter((i) => i !== compId) : [...prev, compId],
+                          );
+                        }}
+                      />
+                      <span>{c.name} {c.isMain ? "(Main)" : ""}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}
-          <fieldset className="space-y-2 rounded-lg border p-3">
-            <legend className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-              <CalendarClock className="h-3.5 w-3.5" /> Delivery time
-            </legend>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setDeliveryMode("instant")}
-                className={`rounded-md border px-3 py-2 text-xs font-bold ${
-                  deliveryMode === "instant" ? "border-primary bg-primary/10 text-primary" : ""
-                }`}
-              >
-                Send instantly
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeliveryMode("scheduled")}
-                className={`rounded-md border px-3 py-2 text-xs font-bold ${
-                  deliveryMode === "scheduled" ? "border-primary bg-primary/10 text-primary" : ""
-                }`}
-              >
-                Schedule
-              </button>
-            </div>
-            {deliveryMode === "scheduled" && (
-              <label className="block text-xs font-bold text-muted-foreground">
-                Calendar and clock
-                <input
-                  required
-                  type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(event) => setScheduledAt(event.target.value)}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
-                />
-                <span className="mt-1 block font-normal">Uses your current device timezone.</span>
-              </label>
-            )}
-          </fieldset>
+
+          {/* Target: Specific Department */}
           {targetType === "dept" && (
             <label className="block text-xs font-bold text-muted-foreground">
-              Department
+              Select Department
               <select
                 required
                 value={targetId}
                 onChange={(event) => setTargetId(event.target.value)}
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
               >
-                <option value="">Select department…</option>
-                {departments.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
+                <option value="">Choose department…</option>
+                {companies.map((comp) => {
+                  const compId = comp.id || COMPANY_ID;
+                  const compDepts = departments.filter((d) => (d.companyId || COMPANY_ID) === compId);
+                  if (compDepts.length === 0) return null;
+
+                  return (
+                    <optgroup key={compId} label={`🏢 ${comp.name}`}>
+                      {compDepts.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             </label>
           )}
+
+          {/* Target: States */}
           {targetType === "states" && (
             <fieldset className="space-y-2 rounded-lg border p-3">
               <div className="flex items-center justify-between gap-2">
@@ -514,122 +672,261 @@ function NotificationsPage() {
                     <span className="font-semibold">{state}</span>
                   </label>
                 ))}
-                {availableStates.length === 0 && (
-                  <span className="text-xs italic text-muted-foreground">
-                    No employee states have been assigned yet.
-                  </span>
-                )}
               </div>
             </fieldset>
           )}
+
+          {/* Target: Specific Employees (People Filter & Picker) */}
           {targetType === "employee" && (
-            <fieldset className="space-y-2 rounded-lg border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <legend className="text-xs font-bold text-muted-foreground">
-                  Employees ({selectedEmployeeIds.length} selected)
+            <fieldset className="space-y-3 rounded-xl border bg-secondary/10 p-3.5">
+              <div className="flex items-center justify-between">
+                <legend className="text-xs font-extrabold uppercase text-primary tracking-wider flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" /> Target People ({selectedEmployeeIds.length} Selected)
                 </legend>
                 <div className="flex gap-2 text-[11px] font-bold">
                   <button
                     type="button"
-                    onClick={() => setSelectedEmployeeIds(employees.map((item) => item.id))}
+                    onClick={() => {
+                      const visibleIds = filteredEmployeeAudience.map((e) => e.id);
+                      setSelectedEmployeeIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+                    }}
                     className="text-primary hover:underline"
                   >
-                    Select all
+                    Select visible ({filteredEmployeeAudience.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedEmployeeIds([])}
                     className="text-muted-foreground hover:underline"
                   >
-                    Clear
+                    Clear all
                   </button>
                 </div>
               </div>
-              <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-                {[...departments, { id: "", name: "No department", companyId: "" }].map(
-                  (department) => {
-                    const departmentEmployees = employees.filter((item) =>
-                      department.id ? item.deptId === department.id : !item.deptId,
-                    );
-                    if (departmentEmployees.length === 0) return null;
+
+              {/* Employee Filters: Search, Company, Dept */}
+              <div className="space-y-2 border-b pb-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search people by name, email..."
+                    value={empSearchQuery}
+                    onChange={(e) => setEmpSearchQuery(e.target.value)}
+                    className="w-full rounded-lg border bg-background pl-8 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={empFilterCompanyId}
+                    onChange={(e) => setEmpFilterCompanyId(e.target.value)}
+                    className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
+                  >
+                    <option value="all">🏢 All Companies</option>
+                    {companies.map((c) => (
+                      <option key={c.id || COMPANY_ID} value={c.id || COMPANY_ID}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={empFilterDeptId}
+                    onChange={(e) => setEmpFilterDeptId(e.target.value)}
+                    className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
+                  >
+                    <option value="all">🏛️ All Departments</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Filtered Employee List */}
+              <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                {filteredEmployeeAudience.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4 italic">
+                    No employees match your search filter.
+                  </p>
+                ) : (
+                  filteredEmployeeAudience.map((emp) => {
+                    const isSelected = selectedEmployeeIds.includes(emp.id);
+                    const compName = companyMap.get(emp.companyId || COMPANY_ID) || "Company";
+                    const deptName = deptMap.get(emp.deptId || "") || "No department";
+
                     return (
-                      <div key={department.id || "unassigned"} className="space-y-1">
-                        <div className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
-                          {department.name}
+                      <label
+                        key={emp.id}
+                        className={`flex items-center justify-between gap-2 rounded-lg p-2 text-xs cursor-pointer transition-colors border ${
+                          isSelected
+                            ? "bg-primary/10 border-primary/40 text-foreground"
+                            : "bg-background border-transparent hover:bg-muted"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(event) =>
+                              setSelectedEmployeeIds((current) =>
+                                event.target.checked
+                                  ? [...current, emp.id]
+                                  : current.filter((id) => id !== emp.id),
+                              )
+                            }
+                          />
+                          <div className="truncate">
+                            <div className="font-bold truncate text-foreground">{emp.name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">{emp.email}</div>
+                          </div>
                         </div>
-                        {departmentEmployees.map((item) => (
-                          <label
-                            key={item.id}
-                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedEmployeeIds.includes(item.id)}
-                              onChange={(event) =>
-                                setSelectedEmployeeIds((current) =>
-                                  event.target.checked
-                                    ? [...current, item.id]
-                                    : current.filter((id) => id !== item.id),
-                                )
-                              }
-                            />
-                            <span className="font-semibold text-foreground">{item.name}</span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {item.email}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
+
+                        <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-semibold truncate">
+                            {deptName}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-semibold truncate">
+                            {compName}
+                          </span>
+                        </div>
+                      </label>
                     );
-                  },
+                  })
                 )}
               </div>
             </fieldset>
-          )}{" "}
+          )}
+
+          {/* Delivery Mode: Instant or Scheduled */}
+          <fieldset className="space-y-2 rounded-lg border p-3">
+            <legend className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+              <CalendarClock className="h-3.5 w-3.5" /> Delivery time
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDeliveryMode("instant")}
+                className={`rounded-md border px-3 py-2 text-xs font-bold ${
+                  deliveryMode === "instant" ? "border-primary bg-primary/10 text-primary" : ""
+                }`}
+              >
+                Send instantly
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeliveryMode("scheduled")}
+                className={`rounded-md border px-3 py-2 text-xs font-bold ${
+                  deliveryMode === "scheduled" ? "border-primary bg-primary/10 text-primary" : ""
+                }`}
+              >
+                Schedule
+              </button>
+            </div>
+            {deliveryMode === "scheduled" && (
+              <label className="block text-xs font-bold text-muted-foreground">
+                Calendar and clock
+                <input
+                  required
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(event) => setScheduledAt(event.target.value)}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </label>
+            )}
+          </fieldset>
+
           <button
             disabled={busy}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground"
+            className="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors shadow-md disabled:opacity-50"
           >
             {busy ? "Publishing…" : "Publish notification"}
           </button>
         </form>
 
+        {/* Announcement History Column */}
         <div className="lg:col-span-3 space-y-3">
-          <h2 className="font-bold text-primary">Announcement history</h2>
-          {notices.map((notice) => (
-            <div key={notice.id} className="rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-primary flex items-center gap-2">
+              Announcement history
+              {pageCompanyFilter !== "all" && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  (Filtered by {companyMap.get(pageCompanyFilter) || "Company"})
+                </span>
+              )}
+            </h2>
+            <span className="text-xs text-muted-foreground font-semibold">
+              Showing {filteredNotices.length} notice{filteredNotices.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {filteredNotices.map((notice) => (
+            <div key={notice.id} className="rounded-xl border bg-card p-4 shadow-xs">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-bold text-primary">{notice.title}</div>
-                  <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">
+                <div className="space-y-1.5">
+                  <div className="font-bold text-primary text-base flex items-center gap-2">
+                    <span>{notice.title}</span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-extrabold tracking-wider ${
+                        notice.priority === "urgent"
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                          : notice.priority === "warning"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                      }`}
+                    >
+                      {notice.priority}
+                    </span>
+                  </div>
+
+                  <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
                     {notice.message}
                   </div>
-                  <div className="mt-2 text-[10px] uppercase font-bold text-muted-foreground">
-                    {notice.priority} · Sent to: {recipientLabel(notice)} ·{" "}
-                    {notice.publishAt && getNoticeDeliveryTime(notice).getTime() > now.getTime()
-                      ? `Scheduled for ${getNoticeDeliveryTime(notice).toLocaleString()}`
-                      : `Sent ${getNoticeDeliveryTime(notice).toLocaleString()}`}
+
+                  <div className="pt-2 text-[11px] font-semibold text-muted-foreground flex flex-wrap items-center gap-3">
+                    <span className="bg-muted px-2 py-0.5 rounded text-foreground">
+                      Target: {recipientLabel(notice)}
+                    </span>
+                    <span>
+                      {notice.publishAt && getNoticeDeliveryTime(notice).getTime() > now.getTime()
+                        ? `📅 Scheduled for ${getNoticeDeliveryTime(notice).toLocaleString()}`
+                        : `Sent ${getNoticeDeliveryTime(notice).toLocaleString()}`}
+                    </span>
                   </div>
                 </div>
+
                 <button
                   onClick={() =>
                     deleteDoc(doc(db(), "notices", notice.id)).then(() =>
                       toast.success("Notification deleted"),
                     )
                   }
-                  className="rounded-md border p-2 text-rose-600"
-                  title="Delete"
+                  className="rounded-lg border p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  title="Delete announcement"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>
           ))}
-          {notices.length === 0 && (
-            <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-              {loadingNotices ? "Loading announcements…" : "No announcements published yet."}
+
+          {filteredNotices.length === 0 && (
+            <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground space-y-1">
+              <div className="text-base font-semibold text-foreground">No announcements found</div>
+              <p>
+                {loadingNotices
+                  ? "Loading announcements…"
+                  : pageCompanyFilter !== "all"
+                    ? `No announcements for ${companyMap.get(pageCompanyFilter)}.`
+                    : "No announcements published yet."}
+              </p>
             </div>
           )}
+
           {hasMoreNotices && (
             <button
               type="button"
@@ -638,9 +935,9 @@ function NotificationsPage() {
                 setLoadingNotices(true);
                 setNoticeLimit((current) => current + NOTICE_PAGE_SIZE);
               }}
-              className="w-full rounded-md border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className="w-full rounded-lg border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50"
             >
-              {loadingNotices ? "Loading…" : "Load 5 more"}
+              {loadingNotices ? "Loading…" : "Load more announcements"}
             </button>
           )}
         </div>
