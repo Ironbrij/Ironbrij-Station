@@ -13,7 +13,7 @@ function Index() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-lg rounded-xl border p-8 bg-card shadow-lift">
-          <h1 className="text-2xl font-bold text-primary">SavyTime</h1>
+          <h1 className="text-2xl font-bold text-primary">SavyTimes</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Firebase isn't configured yet. Add the following environment variables to enable the
             app:

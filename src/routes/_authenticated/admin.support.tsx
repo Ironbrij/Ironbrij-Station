@@ -3,9 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/_authenticated/admin/support")({
   head: () => ({
     meta: [
-      { title: "Support — Time Station Admin" },
+      { title: "Support — SavyTimes Admin" },
       { name: "description", content: "Help and FAQ." },
-      { property: "og:title", content: "Support — Time Station Admin" },
+      { property: "og:title", content: "Support — SavyTimes Admin" },
       { property: "og:description", content: "Help and FAQ." },
     ],
   }),

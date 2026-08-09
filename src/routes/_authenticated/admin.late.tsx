@@ -1,13 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  Timestamp,
-  updateDoc,
-} from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
@@ -27,7 +20,7 @@ import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/late")({
-  head: () => ({ meta: [{ title: "Late Logs — Time Station Admin" }] }),
+  head: () => ({ meta: [{ title: "Late Logs — SavyTimes Admin" }] }),
   component: LateArrivalsPage,
 });
 
@@ -146,7 +139,9 @@ function LateArrivalsPage() {
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
 
         const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
-        const differenceSeconds = Math.floor((punch.timestamp.toDate().getTime() - late.scheduledAt.getTime()) / 1000);
+        const differenceSeconds = Math.floor(
+          (punch.timestamp.toDate().getTime() - late.scheduledAt.getTime()) / 1000,
+        );
         const isEarly = differenceSeconds < 0;
         const minutesEarly = isEarly ? Math.floor(Math.abs(differenceSeconds) / 60) : 0;
 
@@ -191,7 +186,9 @@ function LateArrivalsPage() {
         });
       }
     }
-    return result.sort((a, b) => (b.punchedAt || today).getTime() - (a.punchedAt || today).getTime());
+    return result.sort(
+      (a, b) => (b.punchedAt || today).getTime() - (a.punchedAt || today).getTime(),
+    );
   }, [employees, employeePunches, leaves, graceMinutes, company]);
 
   const filtered = useMemo(
@@ -212,7 +209,8 @@ function LateArrivalsPage() {
 
   const missingCount = filtered.filter((record) => record.kind === "missing").length;
   const arrivalCount = filtered.filter(
-    (record) => record.kind === "arrival" && !record.isExcused && !record.isEarly && record.minutesLate > 0,
+    (record) =>
+      record.kind === "arrival" && !record.isExcused && !record.isEarly && record.minutesLate > 0,
   ).length;
   const totalMinutes = filtered
     .filter((record) => !record.isExcused && !record.isEarly)
@@ -369,11 +367,14 @@ function LateArrivalsPage() {
                   <td className="p-3.5">
                     <div className="font-semibold text-primary">
                       {formatInTimezone(record.scheduledAt, shiftTimezone)}
-                      <span className="text-[10px] font-normal text-muted-foreground ml-1">({shiftTimezone.split("/")[1] || "Shift"})</span>
+                      <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                        ({shiftTimezone.split("/")[1] || "Shift"})
+                      </span>
                     </div>
                     {shiftTimezone !== employeeTimezone && (
                       <div className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
-                        ➔ {formatInTimezone(record.scheduledAt, employeeTimezone)} ({employeeTimezone.split("/")[1] || "Local"})
+                        ➔ {formatInTimezone(record.scheduledAt, employeeTimezone)} (
+                        {employeeTimezone.split("/")[1] || "Local"})
                       </div>
                     )}
                   </td>
@@ -383,7 +384,9 @@ function LateArrivalsPage() {
                         ? formatInTimezone(record.punchedAt, employeeTimezone)
                         : "Waiting for punch"}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">{employeeTimezone.split("/")[1] || "Local"}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {employeeTimezone.split("/")[1] || "Local"}
+                    </div>
                   </td>
                   <td className="p-3.5 font-bold">
                     {record.kind === "missing" ? (
@@ -397,13 +400,9 @@ function LateArrivalsPage() {
                         {record.minutesLate} min
                       </span>
                     ) : record.minutesLate === 0 ? (
-                      <span className="text-emerald-600 font-extrabold">
-                        On time
-                      </span>
+                      <span className="text-emerald-600 font-extrabold">On time</span>
                     ) : (
-                      <span className="text-rose-600 font-extrabold">
-                        {record.minutesLate} min
-                      </span>
+                      <span className="text-rose-600 font-extrabold">{record.minutesLate} min</span>
                     )}
                   </td>
                   <td className="p-3.5">
@@ -444,7 +443,9 @@ function LateArrivalsPage() {
                           {record.isExcused ? "Un-excuse" : "Mark Not Late"}
                         </button>
                       ) : (
-                        <span className="text-xs text-muted-foreground font-semibold">No action needed</span>
+                        <span className="text-xs text-muted-foreground font-semibold">
+                          No action needed
+                        </span>
                       )
                     ) : (
                       <button
@@ -486,7 +487,8 @@ function LateArrivalsPage() {
                 <div>
                   <h3 className="text-lg font-bold text-foreground">Fix Missed Clock-In</h3>
                   <p className="text-xs text-muted-foreground">
-                    Retroactively add or adjust clock-in time for an employee when a mistake happens.
+                    Retroactively add or adjust clock-in time for an employee when a mistake
+                    happens.
                   </p>
                 </div>
               </div>
@@ -544,7 +546,9 @@ function LateArrivalsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-foreground mb-1">Reason / Notes</label>
+                <label className="block text-xs font-bold text-foreground mb-1">
+                  Reason / Notes
+                </label>
                 <textarea
                   rows={2}
                   value={manualNotes}

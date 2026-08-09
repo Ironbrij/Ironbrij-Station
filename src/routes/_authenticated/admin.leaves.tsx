@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import type { Company, CompanyNotice, Employee, LeaveRequest } from "@/lib/types";
 import { COMPANY_ID } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
+import { companyEmailBranding, findEmployeeCompany } from "@/lib/email-branding";
 import { toast } from "sonner";
 import { getLeaveLabel } from "@/lib/attendance";
 import { ymd } from "@/lib/time";
@@ -14,9 +15,9 @@ import { resolveProfilePhoto } from "@/lib/profile-photo";
 export const Route = createFileRoute("/_authenticated/admin/leaves")({
   head: () => ({
     meta: [
-      { title: "Leave Requests — Time Station Admin" },
+      { title: "Leave Requests — SavyTimes Admin" },
       { name: "description", content: "Review and manage employee leave requests." },
-      { property: "og:title", content: "Leave Requests — Time Station Admin" },
+      { property: "og:title", content: "Leave Requests — SavyTimes Admin" },
       {
         property: "og:description",
         content: "Review and manage employee leave requests.",
@@ -153,7 +154,17 @@ function LeaveRequestsPage() {
         if (a.status === "pending") return a.dateFrom.localeCompare(b.dateFrom);
         return requestTimestamp(b) - requestTimestamp(a) || b.dateFrom.localeCompare(a.dateFrom);
       });
-  }, [leaves, employeeById, search, statusFilter, filterCompany, periodFilter, dateFrom, dateTo, today]);
+  }, [
+    leaves,
+    employeeById,
+    search,
+    statusFilter,
+    filterCompany,
+    periodFilter,
+    dateFrom,
+    dateTo,
+    today,
+  ]);
 
   const visibleRequests = filteredRequests.slice(0, visibleCount);
   const hasFilters =
@@ -212,6 +223,10 @@ function LeaveRequestsPage() {
             "content-type": "application/json",
           },
           body: JSON.stringify({
+            company: companyEmailBranding(
+              findEmployeeCompany(employee, companies),
+              employee.companyId,
+            ),
             leaveRequestId: leave.id,
             employeeId: employee.id,
             employeeName: employee.name,
@@ -264,9 +279,7 @@ function LeaveRequestsPage() {
 
       if (employee) {
         const dateRange =
-          leave.dateFrom === leave.dateTo
-            ? leave.dateFrom
-            : `${leave.dateFrom} to ${leave.dateTo}`;
+          leave.dateFrom === leave.dateTo ? leave.dateFrom : `${leave.dateFrom} to ${leave.dateTo}`;
         const notice: Omit<CompanyNotice, "id"> = {
           title: "Approved leave revoked",
           message: `Your approved leave for ${dateRange} has been revoked by admin. You may now punch in as usual.`,

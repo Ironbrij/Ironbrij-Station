@@ -28,9 +28,9 @@ import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
 export const Route = createFileRoute("/_authenticated/admin/company")({
   head: () => ({
     meta: [
-      { title: "Company Settings — Time Station Admin" },
+      { title: "Company Settings — SavyTimes Admin" },
       { name: "description", content: "Manage company branding, logo, and holidays." },
-      { property: "og:title", content: "Company Settings — Time Station Admin" },
+      { property: "og:title", content: "Company Settings — SavyTimes Admin" },
       { property: "og:description", content: "Manage company branding, logo, and holidays." },
     ],
   }),
@@ -367,14 +367,11 @@ function CompanyPage() {
         .filter((employee) => employee.status === "active")
         .filter((employee) => {
           if (!useCompanyScope || selectedCompanyIds.length === 0) return true;
-          const empCompIds = [
-            employee.companyId,
-            ...(employee.companyIds || []),
-          ].filter(Boolean) as string[];
+          const empCompIds = [employee.companyId, ...(employee.companyIds || [])].filter(
+            Boolean,
+          ) as string[];
           return selectedCompanyIds.some(
-            (cId) =>
-              empCompIds.includes(cId) ||
-              (!employee.companyId && cId === COMPANY_ID),
+            (cId) => empCompIds.includes(cId) || (!employee.companyId && cId === COMPANY_ID),
           );
         })
         .filter(
@@ -539,7 +536,8 @@ function CompanyPage() {
           <Calendar className="h-4 w-4" /> Assign a Company Holiday
         </h2>
         <p className="text-xs text-muted-foreground">
-          Select the company scope, then specify departments, states, or specific people for this holiday.
+          Select the company scope, then specify departments, states, or specific people for this
+          holiday.
         </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -597,11 +595,7 @@ function CompanyPage() {
                     type="checkbox"
                     checked={selectedCompanyIds.includes(c.id || COMPANY_ID)}
                     onChange={() =>
-                      toggleSelection(
-                        c.id || COMPANY_ID,
-                        selectedCompanyIds,
-                        setSelectedCompanyIds,
-                      )
+                      toggleSelection(c.id || COMPANY_ID, selectedCompanyIds, setSelectedCompanyIds)
                     }
                   />
                   <span>
@@ -671,7 +665,9 @@ function CompanyPage() {
             </div>
             {visibleHolidayDepartments.length === 0 && (
               <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                No departments belong to the selected company. You can assign this holiday to &quot;Everyone in Company&quot; or assign departments to this company in the Departments tab.
+                No departments belong to the selected company. You can assign this holiday to
+                &quot;Everyone in Company&quot; or assign departments to this company in the
+                Departments tab.
               </p>
             )}
           </div>
@@ -1017,7 +1013,9 @@ function CompanyPage() {
                 type="button"
                 onClick={() => confirmTodayHoliday(todayHolidayCompanyId)}
                 className={`rounded-lg px-5 py-2 text-xs font-bold text-white shadow-md ${
-                  isTodayHoliday ? "bg-rose-600 hover:bg-rose-700" : "bg-purple-600 hover:bg-purple-700"
+                  isTodayHoliday
+                    ? "bg-rose-600 hover:bg-rose-700"
+                    : "bg-purple-600 hover:bg-purple-700"
                 }`}
               >
                 {isTodayHoliday ? "Yes, Cancel Holiday" : "Yes, Declare Holiday"}
@@ -1131,7 +1129,11 @@ function CompanyModal({
           {logoUrl && (
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Logo preview:</span>
-              <img src={logoUrl} alt="Preview" className="h-8 w-8 rounded-full border object-cover" />
+              <img
+                src={logoUrl}
+                alt="Preview"
+                className="h-8 w-8 rounded-full border object-cover"
+              />
             </div>
           )}
         </div>

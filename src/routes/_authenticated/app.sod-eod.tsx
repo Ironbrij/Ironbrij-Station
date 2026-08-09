@@ -27,6 +27,7 @@ import type {
   DailyReport,
   DailyReportAnswer,
   DailyReportType,
+  Department,
   Employee,
   MentionItem,
   ReportQuestion,
@@ -34,19 +35,23 @@ import type {
 } from "@/lib/types";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
+import { sendMentionNotification } from "@/lib/mention-notifications";
+import { companyEmailBranding } from "@/lib/email-branding";
 import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
 
 export const Route = createFileRoute("/_authenticated/app/sod-eod")({
-  head: () => ({ meta: [{ title: "SOD & EOD Reports - Time Station" }] }),
+  head: () => ({ meta: [{ title: "SOD & EOD Reports - SavyTimes" }] }),
   component: EmployeeSodEodPage,
 });
 
 function EmployeeSodEodPage() {
-  const { user, employee } = useAuth();
+  const { user, employee, company } = useAuth();
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(employee);
   const [questions, setQuestions] = useState<ReportQuestion[] | null>(null);
   const [settings, setSettings] = useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
   const [reports, setReports] = useState<DailyReport[] | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [openType, setOpenType] = useState<DailyReportType | null>(null);
   const [answers, setAnswers] = useState<Record<DailyReportType, Record<string, string>>>({
     sod: {},
@@ -162,12 +167,36 @@ function EmployeeSodEodPage() {
         setReports([]);
       },
     );
+    const unsubEmployees = onSnapshot(
+      collection(db(), "employees"),
+      (snapshot) =>
+        setEmployees(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<Employee, "id">),
+          })),
+        ),
+      (error) => console.error("Mention employees could not be loaded:", error),
+    );
+    const unsubDepartments = onSnapshot(
+      collection(db(), "departments"),
+      (snapshot) =>
+        setDepartments(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<Department, "id">),
+          })),
+        ),
+      (error) => console.error("Mention departments could not be loaded:", error),
+    );
 
     return () => {
       unsubEmployee();
       unsubQuestions();
       unsubSettings();
       unsubReports();
+      unsubEmployees();
+      unsubDepartments();
     };
   }, [defaultQuestions, employee, user]);
 
@@ -225,6 +254,7 @@ function EmployeeSodEodPage() {
 
     const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
 
+    const reportId = reportDocumentId(user.uid, reportDate, type);
     const reportRef = doc(db(), "dailyReports", reportId);
     setSubmitting(type);
     try {
@@ -242,40 +272,41 @@ function EmployeeSodEodPage() {
           submittedAt: serverTimestamp(),
           status: "submitted",
           timezone: getEmployeeTimezone(activeEmp),
-          submittedLate: deadlinePassed,
+          submittedLate: false,
         }),
         { merge: true },
       );
       setRecentlySubmitted(type);
       setOpenType(null);
       window.setTimeout(() => setRecentlySubmitted(null), 3500);
-      toast.success(`Your ${reportTypeLabel(type)} report has been submitted successfully.`);
 
-      // Trigger n8n notification for @mentions asynchronously
+      let notificationFailed = false;
       if (allReportMentions.length > 0 && user) {
         const recipients = resolveMentionRecipients(allReportMentions, employees, activeEmp.email);
-        user
-          .getIdToken()
-          .then((idToken) => {
-            fetch("/api/sod-mention-notification", {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                authorization: `Bearer ${idToken}`,
-              },
-              body: JSON.stringify({
-                reportId,
-                reportType: type,
-                reportDate,
-                authorName: activeEmp.name,
-                authorEmail: activeEmp.email,
-                authorDeptName: departments.find((d) => d.id === activeEmp.deptId)?.name,
-                answers: reportAnswers,
-                recipients,
-              }),
-            }).catch((err) => console.error("Mention notification error:", err));
-          })
-          .catch((err) => console.error("IdToken error:", err));
+        try {
+          await sendMentionNotification(user, {
+            company: companyEmailBranding(company, activeEmp.companyId),
+            reportId,
+            reportType: type,
+            reportDate,
+            authorName: activeEmp.name,
+            authorEmail: activeEmp.email,
+            authorDeptName: departments.find((d) => d.id === activeEmp.deptId)?.name,
+            answers: reportAnswers,
+            recipients,
+          });
+        } catch (notificationError) {
+          notificationFailed = true;
+          console.error("Mention notification error:", notificationError);
+        }
+      }
+
+      if (notificationFailed) {
+        toast.warning(
+          `Your ${reportTypeLabel(type)} report was saved, but mention emails could not be sent.`,
+        );
+      } else {
+        toast.success(`Your ${reportTypeLabel(type)} report has been submitted successfully.`);
       }
     } catch (error) {
       toast.error("Could not submit report: " + (error as Error).message);

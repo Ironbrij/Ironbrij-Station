@@ -23,7 +23,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { Company, CompanyNotice, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import type {
+  Company,
+  CompanyNotice,
+  Department,
+  Employee,
+  LeaveRequest,
+  Punch,
+} from "@/lib/types";
 import { COMPANY_ID } from "@/lib/types";
 import { formatInTimezone, getEmployeeTimezone } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
@@ -37,7 +44,7 @@ import {
 } from "@/lib/late-alerts";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
-  head: () => ({ meta: [{ title: "Notifications — Time Station Admin" }] }),
+  head: () => ({ meta: [{ title: "Notifications — SavyTimes Admin" }] }),
   component: NotificationsPage,
 });
 
@@ -186,10 +193,9 @@ function NotificationsPage() {
   const filteredLateAlerts = useMemo(() => {
     if (pageCompanyFilter === "all") return unreadAlerts;
     return unreadAlerts.filter(({ employee }) => {
-      const empCompanyIds = [
-        employee.companyId,
-        ...(employee.companyIds || []),
-      ].filter(Boolean) as string[];
+      const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
+        Boolean,
+      ) as string[];
       if (empCompanyIds.length === 0) empCompanyIds.push(COMPANY_ID);
       return empCompanyIds.includes(pageCompanyFilter);
     });
@@ -209,7 +215,8 @@ function NotificationsPage() {
         return deptCompId === pageCompanyFilter;
       }
       if (notice.targetType === "employee") {
-        const targetEmpIds = notice.targetEmployeeIds || (notice.targetEmployeeId ? [notice.targetEmployeeId] : []);
+        const targetEmpIds =
+          notice.targetEmployeeIds || (notice.targetEmployeeId ? [notice.targetEmployeeId] : []);
         return targetEmpIds.some((empId) => {
           const emp = employees.find((e) => e.id === empId || e.authUid === empId);
           if (!emp) return false;
@@ -281,9 +288,7 @@ function NotificationsPage() {
       const names = departments
         .filter((item) => departmentIds.includes(item.id))
         .map((item) => item.name);
-      return names.length
-        ? `Department: ${names.join(", ")}`
-        : "Selected department";
+      return names.length ? `Department: ${names.join(", ")}` : "Selected department";
     }
     if (notice.targetType === "states") {
       return notice.targetStateCodes?.length
@@ -550,7 +555,8 @@ function NotificationsPage() {
             <div className="space-y-2 rounded-lg border bg-secondary/20 p-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                  <Building2 className="h-3.5 w-3.5 text-primary" /> Select Companies ({selectedCompanyIds.length})
+                  <Building2 className="h-3.5 w-3.5 text-primary" /> Select Companies (
+                  {selectedCompanyIds.length})
                 </label>
                 <div className="flex gap-2 text-[11px] font-bold">
                   <button
@@ -578,7 +584,9 @@ function NotificationsPage() {
                     <label
                       key={compId}
                       className={`flex items-center gap-2 text-xs font-semibold p-2 rounded-md cursor-pointer transition-colors ${
-                        isSelected ? "bg-primary/10 border border-primary/30 text-primary" : "hover:bg-muted"
+                        isSelected
+                          ? "bg-primary/10 border border-primary/30 text-primary"
+                          : "hover:bg-muted"
                       }`}
                     >
                       <input
@@ -586,11 +594,15 @@ function NotificationsPage() {
                         checked={isSelected}
                         onChange={() => {
                           setSelectedCompanyIds((prev) =>
-                            prev.includes(compId) ? prev.filter((i) => i !== compId) : [...prev, compId],
+                            prev.includes(compId)
+                              ? prev.filter((i) => i !== compId)
+                              : [...prev, compId],
                           );
                         }}
                       />
-                      <span>{c.name} {c.isMain ? "(Main)" : ""}</span>
+                      <span>
+                        {c.name} {c.isMain ? "(Main)" : ""}
+                      </span>
                     </label>
                   );
                 })}
@@ -611,7 +623,9 @@ function NotificationsPage() {
                 <option value="">Choose department…</option>
                 {companies.map((comp) => {
                   const compId = comp.id || COMPANY_ID;
-                  const compDepts = departments.filter((d) => (d.companyId || COMPANY_ID) === compId);
+                  const compDepts = departments.filter(
+                    (d) => (d.companyId || COMPANY_ID) === compId,
+                  );
                   if (compDepts.length === 0) return null;
 
                   return (
@@ -681,14 +695,17 @@ function NotificationsPage() {
             <fieldset className="space-y-3 rounded-xl border bg-secondary/10 p-3.5">
               <div className="flex items-center justify-between">
                 <legend className="text-xs font-extrabold uppercase text-primary tracking-wider flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" /> Target People ({selectedEmployeeIds.length} Selected)
+                  <Users className="h-3.5 w-3.5" /> Target People ({selectedEmployeeIds.length}{" "}
+                  Selected)
                 </legend>
                 <div className="flex gap-2 text-[11px] font-bold">
                   <button
                     type="button"
                     onClick={() => {
                       const visibleIds = filteredEmployeeAudience.map((e) => e.id);
-                      setSelectedEmployeeIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+                      setSelectedEmployeeIds((prev) =>
+                        Array.from(new Set([...prev, ...visibleIds])),
+                      );
                     }}
                     className="text-primary hover:underline"
                   >
@@ -781,7 +798,9 @@ function NotificationsPage() {
                           />
                           <div className="truncate">
                             <div className="font-bold truncate text-foreground">{emp.name}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">{emp.email}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {emp.email}
+                            </div>
                           </div>
                         </div>
 

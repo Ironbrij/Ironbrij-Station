@@ -1,5 +1,5 @@
 {
-  "name": "Time Station - SOD @Mentions Notification",
+  "name": "SavyTimes - Email Notifications",
   "nodes": [
     {
       "parameters": {
@@ -9,7 +9,7 @@
         "options": {}
       },
       "id": "sod-mention-webhook",
-      "name": "SOD Mention Webhook",
+      "name": "Notification Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [0, 0],
@@ -25,8 +25,8 @@
           },
           "conditions": [
             {
-              "id": "has-mentions",
-              "leftValue": "={{ $json.body.mentions.length }}",
+              "id": "has-recipients",
+              "leftValue": "={{ Array.isArray($json.body.mentions) ? $json.body.mentions.length : 0 }}",
               "rightValue": 0,
               "operator": {
                 "type": "number",
@@ -38,8 +38,8 @@
         },
         "options": {}
       },
-      "id": "check-mentions-exist",
-      "name": "Has Mentions?",
+      "id": "check-recipients-exist",
+      "name": "Has Recipients?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [260, 0]
@@ -47,26 +47,27 @@
     {
       "parameters": {
         "fieldToSplitOut": "body.mentions",
+        "include": "noOtherFields",
         "options": {}
       },
-      "id": "split-mentions",
-      "name": "Split Mentions",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
+      "id": "split-recipients",
+      "name": "Split Recipients",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
       "position": [500, -100]
     },
     {
       "parameters": {
         "sendTo": "={{ $json.email || $json.recipientEmail }}",
-        "subject": "=You were mentioned in SOD Report by {{ $('SOD Mention Webhook').item.json.body.authorName }}",
+        "subject": "={{ $json.subject }}",
         "emailType": "html",
-        "message": "=<div style=\"font-family: Arial, sans-serif; padding: 20px; color: #333;\"><h2 style=\"color: #2563eb;\">📌 SOD Mention Notification</h2><p>Hello <strong>{{ $json.name }}</strong>,</p><p><strong>{{ $('SOD Mention Webhook').item.json.body.authorName }}</strong> mentioned you/your department in their Start of Day (SOD) report for <strong>{{ $('SOD Mention Webhook').item.json.body.reportDate }}</strong>.</p><div style=\"background: #f3f4f6; padding: 15px; border-left: 4px solid #2563eb; margin: 15px 0;\"><p style=\"font-size: 13px; font-weight: bold; color: #6b7280; margin-0 0 5px 0;\">Note:</p><p style=\"font-size: 14px; margin: 0;\">{{ $('SOD Mention Webhook').item.json.body.answer }}</p></div><p style=\"font-size: 12px; color: #6b7280;\">Sent from Time Station • SOD & EOD System</p></div>",
+        "message": "={{ $json.html || $json.message }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "Time Station Notifications"
+          "senderName": "SavyTimes Notifications"
         }
       },
-      "id": "send-mention-email",
+      "id": "send-notification-email",
       "name": "Send Gmail Notification",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
@@ -75,7 +76,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"SOD mentions processed successfully\",\n  \"count\": {{ $json.body.mentions ? $json.body.mentions.length : 0 }}\n}",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Notification emails processed successfully\",\n  \"count\": {{ $('Notification Webhook').first().json.body.mentions ? $('Notification Webhook').first().json.body.mentions.length : 0 }}\n}",
         "options": {}
       },
       "id": "respond-success",
@@ -86,22 +87,22 @@
     }
   ],
   "connections": {
-    "SOD Mention Webhook": {
+    "Notification Webhook": {
       "main": [
         [
           {
-            "node": "Has Mentions?",
+            "node": "Has Recipients?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Has Mentions?": {
+    "Has Recipients?": {
       "main": [
         [
           {
-            "node": "Split Mentions",
+            "node": "Split Recipients",
             "type": "main",
             "index": 0
           }
@@ -115,7 +116,7 @@
         ]
       ]
     },
-    "Split Mentions": {
+    "Split Recipients": {
       "main": [
         [
           {

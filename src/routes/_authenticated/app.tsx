@@ -25,10 +25,7 @@ function EmployeeLayout() {
   }
 
   return (
-    <AppShell
-      title="SavyTime"
-      nav={nav}
-    >
+    <AppShell title="SavyTimes" nav={nav}>
       <Outlet />
     </AppShell>
   );

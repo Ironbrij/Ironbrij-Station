@@ -14,6 +14,7 @@ import {
 import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
+  type Company,
   type CountryCode,
   type Department,
   type Employee,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/attendance";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { companyEmailBranding, findCompanyById } from "@/lib/email-branding";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -162,9 +164,9 @@ function formatShiftRange(start?: string, end?: string): string {
 export const Route = createFileRoute("/_authenticated/admin/employees")({
   head: () => ({
     meta: [
-      { title: "Employees — SavyTime Admin" },
+      { title: "Employees — SavyTimes Admin" },
       { name: "description", content: "Manage your team." },
-      { property: "og:title", content: "Employees — SavyTime Admin" },
+      { property: "og:title", content: "Employees — SavyTimes Admin" },
       { property: "og:description", content: "Manage your team." },
     ],
   }),
@@ -297,7 +299,8 @@ function EmployeesListPage() {
       const matchComp =
         e.companyId === filterCompany ||
         e.companyIds?.includes(filterCompany) ||
-        (!e.companyId && (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
+        (!e.companyId &&
+          (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
       if (!matchComp) return false;
     }
     if (filterDept && e.deptId !== filterDept) return false;
@@ -588,9 +591,7 @@ export function PromoteModal({
   const [jobTitle, setJobTitle] = useState(emp.jobTitle ?? "");
   const [deptId, setDeptId] = useState(emp.deptId ?? "");
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(
-    emp.companyIds && emp.companyIds.length > 0
-      ? emp.companyIds
-      : [emp.companyId || COMPANY_ID],
+    emp.companyIds && emp.companyIds.length > 0 ? emp.companyIds : [emp.companyId || COMPANY_ID],
   );
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
   const [state, setState] = useState(
@@ -652,7 +653,10 @@ export function PromoteModal({
                   employeeName: cleanName,
                   employeeEmail: cleanEmail,
                   inviteToken: token,
-                  companyName: company?.name || "SavyTime",
+                  company: companyEmailBranding(
+                    findCompanyById(companies, selectedCompanyIds[0]) || company,
+                    selectedCompanyIds[0] || COMPANY_ID,
+                  ),
                   departmentName: depts.find((d) => d.id === deptId)?.name || "",
                   jobTitle: jobTitle.trim() || emp.jobTitle,
                   country,
@@ -671,7 +675,9 @@ export function PromoteModal({
           if (emailSent) {
             toast.success(`Updated email to ${cleanEmail} & re-sent invitation email!`);
           } else {
-            toast.warning(`Updated email to ${cleanEmail}, but email sending failed. Copy link from list.`);
+            toast.warning(
+              `Updated email to ${cleanEmail}, but email sending failed. Copy link from list.`,
+            );
           }
         } else {
           toast.success(`Updated email to ${cleanEmail} (accepted employee profile updated)`);
@@ -918,7 +924,10 @@ function NewEmployeeForm({
               employeeName: cleanName,
               employeeEmail: cleanEmail,
               inviteToken: token,
-              companyName: company?.name || "SavyTime",
+              company: companyEmailBranding(
+                findCompanyById(companies, selectedCompanyIds[0]) || company,
+                selectedCompanyIds[0] || COMPANY_ID,
+              ),
               departmentName:
                 departments.find((department) => department.id === deptId)?.name || "",
               jobTitle: jobTitle.trim(),

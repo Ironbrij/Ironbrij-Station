@@ -10,31 +10,32 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import {
-  Copy,
-  HelpCircle,
-  KeyRound,
-  MessageSquare,
-  RefreshCw,
-  Send,
-  Trash2,
-} from "lucide-react";
+import { Copy, HelpCircle, KeyRound, MessageSquare, RefreshCw, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
-import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
+import { sendMentionNotification, type MentionRecipient } from "@/lib/mention-notifications";
+import { companyEmailBranding } from "@/lib/email-branding";
+import {
+  getUserCompanyIds,
+  isDepartmentInCompany,
+  isEmployeeInCompany,
+  resolveMentionRecipients,
+  sanitizeFirestoreObject,
+} from "@/lib/mentions";
 import type { PersonalAutomationProfile } from "@/lib/personal-automation";
 import type { Department, Employee, MentionItem, Punch } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/app/automation")({
   head: () => ({
     meta: [
-      { title: "Help & Feedback — Time Station" },
+      { title: "Help & Feedback — SavyTimes" },
       {
         name: "description",
-        content: "Get support, send team feedback with @mentions, and manage personal automation API.",
+        content:
+          "Get support, send team feedback with @mentions, and manage personal automation API.",
       },
     ],
   }),
@@ -46,10 +47,30 @@ function generatePrivateToken() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function isItDepartmentName(name: string) {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const words = new Set(normalized.split(" "));
+
+  return (
+    normalized === "it" ||
+    normalized.startsWith("it ") ||
+    normalized.includes("information technology") ||
+    normalized.includes("technical support") ||
+    (words.has("it") && words.has("tech"))
+  );
+}
+
 function HelpFeedbackAutomationPage() {
-  const { user, employee } = useAuth();
+  const { user, employee, company } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [adminContacts, setAdminContacts] = useState<
+    Array<{ id: string; email?: string; name: string }>
+  >([]);
 
   // Form State: Help & Support
   const [helpSubject, setHelpSubject] = useState("");
@@ -83,9 +104,22 @@ function HelpFeedbackAutomationPage() {
         snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Department, "id">) })),
       );
     });
+    const unsubAdmins = onSnapshot(collection(db(), "admins"), (snapshot) => {
+      setAdminContacts(
+        snapshot.docs.map((item) => {
+          const data = item.data() as { email?: string; name?: string };
+          return {
+            id: item.id,
+            email: data.email?.trim().toLowerCase(),
+            name: data.name?.trim() || "Support Admin",
+          };
+        }),
+      );
+    });
     return () => {
       unsubEmp();
       unsubDept();
+      unsubAdmins();
     };
   }, []);
 
@@ -131,14 +165,6 @@ function HelpFeedbackAutomationPage() {
     [origin, profile],
   );
 
-  // Helper to trigger mention emails using the same n8n webhook API
-  type MentionRecipient = {
-    email: string;
-    name: string;
-    targetName: string;
-    targetType: "person" | "department";
-  };
-
   // Helper to trigger email notifications using the n8n webhook API
   async function triggerMentionEmails(
     title: string,
@@ -150,43 +176,84 @@ function HelpFeedbackAutomationPage() {
     // 1. Resolve @mentions recipients if any exist
     const mentionRecipients = resolveMentionRecipients(mentionsList, employees, employee.email);
 
-    // 2. Resolve Admin / Support recipients
+    // 2. Silently route every Help/Feedback submission to the user's company IT team.
+    // This only changes email recipients; it does not add a visible @IT tag to the message.
+    const userCompanyIds = getUserCompanyIds(employee);
+    const itDepartments = departments.filter(
+      (department) =>
+        isDepartmentInCompany(department, userCompanyIds) && isItDepartmentName(department.name),
+    );
+    const itDepartmentIds = new Set(itDepartments.map((department) => department.id));
+    const itDepartmentNames = new Map(
+      itDepartments.map((department) => [department.id, department.name]),
+    );
+    const senderEmail = employee.email.trim().toLowerCase();
+    const itRecipients: MentionRecipient[] = employees.flatMap((candidate) => {
+      const email = candidate.email?.trim().toLowerCase();
+      if (
+        candidate.status === "inactive" ||
+        !candidate.deptId ||
+        !itDepartmentIds.has(candidate.deptId) ||
+        !isEmployeeInCompany(candidate, userCompanyIds) ||
+        !email ||
+        email === senderEmail
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          email,
+          name: candidate.name,
+          targetName: itDepartmentNames.get(candidate.deptId) || "IT Department",
+          targetType: "department" as const,
+        },
+      ];
+    });
+
+    // 3. Always notify every admin as well as the hidden IT team recipients.
     const adminRecipients: MentionRecipient[] = [];
     const adminEmails = new Set<string>();
 
-    employees.forEach((emp) => {
-      if (
-        emp.role === "admin" &&
-        emp.email &&
-        emp.email.toLowerCase() !== employee.email.toLowerCase()
-      ) {
-        adminEmails.add(emp.email.toLowerCase());
-        adminRecipients.push({
-          email: emp.email.toLowerCase(),
-          name: emp.name,
-          targetName: "Support Team",
-          targetType: "person",
-        });
-      }
+    adminContacts.forEach((admin) => {
+      const adminEmployee = employees.find(
+        (candidate) =>
+          candidate.id === admin.id ||
+          candidate.authUid === admin.id ||
+          Boolean(admin.email && candidate.email?.trim().toLowerCase() === admin.email),
+      );
+      const adminEmail = admin.email || adminEmployee?.email?.trim().toLowerCase();
+      if (!adminEmail || adminEmails.has(adminEmail)) return;
+
+      adminEmails.add(adminEmail);
+      adminRecipients.push({
+        email: adminEmail,
+        name: adminEmployee?.name || admin.name,
+        targetName: "Administrators",
+        targetType: "person",
+      });
     });
 
-    // Default admin fallback emails if no admin employee snapshot available
-    const defaultAdmins = ["pabibek9@gmail.com", "bibekparajuli05@gmail.com", "louis@ironbrij.com.au"];
-    for (const dEmail of defaultAdmins) {
-      if (dEmail !== employee.email.toLowerCase() && !adminEmails.has(dEmail)) {
-        adminEmails.add(dEmail);
+    const defaultAdmins = [
+      "pabibek9@gmail.com",
+      "bibekparajuli05@gmail.com",
+      "louis@ironbrij.com.au",
+    ];
+    for (const adminEmail of defaultAdmins) {
+      if (!adminEmails.has(adminEmail)) {
+        adminEmails.add(adminEmail);
         adminRecipients.push({
-          email: dEmail,
+          email: adminEmail,
           name: "Support Admin",
-          targetName: "Support Team",
+          targetName: "Administrators",
           targetType: "person",
         });
       }
     }
 
-    // Combine recipients (mentions + admins) avoiding duplicates
+    // Combine hidden IT routing, every admin, and any manual mentions without duplicates.
     const allRecipientsMap = new Map<string, MentionRecipient>();
-    [...mentionRecipients, ...adminRecipients].forEach((rec) => {
+    [...itRecipients, ...mentionRecipients, ...adminRecipients].forEach((rec) => {
       if (!allRecipientsMap.has(rec.email.toLowerCase())) {
         allRecipientsMap.set(rec.email.toLowerCase(), rec);
       }
@@ -195,35 +262,24 @@ function HelpFeedbackAutomationPage() {
     const finalRecipients = Array.from(allRecipientsMap.values());
     if (finalRecipients.length === 0) return;
 
-    try {
-      const idToken = await user.getIdToken();
-      await fetch("/api/sod-mention-notification", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${idToken}`,
+    await sendMentionNotification(user, {
+      company: companyEmailBranding(company, employee.companyId),
+      reportId: `help_feedback_${Date.now()}`,
+      reportType: "sod",
+      reportDate: new Date().toLocaleDateString(),
+      authorName: employee.name,
+      authorEmail: employee.email,
+      authorDeptName: departments.find((d) => d.id === employee.deptId)?.name,
+      answers: [
+        {
+          questionId: "feedback_question",
+          question: title,
+          answer: messageText,
+          mentions: mentionsList,
         },
-        body: JSON.stringify({
-          reportId: `help_feedback_${Date.now()}`,
-          reportType: "sod",
-          reportDate: new Date().toLocaleDateString(),
-          authorName: employee.name,
-          authorEmail: employee.email,
-          authorDeptName: departments.find((d) => d.id === employee.deptId)?.name,
-          answers: [
-            {
-              questionId: "feedback_question",
-              question: title,
-              answer: messageText,
-              mentions: mentionsList,
-            },
-          ],
-          recipients: finalRecipients,
-        }),
-      });
-    } catch (err) {
-      console.error("Help/Feedback notification error:", err);
-    }
+      ],
+      recipients: finalRecipients,
+    });
   }
 
   // Handle Help Request Submission
@@ -248,17 +304,26 @@ function HelpFeedbackAutomationPage() {
         }),
       );
 
-      // Dispatch email notifications for support & tagged mentions
-      await triggerMentionEmails(
-        `Help Request: ${helpSubject.trim()}`,
-        helpMessage.trim(),
-        helpMentions,
-      );
+      let notificationFailed = false;
+      try {
+        await triggerMentionEmails(
+          `Help Request: ${helpSubject.trim()}`,
+          helpMessage.trim(),
+          helpMentions,
+        );
+      } catch (notificationError) {
+        notificationFailed = true;
+        console.error("Help request notification error:", notificationError);
+      }
 
       setHelpSubject("");
       setHelpMessage("");
       setHelpMentions([]);
-      toast.success("Help request submitted successfully.");
+      if (notificationFailed) {
+        toast.warning("Help request saved, but its email notification could not be sent.");
+      } else {
+        toast.success("Help request submitted and emailed successfully.");
+      }
     } catch (err) {
       toast.error("Could not submit help request: " + (err as Error).message);
     } finally {
@@ -287,16 +352,25 @@ function HelpFeedbackAutomationPage() {
         }),
       );
 
-      // Dispatch email notifications for support & tagged mentions
-      await triggerMentionEmails(
-        `Feedback (${feedbackCategory})`,
-        feedbackMessage.trim(),
-        feedbackMentions,
-      );
+      let notificationFailed = false;
+      try {
+        await triggerMentionEmails(
+          `Feedback (${feedbackCategory})`,
+          feedbackMessage.trim(),
+          feedbackMentions,
+        );
+      } catch (notificationError) {
+        notificationFailed = true;
+        console.error("Feedback notification error:", notificationError);
+      }
 
       setFeedbackMessage("");
       setFeedbackMentions([]);
-      toast.success("Feedback submitted successfully.");
+      if (notificationFailed) {
+        toast.warning("Feedback saved, but its email notification could not be sent.");
+      } else {
+        toast.success("Feedback submitted and emailed successfully.");
+      }
     } catch (err) {
       toast.error("Could not submit feedback: " + (err as Error).message);
     } finally {
@@ -417,7 +491,8 @@ function HelpFeedbackAutomationPage() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Help & Feedback</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Submit support questions, share team feedback with @mentions, or access your automation API.
+          Submit support questions, share team feedback with @mentions, or access your automation
+          API.
         </p>
       </div>
 
@@ -428,7 +503,8 @@ function HelpFeedbackAutomationPage() {
           <h2 className="text-lg">Get Help & Support</h2>
         </div>
         <p className="text-xs text-muted-foreground">
-          Need assistance or have a question? Submit your query below. Type <strong>@Name</strong> or <strong>@Department</strong> to notify specific team members.
+          Need assistance or have a question? Submit your query below. Type <strong>@Name</strong>{" "}
+          or <strong>@Department</strong> to notify specific team members.
         </p>
 
         <form onSubmit={submitHelp} className="space-y-4">
@@ -483,7 +559,9 @@ function HelpFeedbackAutomationPage() {
           <h2 className="text-lg">Send Feedback</h2>
         </div>
         <p className="text-xs text-muted-foreground">
-          Share your ideas, bug reports, or team feedback. Tag colleagues using <strong>@Name</strong> or <strong>@Department</strong> to include them in email notifications.
+          Share your ideas, bug reports, or team feedback. Tag colleagues using{" "}
+          <strong>@Name</strong> or <strong>@Department</strong> to include them in email
+          notifications.
         </p>
 
         <form onSubmit={submitFeedback} className="space-y-4">
@@ -541,7 +619,8 @@ function HelpFeedbackAutomationPage() {
             <KeyRound className="h-5 w-5 text-muted-foreground" /> Personal Automation API
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Create a private URL that reports your latest attendance punch status to n8n or personal workflows.
+            Create a private URL that reports your latest attendance punch status to n8n or personal
+            workflows.
           </p>
         </div>
 
@@ -608,7 +687,8 @@ function HelpFeedbackAutomationPage() {
             <li>Add an HTTP Request node using GET and paste your private API URL.</li>
             <li>
               Filter execution based on <code>attendance.eventId</code> to detect when{" "}
-              <code>attendance.event</code> changes to <code>punch_in</code> or <code>punch_out</code>.
+              <code>attendance.event</code> changes to <code>punch_in</code> or{" "}
+              <code>punch_out</code>.
             </li>
           </ol>
         </div>

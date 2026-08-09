@@ -27,9 +27,9 @@ import {
 export const Route = createFileRoute("/_authenticated/app/extra")({
   head: () => ({
     meta: [
-      { title: "Extra Time & Overtime — Time Station" },
+      { title: "Extra Time & Overtime — SavyTimes" },
       { name: "description", content: "Log overtime hours worked outside shift." },
-      { property: "og:title", content: "Extra Time — Time Station" },
+      { property: "og:title", content: "Extra Time — SavyTimes" },
       { property: "og:description", content: "Log overtime hours worked outside shift." },
     ],
   }),

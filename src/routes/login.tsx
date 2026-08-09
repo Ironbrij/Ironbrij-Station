@@ -7,10 +7,10 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign in — Time Station" },
-      { name: "description", content: "Sign in to your Time Station account." },
-      { property: "og:title", content: "Sign in — Time Station" },
-      { property: "og:description", content: "Sign in to your Time Station account." },
+      { title: "Sign in — SavyTimes" },
+      { name: "description", content: "Sign in to your SavyTimes account." },
+      { property: "og:title", content: "Sign in — SavyTimes" },
+      { property: "og:description", content: "Sign in to your SavyTimes account." },
     ],
   }),
   component: LoginPage,
@@ -65,7 +65,7 @@ function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-background to-sky-soft">
       <div className="w-full max-w-sm rounded-xl border bg-card p-8 shadow-lift">
-        <h1 className="text-2xl font-bold text-primary">Time Station</h1>
+        <h1 className="text-2xl font-bold text-primary">SavyTimes</h1>
         <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
 
         <button

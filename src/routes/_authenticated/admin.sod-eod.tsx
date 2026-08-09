@@ -37,7 +37,7 @@ import { COMPANY_ID } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/admin/sod-eod")({
   head: () => ({
-    meta: [{ title: "SOD & EOD Reports - Time Station Admin" }],
+    meta: [{ title: "SOD & EOD Reports - SavyTimes Admin" }],
   }),
   component: AdminSodEodPage,
 });
@@ -77,7 +77,9 @@ function AdminSodEodPage() {
     eod: "",
   });
   const [employeeSearch, setEmployeeSearch] = useState("");
-  const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<Employee | null>(null);
+  const [selectedEmployeeForHistory, setSelectedEmployeeForHistory] = useState<Employee | null>(
+    null,
+  );
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const seededDefaults = useRef(false);
@@ -808,7 +810,10 @@ function ReportHistoryModal({
     const userId = employee.authUid || employee.id;
     return reports
       .filter((r) => r.userId === userId || r.employeeId === employee.id)
-      .sort((a, b) => b.reportDate.localeCompare(a.reportDate) || a.reportType.localeCompare(b.reportType));
+      .sort(
+        (a, b) =>
+          b.reportDate.localeCompare(a.reportDate) || a.reportType.localeCompare(b.reportType),
+      );
   }, [employee, reports]);
 
   return (
@@ -823,7 +828,11 @@ function ReportHistoryModal({
             <h3 className="text-lg font-bold text-foreground">Report History: {employee.name}</h3>
             <p className="text-xs text-muted-foreground">{employee.email}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -850,7 +859,9 @@ function ReportHistoryModal({
                 empReports.map((report) => (
                   <tr key={report.id} className="hover:bg-secondary/35">
                     <td className="px-4 py-3 font-semibold">{report.reportDate}</td>
-                    <td className="px-4 py-3 font-extrabold capitalize">{reportTypeLabel(report.reportType)}</td>
+                    <td className="px-4 py-3 font-extrabold capitalize">
+                      {reportTypeLabel(report.reportType)}
+                    </td>
                     <td className="px-4 py-3">
                       {report.submittedLate ? (
                         <span className="text-rose-600 font-semibold">Late</span>

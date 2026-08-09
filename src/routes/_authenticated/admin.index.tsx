@@ -2,7 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { DailyReport, Department, Employee, LeaveRequest, Punch, ReportingSettings } from "@/lib/types";
+import type {
+  DailyReport,
+  Department,
+  Employee,
+  LeaveRequest,
+  Punch,
+  ReportingSettings,
+} from "@/lib/types";
 import {
   DEFAULT_REPORTING_SETTINGS,
   isReportDeadlinePassed,
@@ -41,12 +48,12 @@ import { format } from "date-fns";
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — SavyTime Admin" },
+      { title: "Dashboard — SavyTimes Admin" },
       {
         name: "description",
         content: "Live team status, department cards, and today's activity feed.",
       },
-      { property: "og:title", content: "Dashboard — SavyTime Admin" },
+      { property: "og:title", content: "Dashboard — SavyTimes Admin" },
       {
         property: "og:description",
         content: "Live team status, department cards, and today's activity feed.",
@@ -64,8 +71,9 @@ function AdminHome() {
   const [historicalRecent, setHistoricalRecent] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [dailyReports, setDailyReports] = useState<DailyReport[]>([]);
-  const [reportingSettings, setReportingSettings] =
-    useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
+  const [reportingSettings, setReportingSettings] = useState<ReportingSettings>(
+    DEFAULT_REPORTING_SETTINGS,
+  );
 
   // Dashboard UI States
   const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
@@ -277,7 +285,9 @@ function AdminHome() {
       if (filterCompanyId !== "all") {
         const matchesComp =
           d.companyId === filterCompanyId ||
-          (!d.companyId && (filterCompanyId === COMPANY_ID || companies.find((c) => c.id === filterCompanyId)?.isMain));
+          (!d.companyId &&
+            (filterCompanyId === COMPANY_ID ||
+              companies.find((c) => c.id === filterCompanyId)?.isMain));
         if (!matchesComp) return false;
       }
       return true;
@@ -543,7 +553,8 @@ function AdminHome() {
                               </div>
 
                               <div className="text-[11px] text-muted-foreground truncate">
-                                {m.jobTitle || "Member"} · {countryData.name} ({shiftSummary.localCode})
+                                {m.jobTitle || "Member"} · {countryData.name} (
+                                {shiftSummary.localCode})
                               </div>
                               <div
                                 className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary mt-0.5"

@@ -8,10 +8,10 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/invite/$token")({
   head: () => ({
     meta: [
-      { title: "Accept Invite — Time Station" },
-      { name: "description", content: "Set up your Time Station account." },
-      { property: "og:title", content: "Accept Invite — Time Station" },
-      { property: "og:description", content: "Set up your Time Station account." },
+      { title: "Accept Invite — SavyTimes" },
+      { name: "description", content: "Set up your SavyTimes account." },
+      { property: "og:title", content: "Accept Invite — SavyTimes" },
+      { property: "og:description", content: "Set up your SavyTimes account." },
       { name: "robots", content: "noindex" },
     ],
   }),

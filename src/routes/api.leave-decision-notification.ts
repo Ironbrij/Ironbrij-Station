@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { CompanyEmailBranding } from "@/lib/email-branding";
+import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 
 type LeaveDecisionInput = {
+  company?: CompanyEmailBranding;
   leaveRequestId: string;
   employeeId: string;
   employeeName: string;
@@ -17,14 +20,6 @@ type LeaveDecisionInput = {
 
 function validText(value: unknown, maxLength = 500): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
-}
-
-function escapeHtml(value: string) {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
-  );
 }
 
 export const Route = createFileRoute("/api/leave-decision-notification")({
@@ -101,6 +96,8 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           );
         }
 
+        const company = body.company || { name: "SavyTimes" };
+        const companyName = company.name?.trim() || "SavyTimes";
         const approved = body.status === "approved";
         const dateRange =
           body.dateFrom === body.dateTo ? body.dateFrom : `${body.dateFrom} to ${body.dateTo}`;
@@ -116,13 +113,38 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
         const decisionText = approved
           ? `Your ${requestType} request for ${dateRange} has been approved.`
           : `Your ${requestType} request for ${dateRange} has been rejected.`;
-        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTime to view the updated status.`;
-        const statusColor = approved ? "#047857" : "#be123c";
+        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTimes to view the updated status for ${companyName}.`;
+        const accentColor = approved ? "#047857" : "#be123c";
+        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const html = renderCompanyEmail({
+          company,
+          preheader: decisionText,
+          label: approved ? "Leave approved" : "Leave rejected",
+          title: approved ? "Leave request approved" : "Leave request rejected",
+          introHtml: `Hi <strong style="color: #ffffff;">${escapeEmailHtml(body.employeeName)}</strong>. ${escapeEmailHtml(decisionText)}`,
+          contentHtml: `
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
+              [
+                { label: "Request", value: requestType },
+                { label: "Date", value: dateRange },
+                { label: "Status", value: approved ? "Approved" : "Rejected" },
+              ],
+              accentColor,
+            )}</table>
+            <div style="margin-top: 12px; padding: 16px; border: 1px solid #dbe4ee; border-radius: 10px; background-color: #f8fafc;">
+              <div style="margin-bottom: 7px; color: #718096; font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Submitted reason</div>
+              <div style="color: #243447; font-size: 15px; line-height: 24px; white-space: pre-wrap;">${escapeEmailHtml(body.reason)}</div>
+            </div>`,
+          cta: { label: "View leave status", url: `${appUrl}/app/leave` },
+          accentColor,
+        });
+
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             event: approved ? "leave_approved" : "leave_rejected",
+            company,
             leaveRequestId: body.leaveRequestId,
             employeeId: body.employeeId,
             employeeName: body.employeeName,
@@ -136,12 +158,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
             reason: body.reason,
             status: body.status,
             decidedAt: new Date().toISOString(),
-            email: {
-              to: body.employeeEmail,
-              subject,
-              text,
-              html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto"><h2 style="color:${statusColor}">Leave request ${escapeHtml(body.status)}</h2><p>Hi ${escapeHtml(body.employeeName)},</p><p>${escapeHtml(decisionText)}</p><p><strong>Your submitted reason:</strong> ${escapeHtml(body.reason)}</p><p>Please open SavyTime to view the updated status.</p></div>`,
-            },
+            email: { to: body.employeeEmail, subject, text, html },
           }),
         });
         if (!webhookResponse.ok) {

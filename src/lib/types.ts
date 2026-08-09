@@ -101,6 +101,7 @@ export interface MentionItem {
   deptId?: string;
   deptName?: string;
   companyId?: string;
+  email?: string;
 }
 
 export interface DailyReportAnswer {

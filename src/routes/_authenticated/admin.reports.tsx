@@ -6,7 +6,14 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { COMPANY_ID, type Company, type Department, type Employee, type LeaveRequest, type Punch } from "@/lib/types";
+import {
+  COMPANY_ID,
+  type Company,
+  type Department,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+} from "@/lib/types";
 import { computeDay } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -37,7 +44,7 @@ type AttendanceRow = {
 };
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({
-  head: () => ({ meta: [{ title: "Attendance Reports — Time Station Admin" }] }),
+  head: () => ({ meta: [{ title: "Attendance Reports — SavyTimes Admin" }] }),
   component: ReportsPage,
 });
 
@@ -242,7 +249,7 @@ function ReportsPage() {
     if (!rows.length) return toast.error("No attendance records match this report.");
     const pdf = new jsPDF({ orientation: "landscape" });
     pdf.setFontSize(16);
-    pdf.text("Time Station Attendance Report", 14, 16);
+    pdf.text("SavyTimes Attendance Report", 14, 16);
     pdf.setFontSize(9);
     pdf.text(`${from} to ${to} · ${fileScope().replace(/_/g, " ")}`, 14, 23);
     let y = 34;

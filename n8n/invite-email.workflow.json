@@ -1,5 +1,5 @@
 {
-  "name": "Time Station - Employee Invite Email",
+  "name": "SavyTimes - Employee Invite Email",
   "nodes": [
     {
       "parameters": {
@@ -23,7 +23,7 @@
         "message": "={{ $json.body.email.html }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "Time Station"
+          "senderName": "SavyTimes"
         }
       },
       "id": "send-invite-email",

@@ -152,10 +152,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
-      if (s.exists()) setCompany({ ...(s.data() as Company) });
-    });
-
     const unsub = onAuthStateChanged(auth(), (u) => {
       setUser(u);
       if (u) {
@@ -175,11 +171,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     });
-    return () => {
-      unsub();
-      unsubComp();
-    };
+    return unsub;
   }, []);
+
+  const employeeCompanyId = employee?.companyId || employee?.companyIds?.[0] || COMPANY_ID;
+  useEffect(() => {
+    if (!firebaseConfigured) return;
+    return onSnapshot(doc(db(), "companies", employeeCompanyId), (snapshot) => {
+      setCompany(
+        snapshot.exists() ? { id: snapshot.id, ...(snapshot.data() as Omit<Company, "id">) } : null,
+      );
+    });
+  }, [employeeCompanyId]);
 
   const value: AuthState = {
     user,

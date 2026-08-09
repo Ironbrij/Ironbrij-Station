@@ -16,12 +16,12 @@ import { resolveProfilePhoto } from "@/lib/profile-photo";
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
     meta: [
-      { title: "Registered Users — Time Station Admin" },
+      { title: "Registered Users — SavyTimes Admin" },
       {
         name: "description",
         content: "View all registered users, grant owner status, and assign employee roles.",
       },
-      { property: "og:title", content: "Registered Users — Time Station Admin" },
+      { property: "og:title", content: "Registered Users — SavyTimes Admin" },
       {
         property: "og:description",
         content: "View all registered users, grant owner status, and assign employee roles.",

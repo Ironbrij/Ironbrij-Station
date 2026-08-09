@@ -36,9 +36,9 @@ import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 export const Route = createFileRoute("/_authenticated/app/notices")({
   head: () => ({
     meta: [
-      { title: "Notifications & Notices — Time Station" },
+      { title: "Notifications & Notices — SavyTimes" },
       { name: "description", content: "View HR announcements and notices." },
-      { property: "og:title", content: "Notifications & Notices — Time Station" },
+      { property: "og:title", content: "Notifications & Notices — SavyTimes" },
       { property: "og:description", content: "View HR announcements and notices." },
     ],
   }),
@@ -133,13 +133,13 @@ function UserNoticesPage() {
       .filter((n) => {
         if (!n.targetType || n.targetType === "all") return true;
         if (n.targetType === "companies" && employee) {
-          const empCompanyIds = [
-            employee.companyId,
-            ...(employee.companyIds || []),
-          ].filter(Boolean) as string[];
+          const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
+            Boolean,
+          ) as string[];
           if (
             n.targetCompanyIds?.some(
-              (cId) => empCompanyIds.includes(cId) || (cId === COMPANY_ID && empCompanyIds.length === 0),
+              (cId) =>
+                empCompanyIds.includes(cId) || (cId === COMPANY_ID && empCompanyIds.length === 0),
             )
           ) {
             return true;

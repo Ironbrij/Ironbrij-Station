@@ -44,7 +44,7 @@ import { resolveProfilePhoto } from "@/lib/profile-photo";
 import { formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
-  head: () => ({ meta: [{ title: "Employee Profile — Time Station Admin" }] }),
+  head: () => ({ meta: [{ title: "Employee Profile — SavyTimes Admin" }] }),
   component: EmployeeDetail,
 });
 

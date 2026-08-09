@@ -1,8 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
+import { companyEmailBranding } from "@/lib/email-branding";
 import type { LeaveRequest } from "@/lib/types";
 import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, XCircle } from "lucide-react";
@@ -11,9 +21,9 @@ import { format } from "date-fns";
 export const Route = createFileRoute("/_authenticated/app/leave")({
   head: () => ({
     meta: [
-      { title: "Leave — Time Station" },
+      { title: "Leave — SavyTimes" },
       { name: "description", content: "Request leave and view history." },
-      { property: "og:title", content: "Leave — Time Station" },
+      { property: "og:title", content: "Leave — SavyTimes" },
       { property: "og:description", content: "Request leave and view history." },
     ],
   }),
@@ -21,7 +31,7 @@ export const Route = createFileRoute("/_authenticated/app/leave")({
 });
 
 function LeavePage() {
-  const { employee, user } = useAuth();
+  const { employee, user, company } = useAuth();
   const [leaveType, setLeaveType] = useState<NonNullable<LeaveRequest["leaveType"]>>("full_day");
   const [halfDayPeriod, setHalfDayPeriod] =
     useState<NonNullable<LeaveRequest["halfDayPeriod"]>>("first_half");
@@ -84,6 +94,7 @@ function LeavePage() {
               "content-type": "application/json",
             },
             body: JSON.stringify({
+              company: companyEmailBranding(company, employee.companyId),
               leaveRequestId: leaveRef.id,
               employeeId: employee.id,
               employeeName: employee.name,
@@ -158,7 +169,9 @@ function LeavePage() {
             </label>
             <select
               value={leaveType}
-              onChange={(e) => setLeaveType(e.target.value as any)}
+              onChange={(e) =>
+                setLeaveType(e.target.value as NonNullable<LeaveRequest["leaveType"]>)
+              }
               className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
             >
               <option value="full_day">Full Day Leave</option>
@@ -174,7 +187,9 @@ function LeavePage() {
               </label>
               <select
                 value={halfDayPeriod}
-                onChange={(e) => setHalfDayPeriod(e.target.value as any)}
+                onChange={(e) =>
+                  setHalfDayPeriod(e.target.value as NonNullable<LeaveRequest["halfDayPeriod"]>)
+                }
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
               >
                 <option value="first_half">First Half (Morning)</option>

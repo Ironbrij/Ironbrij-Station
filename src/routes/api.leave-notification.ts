@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { CompanyEmailBranding } from "@/lib/email-branding";
+import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 
 type LeaveNotificationInput = {
+  company?: CompanyEmailBranding;
   leaveRequestId: string;
   employeeId: string;
   employeeName: string;
@@ -16,14 +19,6 @@ type LeaveNotificationInput = {
 
 function validText(value: unknown, maxLength = 500): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
-}
-
-function escapeHtml(value: string) {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
-  );
 }
 
 export const Route = createFileRoute("/api/leave-notification")({
@@ -67,15 +62,14 @@ export const Route = createFileRoute("/api/leave-notification")({
           return Response.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
         }
         if (
-          authenticatedEmail !== body.employeeEmail.toLowerCase() ||
           !validText(body.leaveRequestId, 150) ||
           !validText(body.employeeId, 150) ||
           !validText(body.employeeName, 150) ||
           !validText(body.employeeEmail, 254) ||
-          authenticatedEmail !== body.employeeEmail.toLowerCase() ||
           !validText(body.dateFrom, 10) ||
           !validText(body.dateTo, 10) ||
-          !validText(body.reason, 2_000)
+          !validText(body.reason, 2_000) ||
+          authenticatedEmail !== body.employeeEmail.toLowerCase()
         ) {
           return Response.json({ ok: false, error: "Invalid leave request" }, { status: 400 });
         }
@@ -88,6 +82,8 @@ export const Route = createFileRoute("/api/leave-notification")({
           );
         }
 
+        const company = body.company || { name: "SavyTimes" };
+        const companyName = company.name?.trim() || "SavyTimes";
         const managerEmail = process.env.LEAVE_MANAGER_EMAIL ?? "pabibek9@gmail.com";
         const dateRange =
           body.dateFrom === body.dateTo ? body.dateFrom : `${body.dateFrom} to ${body.dateTo}`;
@@ -98,12 +94,35 @@ export const Route = createFileRoute("/api/leave-notification")({
               ? `${body.halfDayPeriod === "second_half" ? "second" : "first"}-half leave`
               : "full-day leave";
         const subject = `New ${requestType} request from ${body.employeeName}`;
-        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange}.\n\nReason: ${body.reason}\n\nOpen SavyTime to approve or reject this request.`;
+        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange} at ${companyName}.\n\nReason: ${body.reason}\n\nOpen SavyTimes to approve or reject this request.`;
+        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const html = renderCompanyEmail({
+          company,
+          preheader: `${body.employeeName} submitted a new leave request.`,
+          label: "Leave request",
+          title: "New leave request",
+          introHtml: `<strong style="color: #ffffff;">${escapeEmailHtml(body.employeeName)}</strong> submitted a request for review.`,
+          contentHtml: `
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
+              [
+                { label: "Employee", value: `${body.employeeName} (${body.employeeEmail})` },
+                { label: "Request", value: requestType },
+                { label: "Date", value: dateRange },
+              ],
+            )}</table>
+            <div style="margin-top: 12px; padding: 16px; border: 1px solid #dbe4ee; border-radius: 10px; background-color: #f8fafc;">
+              <div style="margin-bottom: 7px; color: #718096; font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Reason</div>
+              <div style="color: #243447; font-size: 15px; line-height: 24px; white-space: pre-wrap;">${escapeEmailHtml(body.reason)}</div>
+            </div>`,
+          cta: { label: "Review leave request", url: `${appUrl}/admin/leaves` },
+        });
+
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             event: "leave_requested",
+            company,
             managerEmail,
             leaveRequestId: body.leaveRequestId,
             employeeId: body.employeeId,
@@ -117,12 +136,7 @@ export const Route = createFileRoute("/api/leave-notification")({
             endTime: body.endTime,
             reason: body.reason,
             requestedAt: new Date().toISOString(),
-            email: {
-              to: managerEmail,
-              subject,
-              text,
-              html: `<div style="font-family:Arial,sans-serif;max-width:600px"><h2>New leave request</h2><p><strong>${escapeHtml(body.employeeName)}</strong> (${escapeHtml(body.employeeEmail)}) is asking for <strong>${escapeHtml(requestType)}</strong> on <strong>${escapeHtml(dateRange)}</strong>.</p><p><strong>Reason:</strong> ${escapeHtml(body.reason)}</p><p>Open SavyTime to approve or reject this request.</p></div>`,
-            },
+            email: { to: managerEmail, subject, text, html },
           }),
         });
 

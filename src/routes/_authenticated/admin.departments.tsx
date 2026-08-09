@@ -46,12 +46,12 @@ import { getStateOptions, normalizeState } from "@/lib/states";
 export const Route = createFileRoute("/_authenticated/admin/departments")({
   head: () => ({
     meta: [
-      { title: "Departments — Time Station Admin" },
+      { title: "Departments — SavyTimes Admin" },
       {
         name: "description",
         content: "Manage departments, assigned users, and download department reports.",
       },
-      { property: "og:title", content: "Departments — Time Station Admin" },
+      { property: "og:title", content: "Departments — SavyTimes Admin" },
       {
         property: "og:description",
         content: "Manage departments, assigned users, and download department reports.",
@@ -189,9 +189,7 @@ function DepartmentsPage() {
   async function updateDepartmentCompany(id: string, companyId: string) {
     try {
       await updateDoc(doc(db(), "departments", id), { companyId });
-      setDepts((prev) =>
-        prev.map((d) => (d.id === id ? { ...d, companyId } : d)),
-      );
+      setDepts((prev) => prev.map((d) => (d.id === id ? { ...d, companyId } : d)));
       toast.success("Department company updated");
     } catch (err) {
       toast.error("Failed to update department company: " + (err as Error).message);
@@ -616,9 +614,7 @@ function DepartmentsPage() {
           const selectedDays = reportDaysMap[d.id] || 30; // Default to 30 days (1 month)
 
           const comp = companies.find(
-            (c) =>
-              c.id === d.companyId ||
-              (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
+            (c) => c.id === d.companyId || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
           );
           const compLogo = comp?.logoUrl || DEFAULT_LOGO;
 
@@ -648,9 +644,7 @@ function DepartmentsPage() {
                           {c.name} {c.isMain ? "(Main)" : ""}
                         </option>
                       ))}
-                      {companies.length === 0 && (
-                        <option value={COMPANY_ID}>Main Company</option>
-                      )}
+                      {companies.length === 0 && <option value={COMPANY_ID}>Main Company</option>}
                     </select>
                   </div>
 

@@ -52,12 +52,12 @@ async function reconcileEmployeeShift(
       message: `You completed your full scheduled shift and were automatically punched out at ${formatInTimezone(
         timeout.punchOutAt,
         timeout.shift.timezone,
-      )}. Time Station stops regular time after the full shift duration has been worked. Use Extra Time for approved additional work.`,
+      )}. SavyTimes stops regular time after the full shift duration has been worked. Use Extra Time for approved additional work.`,
       priority: "warning",
       targetType: "employee",
       targetEmployeeId: employee.id,
       createdAt: new Date().toISOString(),
-      authorName: "Time Station",
+      authorName: "SavyTimes",
     });
     return true;
   });

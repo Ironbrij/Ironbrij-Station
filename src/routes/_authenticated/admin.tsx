@@ -27,14 +27,9 @@ function AdminLayout() {
     { to: "/admin/reports", label: "Reports" },
   ];
 
-
   return (
-    <AppShell
-      title="SavyTime — Admin"
-      nav={adminNav}
-    >
+    <AppShell title="SavyTimes — Admin" nav={adminNav}>
       <Outlet />
     </AppShell>
   );
 }
-

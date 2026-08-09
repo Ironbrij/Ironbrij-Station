@@ -13,15 +13,16 @@ import {
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import {
-  COMPANY_ID,
-  type Company,
   type CompanyNotice,
   type Department,
+  type Employee,
   type LeaveRequest,
   type MentionItem,
   type Punch,
 } from "@/lib/types";
 import { MentionTextarea } from "@/components/MentionTextarea";
+import { sendMentionNotification } from "@/lib/mention-notifications";
+import { companyEmailBranding } from "@/lib/email-branding";
 import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
 import { formatDurationHMS } from "@/lib/time";
 import {
@@ -48,7 +49,18 @@ import {
 } from "@/lib/daily-reports";
 import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
-import { PartyPopper, Lock, Megaphone, X, Sun, Moon, FileText, Send, CheckCircle2, Sparkles } from "lucide-react";
+import {
+  PartyPopper,
+  Lock,
+  Megaphone,
+  X,
+  Sun,
+  Moon,
+  FileText,
+  Send,
+  CheckCircle2,
+  Sparkles,
+} from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
@@ -56,9 +68,9 @@ import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
     meta: [
-      { title: "Web Punch — Time Station" },
+      { title: "Web Punch — SavyTimes" },
       { name: "description", content: "Punch in and out for your shift." },
-      { property: "og:title", content: "Web Punch — Time Station" },
+      { property: "og:title", content: "Web Punch — SavyTimes" },
       { property: "og:description", content: "Punch in and out for your shift." },
     ],
   }),
@@ -73,8 +85,7 @@ const HOLIDAY_GIFS = [
 ];
 
 function PunchPage() {
-  const { user, employee } = useAuth();
-  const [company, setCompany] = useState<Company | null>(null);
+  const { user, employee, company } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
@@ -122,9 +133,6 @@ function PunchPage() {
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
 
   useEffect(() => {
-    const unsubCompany = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
-      if (s.exists()) setCompany(s.data() as Company);
-    });
     const u1 = onSnapshot(collection(db(), "departments"), (s) =>
       setDepts(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
     );
@@ -135,7 +143,6 @@ function PunchPage() {
       setAllEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
     return () => {
-      unsubCompany();
       u1();
       u2();
       u3();
@@ -431,35 +438,37 @@ function PunchPage() {
         { merge: true },
       );
 
-      toast.success(
-        `Your ${type.toUpperCase()} report has been saved.`,
-      );
-
-      // Trigger n8n notification for @mentions asynchronously
+      let notificationFailed = false;
       if (allReportMentions.length > 0 && user) {
-        const recipients = resolveMentionRecipients(allReportMentions, allEmployees, employee.email);
-        user
-          .getIdToken()
-          .then((idToken) => {
-            fetch("/api/sod-mention-notification", {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                authorization: `Bearer ${idToken}`,
-              },
-              body: JSON.stringify({
-                reportId,
-                reportType: type,
-                reportDate,
-                authorName: employee.name,
-                authorEmail: employee.email,
-                authorDeptName: depts.find((d) => d.id === employee.deptId)?.name,
-                answers: reportAnswers,
-                recipients,
-              }),
-            }).catch((err) => console.error("Notepad mention notification error:", err));
-          })
-          .catch((err) => console.error("IdToken error:", err));
+        const recipients = resolveMentionRecipients(
+          allReportMentions,
+          allEmployees,
+          employee.email,
+        );
+        try {
+          await sendMentionNotification(user, {
+            company: companyEmailBranding(company, employee.companyId),
+            reportId,
+            reportType: type,
+            reportDate,
+            authorName: employee.name,
+            authorEmail: employee.email,
+            authorDeptName: depts.find((d) => d.id === employee.deptId)?.name,
+            answers: reportAnswers,
+            recipients,
+          });
+        } catch (notificationError) {
+          notificationFailed = true;
+          console.error("Notepad mention notification error:", notificationError);
+        }
+      }
+
+      if (notificationFailed) {
+        toast.warning(
+          `Your ${type.toUpperCase()} report was saved, but mention emails could not be sent.`,
+        );
+      } else {
+        toast.success(`Your ${type.toUpperCase()} report has been saved.`);
       }
 
       setShowNotepadModal(null);
@@ -803,7 +812,9 @@ function PunchPage() {
                 </div>
               ) : isPunchedIn && lastIn ? (
                 <div className="rounded-xl bg-lime-400 text-slate-900 font-bold p-5 border border-lime-500 shadow-sm space-y-1">
-                  <div className="text-2xl font-black">Working since {format(lastIn, "h:mm a")}</div>
+                  <div className="text-2xl font-black">
+                    Working since {format(lastIn, "h:mm a")}
+                  </div>
                   <div className="text-base font-bold">On {format(lastIn, "dd/MM/yyyy")}</div>
                   <div className="text-sm font-black text-slate-800 mt-1 uppercase tracking-wide">
                     {deptName}
@@ -912,7 +923,9 @@ function PunchPage() {
               </span>
               <span className="font-mono text-muted-foreground">
                 {showNotepadModal === "eod" && totalWorkedMs > 0 ? (
-                  <strong className="text-primary font-mono">{formatDurationHMS(totalWorkedMs)} worked</strong>
+                  <strong className="text-primary font-mono">
+                    {formatDurationHMS(totalWorkedMs)} worked
+                  </strong>
                 ) : (
                   format(new Date(), "dd MMM yyyy")
                 )}
@@ -926,7 +939,10 @@ function PunchPage() {
                 const setAnswersFunc = showNotepadModal === "sod" ? setSodAnswers : setEodAnswers;
 
                 return (
-                  <div key={question.id} className="space-y-1.5 rounded-xl border bg-background p-4 shadow-xs">
+                  <div
+                    key={question.id}
+                    className="space-y-1.5 rounded-xl border bg-background p-4 shadow-xs"
+                  >
                     <label className="block text-xs font-bold text-foreground flex items-center justify-between">
                       <span>
                         <span className="text-primary mr-1">#{index + 1}</span> {question.question}
