@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
-import { Headphones, LogOut, User } from "lucide-react";
+import { ArrowLeftRight, Headphones, LogOut } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
@@ -26,12 +26,12 @@ export function AppShell({
   useAutoRejectExpiredLeaves(isAdmin);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/90 shadow-xs backdrop-blur-md">
+    <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
           <Link
             to="/"
-            className="group flex shrink-0 items-center gap-2.5 text-base font-black text-primary"
+            className="group flex shrink-0 items-center gap-2.5 text-base font-semibold text-foreground"
           >
             <img
               src={
@@ -39,9 +39,9 @@ export function AppShell({
                 "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg"
               }
               alt={company?.name || "ironbrij"}
-              className="h-8 w-8 shrink-0 rounded-full border bg-background object-contain shadow-xs transition-transform group-hover:scale-105"
+              className="h-8 w-8 shrink-0 rounded-lg border bg-background object-contain"
             />
-            <span className="font-extrabold tracking-tight text-primary">
+            <span className="hidden max-w-[180px] truncate font-semibold tracking-tight text-foreground sm:inline">
               {company?.name || "ironbrij"}
             </span>
           </Link>
@@ -51,33 +51,28 @@ export function AppShell({
               <>
                 <Link
                   to={title.includes("Admin") ? "/app/punch" : "/admin"}
-                  className="btn-lift inline-flex items-center gap-1.5 rounded-lg border bg-primary/10 border-primary/20 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary/20 transition-all shadow-xs"
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
+                  <ArrowLeftRight className="h-4 w-4" />
                   {title.includes("Admin") ? (
-                    <>👤 Switch to Employee Portal</>
+                    <span className="hidden sm:inline">Employee portal</span>
                   ) : (
-                    <>🛡️ Switch to Admin Dashboard</>
+                    <span className="hidden sm:inline">Admin portal</span>
                   )}
                 </Link>
 
                 <Link
                   to="/admin/support"
-                  className="btn-lift inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-bold text-primary hover:bg-muted/60"
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  <Headphones className="h-4 w-4" /> Support
+                  <Headphones className="h-4 w-4" />
+                  <span className="hidden sm:inline">Support</span>
                 </Link>
               </>
             )}
 
-            {!isAdmin && (
-              <div className="hidden items-center gap-1.5 rounded-lg border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground sm:inline-flex">
-                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                {employee?.name ?? user?.email}
-              </div>
-            )}
-
             <div className="hidden text-right text-xs lg:block">
-              <div className="max-w-[190px] truncate font-extrabold leading-tight text-foreground">
+              <div className="max-w-[190px] truncate font-medium leading-tight text-foreground">
                 {employee?.name ?? user?.email}
               </div>
               <div className="text-[10px] font-medium text-muted-foreground">
@@ -91,7 +86,7 @@ export function AppShell({
                 await logout();
                 navigate({ to: "/login" });
               }}
-              className="btn-lift rounded-lg border p-2 transition-colors hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-600"
+              className="rounded-md border p-2 text-muted-foreground transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Sign out"
             >
               <LogOut className="h-4 w-4" />
@@ -99,17 +94,17 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="hidden border-t bg-muted/20 md:block">
-          <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-3 sm:px-6 scrollbar-none">
+        <div className="hidden border-t bg-background md:block">
+          <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
             {nav.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
                 activeOptions={{ exact: item.exact }}
-                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-semibold text-muted-foreground transition-all hover:bg-muted/70 hover:text-foreground"
+                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 activeProps={{
                   className:
-                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-primary px-3.5 py-2 text-sm font-extrabold text-primary-foreground shadow-xs transition-all",
+                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted hover:text-foreground",
                 }}
               >
                 {item.label}
@@ -126,16 +121,16 @@ export function AppShell({
           </nav>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-t bg-muted/20 px-4 py-2.5 md:hidden scrollbar-none">
+        <div className="flex gap-1 overflow-x-auto border-t bg-background px-4 py-2 md:hidden scrollbar-none">
           {nav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               activeOptions={{ exact: item.exact }}
-              className="relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+              className="relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               activeProps={{
                 className:
-                  "relative shrink-0 whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs",
+                  "relative shrink-0 whitespace-nowrap rounded-md bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted hover:text-foreground",
               }}
             >
               {item.label}
@@ -155,10 +150,6 @@ export function AppShell({
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 md:py-8">
         {children ?? <Outlet />}
       </main>
-
-      <footer className="border-t bg-card/50 py-4 text-center text-xs font-medium text-muted-foreground">
-        {company?.name ? `${company.name} — ${title}` : title}
-      </footer>
     </div>
   );
 }

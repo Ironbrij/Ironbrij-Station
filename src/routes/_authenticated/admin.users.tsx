@@ -248,10 +248,10 @@ function UsersPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => toggleAdmin(u)}
-                            className={`btn-lift text-xs px-2.5 py-1.5 rounded-md font-bold transition-colors ${
+                            className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                               isOwner
-                                ? "border border-slate-300 text-slate-600 hover:bg-slate-100"
-                                : "bg-amber-500 text-white hover:bg-amber-600"
+                                ? "border-rose-200 text-rose-700 hover:bg-rose-50"
+                                : "text-foreground hover:bg-muted"
                             }`}
                           >
                             {isOwner ? "Revoke Admin" : "Make Owner"}
@@ -261,16 +261,16 @@ function UsersPage() {
                             <Link
                               to="/admin/employees/$id"
                               params={{ id: existingEmp.id }}
-                              className="btn-lift text-xs px-2.5 py-1.5 rounded-md border border-primary text-primary hover:bg-primary/10 font-bold inline-block"
+                              className="inline-block rounded-md border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
                             >
-                              View Profile ↗
+                              View profile
                             </Link>
                           ) : (
                             <button
                               onClick={() => setSelectedUser(u)}
-                              className="btn-lift text-xs px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground font-bold"
+                              className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 hover:text-primary-foreground"
                             >
-                              + Make Employee
+                              Make employee
                             </button>
                           )}
                         </div>

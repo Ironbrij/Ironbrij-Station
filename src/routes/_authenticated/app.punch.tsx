@@ -50,7 +50,6 @@ import {
 import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
 import {
-  PartyPopper,
   Lock,
   Megaphone,
   X,
@@ -77,13 +76,6 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
   component: PunchPage,
 });
 
-const HOLIDAY_GIFS = [
-  "https://media.giphy.com/media/l2JIdnF6aJzAEYdLW/giphy.gif", // Party Confetti
-  "https://media.giphy.com/media/26tOZ42Mg6pbTUPHW/giphy.gif", // Chill Vacation
-  "https://media.giphy.com/media/xT0xezQGU5xCDJuCPe/giphy.gif", // Dance Party
-  "https://media.giphy.com/media/l41YkxvUlBwhg785q/giphy.gif", // Fireworks
-];
-
 function PunchPage() {
   const { user, employee, company } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
@@ -95,7 +87,6 @@ function PunchPage() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [confirmEarly, setConfirmEarly] = useState(false);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
-  const [gifIndex, setGifIndex] = useState(0);
   const [dismissedNoticeIds, setDismissedNoticeIds] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem("dismissed_notice_ids");
@@ -546,77 +537,35 @@ function PunchPage() {
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Top Welcome Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
-        <div className="flex items-center gap-3">
-          <img
-            src={
-              company?.logoUrl ||
-              "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg"
-            }
-            alt={company?.name || "ironbrij"}
-            className="h-12 w-12 object-contain rounded-xl border bg-background shadow-sm shrink-0"
-          />
-          <div>
-            <h1 className="text-2xl font-bold text-primary">Hello, {employee.name}</h1>
-            <p className="text-sm text-muted-foreground font-medium">
-              {company?.name || "ironbrij"} · {employee.jobTitle} ·{" "}
-              <span className="text-primary font-semibold">{deptName}</span>
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Hello, {employee.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {employee.jobTitle} · {deptName}
+          </p>
         </div>
-        <div className="text-xs text-muted-foreground font-mono bg-secondary px-3.5 py-2 rounded-lg border w-fit">
+        <div className="w-fit rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
           Today: {format(new Date(), "dd/MM/yyyy")}
         </div>
       </div>
 
-      {/* Company Holiday Today Celebration Card with GIFs */}
+      {/* Company holiday status */}
       {isHoliday && (
-        <div className="rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-amber-500/10 p-6 shadow-lift space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="space-y-2 text-center md:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-800 dark:text-purple-200 text-xs font-black uppercase tracking-wider border border-purple-500/30">
-                <PartyPopper className="h-4 w-4 text-purple-600 animate-bounce" /> Company Holiday
-                Active! 🥳
-              </div>
-              <h2 className="text-2xl font-black text-primary tracking-tight">
-                {holiday?.name || "Happy Holidays"}, {employee.name}! 🎉
-              </h2>
-              <p className="text-sm text-muted-foreground font-medium max-w-lg leading-relaxed">
-                Regular shift is off today! Enjoy your well-deserved day off to relax, unwind, and
-                celebrate. If you decide to log overtime today, use the{" "}
-                <Link to="/app/extra" className="text-primary underline font-extrabold">
-                  Extra Time Tab ↗
-                </Link>
-                .
-              </p>
-
-              <div className="pt-2 flex items-center justify-center md:justify-start gap-3">
-                <button
-                  onClick={() => setGifIndex((prev) => (prev + 1) % HOLIDAY_GIFS.length)}
-                  className="btn-lift rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-xs font-extrabold flex items-center gap-1.5 shadow-sm"
-                >
-                  🎲 Shuffle Holiday GIF
-                </button>
-                <Link
-                  to="/app/extra"
-                  className="btn-lift rounded-lg bg-background border px-4 py-2 text-xs font-bold text-primary hover:bg-muted"
-                >
-                  Log Extra Hours ↗
-                </Link>
-              </div>
-            </div>
-
-            {/* Animated Holiday GIF */}
-            <div className="relative group shrink-0">
-              <img
-                src={HOLIDAY_GIFS[gifIndex]}
-                alt="Holiday Celebration Fun"
-                className="h-44 w-72 object-cover rounded-xl border-2 border-purple-500/30 shadow-lg group-hover:scale-105 transition-transform duration-300"
-              />
-              <span className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] font-mono px-2 py-0.5 rounded backdrop-blur-xs">
-                Holiday Mood #{gifIndex + 1}
-              </span>
-            </div>
+        <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Company holiday</p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">
+              {holiday?.name || "Holiday"}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your regular shift is off today. Approved additional work can be recorded separately.
+            </p>
           </div>
+          <Link
+            to="/app/extra"
+            className="inline-flex shrink-0 items-center justify-center rounded-md border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Log extra time
+          </Link>
         </div>
       )}
 
@@ -695,10 +644,10 @@ function PunchPage() {
       )}
 
       {/* Shift shown as one real instant in every supported region */}
-      <div className="rounded-xl border bg-card p-5 shadow-lift space-y-4">
+      <div className="rounded-xl border bg-card p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h2 className="font-bold text-primary">Your shift across timezones</h2>
+            <h2 className="font-semibold text-foreground">Your shift across timezones</h2>
             <p className="text-xs text-muted-foreground">
               Shift configured in {getShiftTimezone(employee)}. Your local timezone is{" "}
               {getEmployeeTimezone(employee)}.
@@ -790,64 +739,53 @@ function PunchPage() {
         </div>
 
         {/* Right Column: Web Punch Card (5 cols) */}
-        <div className="lg:col-span-5 rounded-xl border bg-card shadow-lift overflow-hidden flex flex-col justify-between">
-          {/* Blue Header Bar */}
-          <div className="bg-sky-600 text-white font-bold text-base px-5 py-3 shadow-sm">
+        <div className="lg:col-span-5 rounded-xl border bg-card overflow-hidden flex flex-col justify-between">
+          <div className="border-b bg-muted/40 px-5 py-3 text-base font-semibold text-foreground">
             Web Punch
           </div>
 
           <div className="p-6 space-y-6 flex-1 flex flex-col justify-center">
             {/* ----- Current Status ----- */}
             <div className="space-y-3 text-center">
-              <div className="text-xs font-bold text-muted-foreground flex items-center justify-center gap-2 uppercase tracking-wider">
-                <span className="h-px bg-border flex-1" />
-                <span>Current Status</span>
-                <span className="h-px bg-border flex-1" />
-              </div>
+              <div className="text-xs font-medium text-muted-foreground">Current status</div>
 
               {isHoliday ? (
-                <div className="rounded-xl bg-purple-500/10 text-purple-800 dark:text-purple-200 font-bold p-5 border border-purple-500/30 shadow-sm">
-                  <div className="text-2xl font-black">Holiday</div>
+                <div className="rounded-lg border bg-muted/40 p-5 text-foreground">
+                  <div className="text-lg font-semibold">Holiday</div>
                   <div className="text-xs mt-1">{holiday?.name || "Company Holiday"}</div>
                 </div>
               ) : isPunchedIn && lastIn ? (
-                <div className="rounded-xl bg-lime-400 text-slate-900 font-bold p-5 border border-lime-500 shadow-sm space-y-1">
-                  <div className="text-2xl font-black">
+                <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
+                  <div className="text-lg font-semibold">
                     Working since {format(lastIn, "h:mm a")}
                   </div>
-                  <div className="text-base font-bold">On {format(lastIn, "dd/MM/yyyy")}</div>
-                  <div className="text-sm font-black text-slate-800 mt-1 uppercase tracking-wide">
-                    {deptName}
-                  </div>
+                  <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
+                  <div className="mt-1 text-sm font-medium text-emerald-900">{deptName}</div>
                 </div>
               ) : (
-                <div className="rounded-xl bg-slate-200 text-slate-800 font-bold p-5 border border-slate-300 shadow-sm space-y-1">
-                  <div className="text-2xl font-black">Not Working</div>
-                  <div className="text-base font-bold text-slate-600">Ready to start shift</div>
-                  <div className="text-sm font-black text-slate-700 mt-1 uppercase tracking-wide">
-                    {deptName}
-                  </div>
+                <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
+                  <div className="text-lg font-semibold">Not working</div>
+                  <div className="text-sm text-muted-foreground">Ready to start shift</div>
+                  <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
                 </div>
               )}
             </div>
 
             {/* ----- Punch Action Button ----- */}
             <div className="space-y-3">
-              <div className="text-xs font-bold text-muted-foreground flex items-center justify-center gap-2 uppercase tracking-wider">
-                <span className="h-px bg-border flex-1" />
-                <span>{isPunchedIn ? "Stop Work" : "Start Work"}</span>
-                <span className="h-px bg-border flex-1" />
+              <div className="text-xs font-medium text-muted-foreground">
+                {isPunchedIn ? "End the current shift" : "Begin today’s shift"}
               </div>
 
               <button
                 disabled={busy || onLeaveToday || isHoliday}
                 onClick={handlePunchClick}
-                className={`w-full py-4 rounded-lg font-black text-xl text-white shadow-md transition-all transform active:scale-98 ${
+                className={`w-full rounded-md px-5 py-3 text-base font-semibold text-white transition-colors ${
                   onLeaveToday || isHoliday
-                    ? "bg-slate-400 cursor-not-allowed border border-slate-500 opacity-70"
+                    ? "cursor-not-allowed bg-slate-400 opacity-70"
                     : isPunchedIn
-                      ? "bg-red-600 hover:bg-red-700 border border-red-700"
-                      : "bg-emerald-600 hover:bg-emerald-700 border border-emerald-700"
+                      ? "bg-rose-600 hover:bg-rose-700"
+                      : "bg-primary hover:bg-primary/90"
                 }`}
               >
                 {isHoliday
@@ -861,7 +799,7 @@ function PunchPage() {
 
               {/* Ticker Below Button */}
               <div className="text-center pt-2">
-                <div className="text-2xl font-mono font-bold text-primary tabular-nums">
+                <div className="text-2xl font-mono font-semibold text-foreground tabular-nums">
                   {formatDurationHMS(totalWorkedMs)}
                 </div>
                 <div className="text-xs text-muted-foreground font-medium mt-0.5">

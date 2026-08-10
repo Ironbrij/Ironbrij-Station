@@ -21,7 +21,7 @@ function EmployeeLayout() {
   ];
 
   if (isAdmin) {
-    nav.push({ to: "/admin", label: "🛡️ Admin Dashboard" });
+    nav.push({ to: "/admin", label: "Admin" });
   }
 
   return (

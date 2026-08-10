@@ -448,12 +448,12 @@ function EmployeeDetail() {
           <ProfileAvatar
             name={employee.name}
             photoUrl={photoUrl}
-            className="h-24 w-24 text-2xl ring-4 ring-border"
+            className="h-24 w-24 text-2xl ring-1 ring-border"
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
-                <h1 className="truncate text-3xl font-black tracking-tight text-primary">
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">
                   {employee.name}
                 </h1>
                 <span
@@ -475,9 +475,9 @@ function EmployeeDetail() {
               <button
                 type="button"
                 onClick={() => setEditingEmployee(employee)}
-                className="btn-lift rounded-lg border bg-background px-3.5 py-1.5 text-xs font-bold text-primary hover:bg-muted shadow-xs transition-colors shrink-0"
+                className="shrink-0 rounded-md border bg-background px-3.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                Edit Profile & Shift
+                Edit profile and shift
               </button>
             </div>
             <p className="mt-1 text-sm font-semibold text-foreground/80">

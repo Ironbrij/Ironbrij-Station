@@ -513,7 +513,8 @@ function AdminHome() {
                                     <button
                                       type="button"
                                       onClick={(e) => handleBadgeClick(m, "sod", e)}
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-emerald-200 bg-emerald-50 text-[10px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                      aria-label={`View ${m.name} SOD report`}
                                       title="Click to view SOD report answers"
                                     >
                                       S
@@ -523,7 +524,8 @@ function AdminHome() {
                                     <button
                                       type="button"
                                       onClick={(e) => handleBadgeClick(m, "sod", e)}
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                                      aria-label={`View ${m.name} missed SOD report`}
                                       title="Click to view missed SOD report info"
                                     >
                                       S
@@ -533,7 +535,8 @@ function AdminHome() {
                                     <button
                                       type="button"
                                       onClick={(e) => handleBadgeClick(m, "eod", e)}
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-emerald-200 bg-emerald-50 text-[10px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                      aria-label={`View ${m.name} EOD report`}
                                       title="Click to view EOD report answers"
                                     >
                                       E
@@ -543,7 +546,8 @@ function AdminHome() {
                                     <button
                                       type="button"
                                       onClick={(e) => handleBadgeClick(m, "eod", e)}
-                                      className="inline-flex items-center justify-center h-4 w-4 rounded bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-[9px] shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                                      aria-label={`View ${m.name} missed EOD report`}
                                       title="Click to view missed EOD report info"
                                     >
                                       E
