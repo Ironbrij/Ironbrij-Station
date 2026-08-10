@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth-context";
 import { COMPANY_ID, type Company, type LeaveRequest, type Punch } from "@/lib/types";
 import { ymd } from "@/lib/time";
 import { toast } from "sonner";
-import { Clock, ShieldAlert, CheckCircle2, Lock, PartyPopper } from "lucide-react";
+import { Clock, ShieldAlert, CheckCircle2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import {
   getActiveEmployeeLeave,
@@ -185,10 +185,10 @@ function ExtraPage() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
-      <div className="rounded-xl border bg-card p-8 shadow-lift text-center space-y-6">
+      <div className="rounded-xl border bg-card p-5 sm:p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center justify-center gap-2">
-            <Clock className="h-6 w-6 text-primary" /> Overtime & Extra Hours
+          <h1 className="text-2xl font-semibold text-foreground flex items-center justify-center gap-2">
+            <Clock className="h-6 w-6 text-muted-foreground" /> Overtime & Extra Hours
           </h1>
           <p className="mt-1 text-sm text-muted-foreground font-medium">
             Log overtime hours worked outside shift{" "}
@@ -200,12 +200,10 @@ function ExtraPage() {
         </div>
 
         {isHoliday && (
-          <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-300 text-xs font-semibold flex items-center gap-2.5 text-left shadow-xs">
-            <PartyPopper className="h-5 w-5 text-purple-600 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-lg border bg-muted/40 p-4 text-left text-xs text-foreground">
+            <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
             <div>
-              <span className="font-extrabold block text-sm text-purple-900 dark:text-purple-200">
-                Company Holiday Overtime Mode 🎉
-              </span>
+              <span className="block text-sm font-semibold text-foreground">Company holiday</span>
               It is a company holiday today! Shift hour restrictions are bypassed. Extra time can
               still be recorded separately.
             </div>
@@ -238,16 +236,16 @@ function ExtraPage() {
           </div>
         )}
 
-        <div className="py-4">
+        <div>
           <button
             disabled={busy || onLeaveToday || shiftBlocked}
             onClick={toggleExtra}
-            className={`btn-lift h-36 w-36 rounded-full font-black text-lg text-white shadow-lift transition-all transform active:scale-95 mx-auto flex flex-col items-center justify-center ${
+            className={`mx-auto flex min-h-14 w-full max-w-sm flex-col items-center justify-center rounded-md px-5 py-3 text-base font-semibold text-white transition-colors ${
               isExtraPunchedIn
-                ? "bg-rose-600 hover:bg-rose-700 ring-4 ring-rose-500/30"
+                ? "bg-rose-600 hover:bg-rose-700"
                 : onLeaveToday || shiftBlocked
                   ? "bg-slate-400 cursor-not-allowed opacity-60"
-                  : "bg-emerald-600 hover:bg-emerald-700 ring-4 ring-emerald-500/30"
+                  : "bg-primary hover:bg-primary/90"
             }`}
           >
             <span>
@@ -259,7 +257,7 @@ function ExtraPage() {
                     ? "Start Holiday Extra"
                     : "Start Extra"}
             </span>
-            <span className="text-[10px] uppercase tracking-wider opacity-80 font-mono mt-1">
+            <span className="mt-0.5 text-xs font-normal opacity-85">
               {onLeaveToday
                 ? "On Leave"
                 : isExtraPunchedIn
@@ -276,8 +274,8 @@ function ExtraPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-3">
-        <h2 className="text-sm font-extrabold text-primary flex items-center gap-2">
+      <div className="rounded-xl border bg-card p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Today's Extra Time Logs (
           {todayExtras.length})
         </h2>

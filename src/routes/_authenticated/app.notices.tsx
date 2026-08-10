@@ -22,14 +22,7 @@ import {
   getShiftTimezone,
   zonedDateKey,
 } from "@/lib/attendance";
-import {
-  CheckCircle2,
-  Megaphone,
-  AlertCircle,
-  ShieldAlert,
-  ChevronDown,
-  PartyPopper,
-} from "lucide-react";
+import { CheckCircle2, Megaphone, AlertCircle, ShieldAlert, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
 
@@ -205,7 +198,7 @@ function UserNoticesPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             Notifications & HR Announcements
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -216,7 +209,7 @@ function UserNoticesPage() {
         {allUserNotices.length > 0 && (
           <button
             onClick={markAllAsRead}
-            className="btn-lift text-xs font-bold text-primary border border-primary/20 bg-primary/10 hover:bg-primary hover:text-white px-3.5 py-2 rounded-lg transition-colors shadow-xs"
+            className="rounded-md border bg-background px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Mark All as Read
           </button>
@@ -234,35 +227,27 @@ function UserNoticesPage() {
         </div>
       )}
 
-      {/* Holiday Fun Showcase Banner */}
+      {/* Holiday status */}
       {isHoliday && (
-        <div className="rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-amber-500/10 p-5 shadow-lift flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <PartyPopper className="h-8 w-8 text-purple-600 shrink-0 animate-bounce" />
-            <div>
-              <span className="font-black text-base text-purple-900 dark:text-purple-200 block">
-                Today is a Company Holiday! 🥳🎉
-              </span>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                Enjoy your holiday! Regular shifts are off today. If you need to log overtime, use{" "}
-                <Link to="/app/extra" className="text-primary underline font-bold">
-                  Extra Time ↗
-                </Link>
-                .
-              </p>
-            </div>
+        <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <span className="block text-sm font-semibold text-foreground">Company holiday</span>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Regular shifts are off today. Approved additional work can be logged separately.
+            </p>
           </div>
-          <img
-            src="https://media.giphy.com/media/l2JIdnF6aJzAEYdLW/giphy.gif"
-            alt="Holiday Confetti"
-            className="h-20 w-32 object-cover rounded-xl border border-purple-500/30 shadow-md shrink-0"
-          />
+          <Link
+            to="/app/extra"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Open extra time
+          </Link>
         </div>
       )}
 
       <div className="space-y-4">
         {visibleNotices.length === 0 ? (
-          <div className="rounded-xl border bg-card p-12 text-center text-sm text-muted-foreground font-medium shadow-lift space-y-3">
+          <div className="rounded-xl border bg-card p-12 text-center text-sm text-muted-foreground font-medium space-y-3">
             <CheckCircle2 className="h-10 w-10 text-emerald-600 mx-auto" />
             <div className="text-base font-bold text-primary">
               No Notifications in the Past 4 Days
@@ -285,10 +270,8 @@ function UserNoticesPage() {
               <div
                 key={n.id}
                 onClick={() => markAsRead(n.id)}
-                className={`p-5 rounded-xl border transition-all cursor-pointer shadow-sm relative ${
-                  !isRead
-                    ? "bg-card border-primary/40 ring-1 ring-primary/20 shadow-lift"
-                    : "bg-secondary/20 border-border opacity-85"
+                className={`p-5 rounded-xl border transition-colors cursor-pointer relative ${
+                  !isRead ? "bg-card border-primary/40" : "bg-muted/30 border-border"
                 }`}
               >
                 {!isRead && (

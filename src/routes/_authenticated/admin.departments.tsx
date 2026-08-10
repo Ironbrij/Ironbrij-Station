@@ -4,7 +4,6 @@ import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc } from "fireb
 import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
-  DEFAULT_LOGO,
   type Company,
   type Department,
   type Employee,
@@ -616,27 +615,17 @@ function DepartmentsPage() {
           const comp = companies.find(
             (c) => c.id === d.companyId || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
           );
-          const compLogo = comp?.logoUrl || DEFAULT_LOGO;
-
           return (
-            <div
-              key={d.id}
-              className="rounded-xl border bg-card shadow-lift overflow-hidden transition-all"
-            >
+            <div key={d.id} className="rounded-xl border bg-card overflow-hidden transition-colors">
               {/* Department Card Top Header */}
               <div className="p-4 bg-secondary/30 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b">
                 <div className="flex-1 flex items-center gap-3 flex-wrap">
-                  {/* Company Logo & Dropdown */}
-                  <div className="flex items-center gap-1.5 bg-background border px-2 py-1 rounded-lg shadow-xs shrink-0">
-                    <img
-                      src={compLogo}
-                      alt={comp?.name || "Company Logo"}
-                      className="h-6 w-6 rounded-full object-cover border bg-background shrink-0"
-                    />
+                  {/* Company assignment */}
+                  <div className="flex items-center rounded-md border bg-background px-2 py-1 shrink-0">
                     <select
                       value={d.companyId || COMPANY_ID}
                       onChange={(e) => updateDepartmentCompany(d.id, e.target.value)}
-                      className="bg-transparent text-xs font-extrabold text-primary outline-none cursor-pointer max-w-[140px] truncate"
+                      className="max-w-[160px] cursor-pointer truncate bg-transparent text-xs font-medium text-foreground outline-none"
                       title="Change assigned company"
                     >
                       {companies.map((c) => (
@@ -651,7 +640,7 @@ function DepartmentsPage() {
                   <input
                     defaultValue={d.name}
                     onBlur={(e) => rename(d.id, e.target.value)}
-                    className="font-extrabold text-lg bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:bg-background px-2 py-1 rounded outline-none transition-colors text-primary"
+                    className="rounded border-b border-transparent bg-transparent px-2 py-1 text-lg font-semibold text-foreground outline-none transition-colors hover:border-border focus:border-primary focus:bg-background"
                   />
                   <select
                     value={normalizeState(d.state)}

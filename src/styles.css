@@ -31,7 +31,7 @@
   --color-status-in: var(--status-in);
   --color-status-out: var(--status-out);
   --color-status-leave: var(--status-leave);
-  --shadow-lift: 0 10px 30px -12px color-mix(in oklab, var(--primary) 25%, transparent);
+  --shadow-lift: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
 }
 
 :root {
@@ -82,16 +82,35 @@
 
 @utility btn-lift {
   transition:
-    transform 200ms ease,
-    box-shadow 200ms ease,
-    background-color 200ms ease;
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
   &:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lift);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
   }
   &:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+}
+
+@layer utilities {
+  /* Keep existing pages readable without the overly heavy dashboard tone. */
+  .font-black,
+  .font-extrabold {
+    font-weight: 600;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 

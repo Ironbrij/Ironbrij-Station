@@ -417,7 +417,7 @@ function CompanyPage() {
     <div className="max-w-3xl space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <Building2 className="h-6 w-6" /> Company Management & Holidays
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -427,16 +427,17 @@ function CompanyPage() {
         <button
           type="button"
           onClick={() => setShowAddCompanyModal(true)}
-          className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm flex items-center gap-1.5 shrink-0"
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 hover:text-primary-foreground"
         >
           <Building2 className="h-4 w-4" /> + Create New Company
         </button>
       </div>
 
       {/* Companies List */}
-      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
-        <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-primary" /> Active Companies ({companies.length})
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-muted-foreground" /> Active Companies (
+          {companies.length})
         </h3>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -454,14 +455,9 @@ function CompanyPage() {
             return (
               <div
                 key={c.id || c.name}
-                className="rounded-xl border p-4 bg-secondary/20 hover:bg-secondary/40 transition-colors flex items-start gap-3 justify-between"
+                className="flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/40"
               >
-                <div className="flex items-start gap-3 min-w-0">
-                  <img
-                    src={c.logoUrl || DEFAULT_LOGO}
-                    alt={c.name}
-                    className="h-10 w-10 rounded-full object-cover border shrink-0 bg-background"
-                  />
+                <div className="min-w-0">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-sm text-foreground truncate block">
