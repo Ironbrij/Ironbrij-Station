@@ -61,7 +61,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { format } from "date-fns";
-import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
+import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
@@ -246,28 +246,7 @@ function PunchPage() {
       const deliveredMs = getNoticeDeliveryTime(n).getTime();
       if (nowMs - deliveredMs > twentyFourHoursMs) return false;
 
-      if (!n.targetType || n.targetType === "all") return true;
-      if (
-        n.targetType === "dept" &&
-        employee?.deptId &&
-        (n.targetDeptId === employee.deptId || n.targetDeptIds?.includes(employee.deptId))
-      )
-        return true;
-      if (
-        n.targetType === "states" &&
-        employee &&
-        n.targetStateCodes?.includes(employee.state?.trim() || "N/A")
-      )
-        return true;
-      if (
-        n.targetType === "employee" &&
-        employee &&
-        (n.targetEmployeeId === employee.id ||
-          n.targetEmployeeId === employee.authUid ||
-          n.targetEmployeeIds?.some((id) => id === employee.id || id === employee.authUid))
-      )
-        return true;
-      return false;
+      return noticeMatchesEmployee(n, employee);
     });
   }, [notices, employee, dismissedNoticeIds, now]);
 

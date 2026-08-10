@@ -24,7 +24,7 @@ import {
 } from "@/lib/attendance";
 import { CheckCircle2, Megaphone, AlertCircle, ShieldAlert, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
-import { getNoticeDeliveryTime, isNoticePublished } from "@/lib/notices";
+import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
 
 export const Route = createFileRoute("/_authenticated/app/notices")({
   head: () => ({
@@ -123,43 +123,7 @@ function UserNoticesPage() {
   const allUserNotices = useMemo(() => {
     return notices
       .filter((notice) => isNoticePublished(notice, now))
-      .filter((n) => {
-        if (!n.targetType || n.targetType === "all") return true;
-        if (n.targetType === "companies" && employee) {
-          const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
-            Boolean,
-          ) as string[];
-          if (
-            n.targetCompanyIds?.some(
-              (cId) =>
-                empCompanyIds.includes(cId) || (cId === COMPANY_ID && empCompanyIds.length === 0),
-            )
-          ) {
-            return true;
-          }
-        }
-        if (
-          n.targetType === "dept" &&
-          employee?.deptId &&
-          (n.targetDeptId === employee.deptId || n.targetDeptIds?.includes(employee.deptId))
-        )
-          return true;
-        if (
-          n.targetType === "states" &&
-          employee &&
-          n.targetStateCodes?.includes(employee.state?.trim() || "N/A")
-        )
-          return true;
-        if (
-          n.targetType === "employee" &&
-          employee &&
-          (n.targetEmployeeId === employee.id ||
-            n.targetEmployeeId === employee.authUid ||
-            n.targetEmployeeIds?.some((id) => id === employee.id || id === employee.authUid))
-        )
-          return true;
-        return false;
-      })
+      .filter((notice) => noticeMatchesEmployee(notice, employee))
       .sort((a, b) => getNoticeDeliveryTime(b).getTime() - getNoticeDeliveryTime(a).getTime());
   }, [notices, employee, now]);
 
