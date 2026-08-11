@@ -426,7 +426,10 @@ function CompanyPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowAddCompanyModal(true)}
+          onClick={() => {
+            setEditingCompany(null);
+            setShowAddCompanyModal(true);
+          }}
           className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 hover:text-primary-foreground"
         >
           <Building2 className="h-4 w-4" /> + Create New Company
@@ -480,7 +483,10 @@ function CompanyPage() {
 
                 <button
                   type="button"
-                  onClick={() => setEditingCompany(c)}
+                  onClick={() => {
+                    setEditingCompany(c);
+                    setShowAddCompanyModal(true);
+                  }}
                   className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors shrink-0"
                 >
                   Edit
@@ -944,7 +950,7 @@ function CompanyPage() {
         </button>
       </div>
 
-      {showAddCompanyModal && (
+      {(showAddCompanyModal || editingCompany !== null) && (
         <CompanyModal
           companyToEdit={editingCompany}
           onClose={() => {
