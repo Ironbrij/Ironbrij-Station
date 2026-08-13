@@ -11,5 +11,6 @@
     "N8N_INVITE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-employee-invite",
     "N8N_LEAVE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-request",
     "N8N_LEAVE_DECISION_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision",
+    "N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
   },
 }

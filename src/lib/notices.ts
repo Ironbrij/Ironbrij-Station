@@ -13,11 +13,16 @@ export function isNoticePublished(
   return getNoticeDeliveryTime(notice).getTime() <= now.getTime();
 }
 
-export function noticeMatchesEmployee(notice: CompanyNotice, employee?: Employee | null): boolean {
+export function noticeMatchesEmployee(
+  notice: CompanyNotice,
+  employee?: Employee | null,
+  activeCompanyId?: string,
+): boolean {
   if (!notice.targetType || notice.targetType === "all") return true;
   if (!employee) return false;
 
   if (notice.targetType === "companies") {
+    if (activeCompanyId) return Boolean(notice.targetCompanyIds?.includes(activeCompanyId));
     const companyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
       (id): id is string => Boolean(id),
     );

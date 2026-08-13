@@ -1,17 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
+import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { COMPANY_ID, type Company, type LeaveRequest, type Punch } from "@/lib/types";
+import type { LeaveRequest, Punch } from "@/lib/types";
 import { ymd } from "@/lib/time";
 import { toast } from "sonner";
 import { Clock, ShieldAlert, CheckCircle2, Lock } from "lucide-react";
@@ -19,10 +11,12 @@ import { format } from "date-fns";
 import {
   getActiveEmployeeLeave,
   getEmployeeHoliday,
+  getEmployeeShiftWindow,
   getEmployeeTimezone,
   getLeaveLabel,
   zonedDateKey,
 } from "@/lib/attendance";
+import { getPunchCompanyId, getRequiredWorkMinutes } from "@/lib/company-context";
 
 export const Route = createFileRoute("/_authenticated/app/extra")({
   head: () => ({
@@ -37,10 +31,9 @@ export const Route = createFileRoute("/_authenticated/app/extra")({
 });
 
 function ExtraPage() {
-  const { employee } = useAuth();
+  const { employee, company, activeCompanyId } = useAuth();
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [company, setCompany] = useState<Company | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
@@ -50,14 +43,23 @@ function ExtraPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
-    const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
-      if (s.exists()) setCompany(s.data() as Company);
-    });
     return () => {
       window.clearInterval(timer);
-      unsubComp();
     };
   }, []);
+
+  const companyPunches = useMemo(
+    () => allPunches.filter((punch) => getPunchCompanyId(punch, employee) === activeCompanyId),
+    [activeCompanyId, allPunches, employee],
+  );
+  const companyLeaves = useMemo(
+    () =>
+      leaves.filter(
+        (leave) =>
+          (leave.companyId || employee?.companyIds?.[0] || employee?.companyId) === activeCompanyId,
+      ),
+    [activeCompanyId, employee, leaves],
+  );
 
   useEffect(() => {
     if (!employee) return;
@@ -86,42 +88,35 @@ function ExtraPage() {
   }, [company, employee, todayStr]);
 
   const activeLeave = useMemo(
-    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
-    [employee, leaves, now],
+    () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, now) : null),
+    [employee, companyLeaves, now],
   );
   const onLeaveToday = Boolean(activeLeave);
 
   // Determine latest status
-  const latestPunch = useMemo(() => allPunches[allPunches.length - 1], [allPunches]);
+  const latestPunch = useMemo(() => companyPunches[companyPunches.length - 1], [companyPunches]);
   const isRegularPunchedIn = useMemo(() => latestPunch?.type === "in", [latestPunch]);
   const isExtraPunchedIn = useMemo(() => latestPunch?.type === "extra_in", [latestPunch]);
 
   // Check if currently within regular shift hours
   const isCurrentlyInShiftHours = useMemo(() => {
-    if (!employee?.shiftStartTime || !employee?.shiftEndTime) return false;
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
-
-    const [sH, sM] = employee.shiftStartTime.split(":").map(Number);
-    const [eH, eM] = employee.shiftEndTime.split(":").map(Number);
-
-    const startMins = (sH || 9) * 60 + (sM || 0);
-    const endMins = (eH || 17) * 60 + (eM || 0);
-
-    return nowMins >= startMins && nowMins < endMins;
-  }, [employee]);
+    if (!employee) return false;
+    const shift = getEmployeeShiftWindow(employee, now);
+    return now >= shift.start && now < shift.end;
+  }, [employee, now]);
 
   // Shift restriction is bypassed on holidays!
   const shiftBlocked = !isHoliday && isCurrentlyInShiftHours && !isExtraPunchedIn;
 
   const todayExtras = useMemo(() => {
-    return allPunches.filter(
+    return companyPunches.filter(
       (p) =>
         (p.type === "extra_in" || p.type === "extra_out") &&
         p.timestamp &&
-        ymd(p.timestamp) === todayStr,
+        employee &&
+        zonedDateKey(p.timestamp.toDate(), getEmployeeTimezone(employee)) === todayStr,
     );
-  }, [allPunches, todayStr]);
+  }, [companyPunches, employee, todayStr]);
 
   async function toggleExtra() {
     if (!employee) return;
@@ -158,13 +153,29 @@ function ExtraPage() {
     setBusy(true);
     try {
       const nextType = isExtraPunchedIn ? "extra_out" : "extra_in";
+      const overtimeMinutes =
+        nextType === "extra_out" && latestPunch?.timestamp
+          ? Math.max(0, Math.floor((Date.now() - latestPunch.timestamp.toMillis()) / 60_000))
+          : undefined;
       await addDoc(collection(db(), "punches"), {
         employeeId: employee.id,
         employeeName: employee.name,
+        companyId: activeCompanyId,
+        companyName: company?.name || "Company",
         date: todayStr,
+        attendanceDate: todayStr,
         type: nextType,
         timestamp: serverTimestamp(),
         source: "app",
+        requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+        ...(overtimeMinutes === undefined
+          ? { attendanceStatus: "in_progress" }
+          : {
+              normalWorkMinutes: 0,
+              overtimeMinutes,
+              totalEligibleMinutes: overtimeMinutes,
+              attendanceStatus: "complete",
+            }),
       });
       toast.success(
         isExtraPunchedIn

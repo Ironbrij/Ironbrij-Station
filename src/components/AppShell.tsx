@@ -1,9 +1,13 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { ArrowLeftRight, Headphones, LogOut } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { COMPANY_ID, type Punch } from "@/lib/types";
+import { getPunchCompanyId } from "@/lib/company-context";
 
 interface NavItem {
   to: string;
@@ -20,10 +24,59 @@ export function AppShell({
   nav: NavItem[];
   children?: ReactNode;
 }) {
-  const { logout, employee, user, isAdmin, company } = useAuth();
+  const {
+    logout,
+    employee,
+    user,
+    isAdmin,
+    company,
+    companies,
+    activeCompanyId,
+    setActiveCompanyId,
+  } = useAuth();
   const navigate = useNavigate();
+  const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
   const unreadLateCount = useAdminLateNotificationCount({ enabled: isAdmin, company });
   useAutoRejectExpiredLeaves(isAdmin);
+
+  useEffect(() => {
+    if (!employee) return;
+    const punchesQuery = query(collection(db(), "punches"), where("employeeId", "==", employee.id));
+    return onSnapshot(punchesQuery, (snapshot) => {
+      setEmployeePunches(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
+          .filter((punch) => punch.timestamp)
+          .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis()),
+      );
+    });
+  }, [employee]);
+
+  const activeAttendanceCompanyIds = useMemo(() => {
+    const latestByCompany = new Map<string, Punch>();
+    employeePunches.forEach((punch) => {
+      if (punch.type === "in" || punch.type === "out") {
+        latestByCompany.set(getPunchCompanyId(punch, employee), punch);
+      }
+    });
+    return [...latestByCompany.entries()]
+      .filter(([, punch]) => punch.type === "in")
+      .map(([companyId]) => companyId);
+  }, [employee, employeePunches]);
+
+  function switchCompany(companyId: string) {
+    const otherActiveCompanyId = activeAttendanceCompanyIds.find((id) => id !== companyId);
+    if (otherActiveCompanyId) {
+      const activeName =
+        companies.find((item) => (item.id || COMPANY_ID) === otherActiveCompanyId)?.name ||
+        "another company";
+      const shouldContinue = window.confirm(
+        `You are still punched in to ${activeName}. Switching company will not move or close that attendance session. Continue?`,
+      );
+      if (!shouldContinue) return;
+    }
+    setActiveCompanyId(companyId);
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">
@@ -47,6 +100,24 @@ export function AppShell({
           </Link>
 
           <div className="flex shrink-0 items-center gap-2.5">
+            {companies.length > 1 && (
+              <label className="flex items-center gap-2">
+                <span className="sr-only">Active company</span>
+                <select
+                  value={activeCompanyId}
+                  onChange={(event) => switchCompany(event.target.value)}
+                  className="max-w-28 rounded-md border bg-background px-2 py-2 text-xs font-medium text-foreground sm:max-w-44 sm:px-2.5"
+                  aria-label="Switch active company"
+                >
+                  {companies.map((item) => (
+                    <option key={item.id || item.name} value={item.id || COMPANY_ID}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             {isAdmin && (
               <>
                 <Link
@@ -78,6 +149,11 @@ export function AppShell({
               <div className="text-[10px] font-medium text-muted-foreground">
                 {isAdmin ? "Admin / Owner" : employee?.jobTitle || "Employee"}
               </div>
+              {activeAttendanceCompanyIds.some((id) => id !== activeCompanyId) && (
+                <div className="text-[10px] font-semibold text-amber-700">
+                  Active shift elsewhere
+                </div>
+              )}
             </div>
 
             <button

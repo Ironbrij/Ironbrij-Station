@@ -63,6 +63,12 @@ import {
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
+import {
+  getEmployeeCompanyIds,
+  getPunchCompanyId,
+  getRequiredWorkMinutes,
+} from "@/lib/company-context";
+import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -77,7 +83,7 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 });
 
 function PunchPage() {
-  const { user, employee, company } = useAuth();
+  const { user, employee, company, activeCompanyId } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
@@ -123,22 +129,48 @@ function PunchPage() {
 
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
 
+  const companyPunches = useMemo(
+    () => allPunches.filter((punch) => getPunchCompanyId(punch, employee) === activeCompanyId),
+    [activeCompanyId, allPunches, employee],
+  );
+
+  const companyLeaves = useMemo(
+    () =>
+      leaves.filter(
+        (leave) =>
+          (leave.companyId || employee?.companyIds?.[0] || employee?.companyId) === activeCompanyId,
+      ),
+    [activeCompanyId, employee, leaves],
+  );
+
   useEffect(() => {
-    const u1 = onSnapshot(collection(db(), "departments"), (s) =>
-      setDepts(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
+    const u1 = onSnapshot(
+      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
+      (s) =>
+        setDepts(
+          s.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))
+            .filter((department) => (department.companyId || "default") === activeCompanyId),
+        ),
     );
     const u2 = onSnapshot(collection(db(), "notices"), (s) =>
       setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
     );
-    const u3 = onSnapshot(collection(db(), "employees"), (s) =>
-      setAllEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
+    const u3 = onSnapshot(
+      query(collection(db(), "employees"), where("companyIds", "array-contains", activeCompanyId)),
+      (s) =>
+        setAllEmployees(
+          s.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))
+            .filter((item) => getEmployeeCompanyIds(item).includes(activeCompanyId)),
+        ),
     );
     return () => {
       u1();
       u2();
       u3();
     };
-  }, []);
+  }, [activeCompanyId]);
 
   // Fetch all punches for this employee (Index-free, real-time sync)
   useEffect(() => {
@@ -175,8 +207,8 @@ function PunchPage() {
   }, [employee]);
 
   const activeLeave = useMemo(
-    () => (employee ? getActiveEmployeeLeave(employee, leaves, new Date(now)) : null),
-    [employee, leaves, now],
+    () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, new Date(now)) : null),
+    [employee, companyLeaves, now],
   );
   const onLeaveToday = Boolean(activeLeave);
   const approvedLeaveToday = useMemo(
@@ -184,11 +216,11 @@ function PunchPage() {
       employee
         ? getEmployeeApprovedLeaveForDate(
             employee,
-            leaves,
+            companyLeaves,
             zonedDateKey(new Date(now), getShiftTimezone(employee)),
           )
         : null,
-    [employee, leaves, now],
+    [employee, companyLeaves, now],
   );
 
   // Resolve department name
@@ -199,30 +231,30 @@ function PunchPage() {
 
   // Determine punch status strictly based on the latest punch
   const isPunchedIn = useMemo(() => {
-    if (allPunches.length === 0) return false;
-    const latest = allPunches[allPunches.length - 1];
+    if (companyPunches.length === 0) return false;
+    const latest = companyPunches[companyPunches.length - 1];
     return latest?.type === "in" || latest?.type === "extra_in";
-  }, [allPunches]);
+  }, [companyPunches]);
 
   const lastIn = useMemo(() => {
     if (!isPunchedIn) return null;
-    const latest = allPunches[allPunches.length - 1];
+    const latest = companyPunches[companyPunches.length - 1];
     return latest?.timestamp?.toDate() ?? null;
-  }, [allPunches, isPunchedIn]);
+  }, [companyPunches, isPunchedIn]);
 
   const attendanceStatus = useMemo(
     () =>
       employee
         ? getLiveAttendanceStatus(
             employee,
-            allPunches,
+            companyPunches,
             new Date(now),
             company?.lateGraceMinutes ?? 5,
             company?.workingDays,
             getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, allPunches, now, company],
+    [employee, companyPunches, now, company],
   );
 
   const shiftConversions = useMemo(
@@ -232,8 +264,8 @@ function PunchPage() {
 
   // Recent 10 activity logs sorted descending
   const recentPunchesList = useMemo(() => {
-    return [...allPunches].reverse().slice(0, 10);
-  }, [allPunches]);
+    return [...companyPunches].reverse().slice(0, 10);
+  }, [companyPunches]);
 
   // Active 24h Notices hook (placed BEFORE early returns for React Rules of Hooks)
   const active24hNotices = useMemo(() => {
@@ -246,40 +278,41 @@ function PunchPage() {
       const deliveredMs = getNoticeDeliveryTime(n).getTime();
       if (nowMs - deliveredMs > twentyFourHoursMs) return false;
 
-      return noticeMatchesEmployee(n, employee);
+      return noticeMatchesEmployee(n, employee, activeCompanyId);
     });
-  }, [notices, employee, dismissedNoticeIds, now]);
-
-  // Auto punch-out reconciliation if employee is on leave/holiday while punched in
-  useEffect(() => {
-    if (!employee || !isPunchedIn) return;
-    const todayStr = zonedDateKey(new Date(), getEmployeeTimezone(employee));
-    const isHolidayStr = Boolean(getEmployeeHoliday(company, employee, todayStr));
-
-    if (isHolidayStr || onLeaveToday) {
-      addDoc(collection(db(), "punches"), {
-        employeeId: employee.id,
-        employeeName: employee.name,
-        date: todayStr,
-        type: "out",
-        timestamp: serverTimestamp(),
-        source: "auto",
-        isAuto: true,
-        autoReason: isHolidayStr ? "company_holiday" : "approved_leave",
-      }).catch((e) => console.error("Auto punch-out on leave failed:", e));
-    }
-  }, [employee, isPunchedIn, onLeaveToday, company]);
+  }, [notices, employee, dismissedNoticeIds, now, activeCompanyId]);
 
   const totalWorkedMs = useMemo(() => {
     if (!employee) return 0;
-    return computeRegularWorkedMsForDay(employee, allPunches, new Date(now), new Date(now));
-  }, [employee, allPunches, now]);
+    return computeRegularWorkedMsForDay(employee, companyPunches, new Date(now), new Date(now));
+  }, [employee, companyPunches, now]);
+
+  const currentSessionCalculation = useMemo(() => {
+    if (!employee) return null;
+    const latestRegularIn = [...companyPunches].reverse().find((punch) => punch.type === "in");
+    const latestRegularOut = [...companyPunches].reverse().find((punch) => punch.type === "out");
+    if (
+      !latestRegularIn?.timestamp ||
+      (latestRegularOut?.timestamp &&
+        latestRegularOut.timestamp.toMillis() > latestRegularIn.timestamp.toMillis())
+    ) {
+      return null;
+    }
+    return calculateAttendanceSession({
+      employee,
+      company,
+      punchIn: latestRegularIn.timestamp.toDate(),
+      now: new Date(now),
+      requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+    });
+  }, [company, companyPunches, employee, now]);
 
   async function doPunch(targetType: "in" | "out") {
     if (!employee || !user) return;
 
     // Strict Double-Punch Validation
-    const latestType = allPunches[allPunches.length - 1]?.type;
+    const latestPunch = companyPunches[companyPunches.length - 1];
+    const latestType = latestPunch?.type;
 
     if (targetType === "in" && (latestType === "in" || latestType === "extra_in")) {
       toast.error("Action Blocked: You are already punched in!");
@@ -300,13 +333,61 @@ function PunchPage() {
         latestType === "extra_in" && targetType === "out" ? "extra_out" : targetType;
       const punchTime = new Date();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
+      const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
+      const shiftWindow = getLiveAttendanceStatus(
+        employee,
+        companyPunches,
+        punchTime,
+        company?.lateGraceMinutes ?? 5,
+        company?.workingDays,
+        getEmployeeHolidayDates(company, employee),
+      ).shift;
+      const calculation =
+        punchType === "out" && latestPunch?.type === "in" && latestPunch.timestamp
+          ? calculateAttendanceSession({
+              employee,
+              company,
+              punchIn: latestPunch.timestamp.toDate(),
+              punchOut: punchTime,
+              requiredWorkMinutes,
+            })
+          : null;
+      const extraOvertimeMinutes =
+        punchType === "extra_out" && latestPunch?.type === "extra_in" && latestPunch.timestamp
+          ? Math.max(
+              0,
+              Math.floor((punchTime.getTime() - latestPunch.timestamp.toMillis()) / 60_000),
+            )
+          : null;
       const punchRef = await addDoc(collection(db(), "punches"), {
         employeeId: employee.id,
         employeeName: employee.name,
+        companyId: activeCompanyId,
+        companyName: company?.name || "Company",
         date: punchDate,
+        attendanceDate: punchDate,
         type: punchType,
         timestamp: serverTimestamp(),
         source: "app",
+        scheduledShiftStart: shiftWindow.start.toISOString(),
+        scheduledShiftEnd: shiftWindow.end.toISOString(),
+        shiftTimezone: shiftWindow.timezone,
+        requiredWorkMinutes,
+        ...(calculation
+          ? {
+              normalWorkMinutes: calculation.normalWorkMinutes,
+              overtimeMinutes: calculation.overtimeMinutes,
+              totalEligibleMinutes: calculation.totalEligibleMinutes,
+              attendanceStatus: calculation.status,
+            }
+          : extraOvertimeMinutes !== null
+            ? {
+                normalWorkMinutes: 0,
+                overtimeMinutes: extraOvertimeMinutes,
+                totalEligibleMinutes: extraOvertimeMinutes,
+                attendanceStatus: "complete",
+              }
+            : { attendanceStatus: "in_progress" }),
       });
 
       try {
@@ -326,7 +407,7 @@ function PunchPage() {
       if (targetType === "in") {
         const schedule = getLiveAttendanceStatus(
           employee,
-          allPunches,
+          companyPunches,
           new Date(),
           company?.lateGraceMinutes ?? 5,
           company?.workingDays,
@@ -386,7 +467,7 @@ function PunchPage() {
       const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
 
       const reportDate = reportDateForEmployee(employee, new Date());
-      const reportId = reportDocumentId(user.uid, reportDate, type);
+      const reportId = reportDocumentId(user.uid, reportDate, type, activeCompanyId);
       const reportRef = doc(db(), "dailyReports", reportId);
 
       await setDoc(
@@ -394,6 +475,7 @@ function PunchPage() {
         sanitizeFirestoreObject({
           userId: user.uid,
           employeeId: employee.id,
+          companyId: activeCompanyId,
           userName: employee.name || "",
           userEmail: employee.email || "",
           reportType: type,
@@ -736,10 +818,20 @@ function PunchPage() {
               ) : isPunchedIn && lastIn ? (
                 <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
                   <div className="text-lg font-semibold">
-                    Working since {format(lastIn, "h:mm a")}
+                    {currentSessionCalculation?.missingPunchOut
+                      ? "Missing punch out"
+                      : `Working since ${format(lastIn, "h:mm a")}`}
                   </div>
                   <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
-                  <div className="mt-1 text-sm font-medium text-emerald-900">{deptName}</div>
+                  <div className="mt-1 text-sm font-medium text-emerald-900">
+                    {company?.name || "Company"} · {deptName}
+                  </div>
+                  {currentSessionCalculation?.missingPunchOut && (
+                    <div className="mt-2 text-xs font-semibold text-rose-700">
+                      Your scheduled shift ended without a punch-out. Stop work now to record the
+                      actual time; no automatic time was added.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
@@ -757,22 +849,22 @@ function PunchPage() {
               </div>
 
               <button
-                disabled={busy || onLeaveToday || isHoliday}
+                disabled={busy || (!isPunchedIn && (onLeaveToday || isHoliday))}
                 onClick={handlePunchClick}
                 className={`w-full rounded-md px-5 py-3 text-base font-semibold text-white transition-colors ${
-                  onLeaveToday || isHoliday
+                  !isPunchedIn && (onLeaveToday || isHoliday)
                     ? "cursor-not-allowed bg-slate-400 opacity-70"
                     : isPunchedIn
                       ? "bg-rose-600 hover:bg-rose-700"
                       : "bg-primary hover:bg-primary/90"
                 }`}
               >
-                {isHoliday
-                  ? "Company Holiday (Shift Off)"
-                  : onLeaveToday
-                    ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
-                    : isPunchedIn
-                      ? "Stop Work"
+                {isPunchedIn
+                  ? "Stop Work"
+                  : isHoliday
+                    ? "Company Holiday (Shift Off)"
+                    : onLeaveToday
+                      ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
                       : "Start Work"}
               </button>
 
@@ -784,6 +876,13 @@ function PunchPage() {
                 <div className="text-xs text-muted-foreground font-medium mt-0.5">
                   ({(totalWorkedMs / 3600000).toFixed(2)} hours today)
                 </div>
+                {currentSessionCalculation && (
+                  <div className="mt-2 text-xs font-medium text-muted-foreground">
+                    Normal {formatWorkMinutes(currentSessionCalculation.normalWorkMinutes)} ·
+                    Overtime {formatWorkMinutes(currentSessionCalculation.overtimeMinutes)} ·
+                    Required {formatWorkMinutes(currentSessionCalculation.requiredWorkMinutes)}
+                  </div>
+                )}
               </div>
             </div>
           </div>

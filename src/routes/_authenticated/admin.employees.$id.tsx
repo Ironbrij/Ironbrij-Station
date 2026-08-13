@@ -20,7 +20,7 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import type { Company, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
 import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -42,6 +42,12 @@ import { normalizeState } from "@/lib/states";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
 import { formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
+import {
+  getEmployeeForCompany,
+  getPunchCompanyId,
+  getRequiredWorkMinutes,
+} from "@/lib/company-context";
+import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
   head: () => ({ meta: [{ title: "Employee Profile — SavyTimes Admin" }] }),
@@ -66,6 +72,9 @@ type DayRow = {
   firstIn?: Punch;
   lastOut?: Punch;
   hours: number;
+  normalMinutes: number;
+  overtimeMinutes: number;
+  requiredMinutes: number;
   minutesLate: number;
   status: string;
   isAutoPunchOut: boolean;
@@ -85,7 +94,7 @@ function EmployeeDetail() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [now, setNow] = useState(() => new Date());
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const { company } = useAuth();
+  const { company, activeCompanyId } = useAuth();
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
 
   useEffect(() => {
@@ -144,18 +153,36 @@ function EmployeeDetail() {
     };
   }, []);
 
-  const employee = useMemo(
+  const rawEmployee = useMemo(
     () => employees.find((item) => item.id === id || item.authUid === id),
     [employees, id],
+  );
+  const employee = useMemo(
+    () => (rawEmployee ? getEmployeeForCompany(rawEmployee, activeCompanyId) : undefined),
+    [activeCompanyId, rawEmployee],
   );
 
   const punches = useMemo(() => {
     if (!employee) return [];
     const ids = new Set([employee.id, employee.authUid].filter(Boolean));
     return allPunches
-      .filter((punch) => ids.has(punch.employeeId) && punch.timestamp)
+      .filter(
+        (punch) =>
+          ids.has(punch.employeeId) &&
+          punch.timestamp &&
+          getPunchCompanyId(punch, rawEmployee) === activeCompanyId,
+      )
       .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
-  }, [allPunches, employee]);
+  }, [activeCompanyId, allPunches, employee, rawEmployee]);
+
+  const companyLeaves = useMemo(() => {
+    if (!employee) return [];
+    return leaves.filter(
+      (leave) =>
+        (leave.companyId || rawEmployee?.companyIds?.[0] || rawEmployee?.companyId) ===
+        activeCompanyId,
+    );
+  }, [activeCompanyId, employee, leaves, rawEmployee]);
 
   const rows = useMemo(() => {
     if (!employee) return [];
@@ -172,7 +199,7 @@ function EmployeeDetail() {
     for (const date of getEmployeeHolidayDates(company, employee)) {
       if (date <= today && !groups.has(date)) groups.set(date, []);
     }
-    for (const date of getEmployeeApprovedLeaveDates(employee, leaves)) {
+    for (const date of getEmployeeApprovedLeaveDates(employee, companyLeaves)) {
       if (date <= today && !groups.has(date)) groups.set(date, []);
     }
 
@@ -183,20 +210,38 @@ function EmployeeDetail() {
       );
       const firstIn = sorted.find((punch) => punch.type === "in");
       const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
-      const calculation = computeDay(sorted);
-      const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, date);
+      const rawCalculation = computeDay(sorted);
+      const approvedLeave = getEmployeeApprovedLeaveForDate(employee, companyLeaves, date);
       const holiday = getEmployeeHoliday(company, employee, date);
       const lateness = firstIn
         ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, graceMinutes)
         : null;
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
+      const attendanceCalculation = firstIn
+        ? calculateAttendanceSession({
+            employee,
+            company,
+            punchIn: firstIn.timestamp.toDate(),
+            punchOut: lastOut?.timestamp?.toDate() || null,
+            now,
+            requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+          })
+        : null;
+      const extraOvertimeMinutes = Math.round(rawCalculation.overtimeHours * 60);
+      const normalMinutes = attendanceCalculation?.normalWorkMinutes || 0;
+      const overtimeMinutes = (attendanceCalculation?.overtimeMinutes || 0) + extraOvertimeMinutes;
+      const requiredMinutes =
+        attendanceCalculation?.requiredWorkMinutes || getRequiredWorkMinutes(employee, company);
 
       output.push({
         date,
         punches: sorted,
         firstIn,
         lastOut,
-        hours: calculation.regularHours + calculation.overtimeHours,
+        hours: (normalMinutes + overtimeMinutes) / 60,
+        normalMinutes,
+        overtimeMinutes,
+        requiredMinutes,
         minutesLate: !holiday && !approvedLeave && lateness?.isLate ? lateness.minutes : 0,
         scheduledAt: lateness?.scheduledAt,
         isAutoPunchOut,
@@ -209,7 +254,9 @@ function EmployeeDetail() {
                 ? "Extra time only"
                 : "No punch in"
               : !lastOut
-                ? "Still punched in"
+                ? attendanceCalculation?.missingPunchOut
+                  ? "Missing punch out"
+                  : "Still punched in"
                 : isAutoPunchOut
                   ? lateness?.isLate
                     ? "Auto punched out · Late"
@@ -220,7 +267,7 @@ function EmployeeDetail() {
       });
     }
     return output.sort((a, b) => b.date.localeCompare(a.date));
-  }, [employee, punches, leaves, company, graceMinutes, now]);
+  }, [employee, punches, companyLeaves, company, graceMinutes, now]);
 
   const visibleRows = useMemo(
     () => (historyScope === "all" ? rows : rows.filter((row) => row.date.startsWith(month))),
@@ -243,8 +290,8 @@ function EmployeeDetail() {
   );
 
   const activeLeave = useMemo(
-    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
-    [employee, leaves, now],
+    () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, now) : null),
+    [employee, companyLeaves, now],
   );
 
   const approvedLeaveToday = useMemo(
@@ -252,11 +299,11 @@ function EmployeeDetail() {
       employee
         ? getEmployeeApprovedLeaveForDate(
             employee,
-            leaves,
+            companyLeaves,
             zonedDateKey(now, getShiftTimezone(employee)),
           )
         : null,
-    [employee, leaves, now],
+    [employee, companyLeaves, now],
   );
 
   const onHolidayToday = useMemo(
@@ -271,10 +318,10 @@ function EmployeeDetail() {
 
   const employeeLeaves = useMemo(() => {
     if (!employee) return [];
-    return leaves
+    return companyLeaves
       .filter((leave) => leave.employeeId === employee.id || leave.employeeId === employee.authUid)
       .sort((a, b) => b.dateFrom.localeCompare(a.dateFrom));
-  }, [leaves, employee]);
+  }, [companyLeaves, employee]);
 
   const matchedUser = useMemo(() => {
     if (!employee) return undefined;
@@ -320,6 +367,9 @@ function EmployeeDetail() {
           })
         : "",
       Hours: row.hours.toFixed(2),
+      RequiredMinutes: row.requiredMinutes,
+      NormalWorkMinutes: row.normalMinutes,
+      OvertimeMinutes: row.overtimeMinutes,
       Status: row.status,
       MinutesLate: row.minutesLate,
       AllEvents: row.punches
@@ -701,7 +751,9 @@ function EmployeeDetail() {
                 <th className="p-3.5">Date</th>
                 <th className="p-3.5">Punch in</th>
                 <th className="p-3.5">Punch out</th>
-                <th className="p-3.5">Hours</th>
+                <th className="p-3.5">Required</th>
+                <th className="p-3.5">Normal</th>
+                <th className="p-3.5">Overtime</th>
                 <th className="p-3.5">Status</th>
                 <th className="p-3.5">All events</th>
               </tr>
@@ -717,18 +769,24 @@ function EmployeeDetail() {
                     {row.lastOut
                       ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone)
                       : row.firstIn
-                        ? "Still in"
+                        ? row.status === "Missing punch out"
+                          ? "Missing"
+                          : "Still in"
                         : "—"}
                   </td>
-                  <td className="p-3.5 font-black">{row.hours.toFixed(2)}</td>
+                  <td className="p-3.5 font-semibold">{formatWorkMinutes(row.requiredMinutes)}</td>
+                  <td className="p-3.5 font-semibold">{formatWorkMinutes(row.normalMinutes)}</td>
+                  <td className="p-3.5 font-semibold">{formatWorkMinutes(row.overtimeMinutes)}</td>
                   <td className="p-3.5">
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                        row.minutesLate
-                          ? "bg-amber-500/10 text-amber-700"
-                          : row.isAutoPunchOut
-                            ? "bg-sky-500/10 text-sky-700"
-                            : "bg-emerald-500/10 text-emerald-700"
+                        row.status === "Missing punch out"
+                          ? "bg-rose-500/10 text-rose-700"
+                          : row.minutesLate
+                            ? "bg-amber-500/10 text-amber-700"
+                            : row.isAutoPunchOut
+                              ? "bg-sky-500/10 text-sky-700"
+                              : "bg-emerald-500/10 text-emerald-700"
                       }`}
                     >
                       {row.minutesLate ? `Late ${row.minutesLate} min` : row.status}

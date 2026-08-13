@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase/firestore";
-import type { CountryCode, Punch } from "./types";
+import type { Company, CountryCode, Employee, Punch } from "./types";
+import { calculateAttendanceSession } from "./attendance-calculation";
 
 export interface DayHours {
   regularHours: number;
@@ -34,7 +35,10 @@ export function formatDurationHMS(ms: number): string {
   return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-export function computeDay(punches: Punch[]): DayHours {
+export function computeDay(
+  punches: Punch[],
+  context?: { employee: Employee; company?: Company | null; now?: Date },
+): DayHours {
   const sorted = [...punches].sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
   let regularMs = 0;
   let overtimeMs = 0;
@@ -44,13 +48,34 @@ export function computeDay(punches: Punch[]): DayHours {
     const timestamp = punch.timestamp.toMillis();
     if (punch.type === "in") openIn = timestamp;
     else if (punch.type === "out" && openIn !== null) {
-      regularMs += timestamp - openIn;
+      if (context) {
+        const result = calculateAttendanceSession({
+          employee: context.employee,
+          company: context.company,
+          punchIn: new Date(openIn),
+          punchOut: new Date(timestamp),
+          now: context.now,
+        });
+        regularMs += result.normalWorkMinutes * 60_000;
+        overtimeMs += result.overtimeMinutes * 60_000;
+      } else {
+        regularMs += timestamp - openIn;
+      }
       openIn = null;
     } else if (punch.type === "extra_in") openExtraIn = timestamp;
     else if (punch.type === "extra_out" && openExtraIn !== null) {
       overtimeMs += timestamp - openExtraIn;
       openExtraIn = null;
     }
+  }
+  if (openIn !== null && context) {
+    const result = calculateAttendanceSession({
+      employee: context.employee,
+      company: context.company,
+      punchIn: new Date(openIn),
+      now: context.now,
+    });
+    regularMs += result.normalWorkMinutes * 60_000;
   }
   return {
     regularHours: Math.max(0, regularMs / 3600000),

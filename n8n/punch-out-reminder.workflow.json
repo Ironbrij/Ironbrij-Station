@@ -1,0 +1,77 @@
+{
+  "name": "SavyTimes - Punch Out Reminder Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "time-station-punch-out-reminder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "punch-out-reminder-webhook",
+      "name": "Punch Out Reminder Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "time-station-punch-out-reminder"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.email.to }}",
+        "subject": "={{ $json.body.email.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body.email.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "SavyTimes"
+        }
+      },
+      "id": "send-punch-out-reminder",
+      "name": "Send Punch Out Reminder",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"reminderId\": \"{{ $('Punch Out Reminder Webhook').first().json.body.reminderId }}\" }",
+        "options": {}
+      },
+      "id": "punch-out-reminder-response",
+      "name": "Reminder Sent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Punch Out Reminder Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Punch Out Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Punch Out Reminder": {
+      "main": [
+        [
+          {
+            "node": "Reminder Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

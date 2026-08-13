@@ -1,4 +1,11 @@
-import { COMPANY_ID, type Company, type CompanyHoliday, type Employee, type LeaveRequest, type Punch } from "./types";
+import {
+  COMPANY_ID,
+  type Company,
+  type CompanyHoliday,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+} from "./types.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -156,10 +163,9 @@ export function isHolidayAssignedToEmployee(
 ): boolean {
   // If companyIds are specified on the holiday, the employee must belong to at least one target company first
   if (Array.isArray(holiday.companyIds) && holiday.companyIds.length > 0) {
-    const empCompanyIds = [
-      employee.companyId,
-      ...(employee.companyIds || []),
-    ].filter(Boolean) as string[];
+    const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
+      Boolean,
+    ) as string[];
 
     const matchesCompany = empCompanyIds.some(
       (cId) =>
@@ -183,7 +189,10 @@ export function isHolidayAssignedToEmployee(
 
 export function getEmployeeHoliday(
   company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
-  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds"> | null | undefined,
+  employee:
+    | Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">
+    | null
+    | undefined,
   dateKey: string,
 ): CompanyHoliday | null {
   if (!company || !employee) return null;
@@ -310,14 +319,6 @@ export function getShiftCompletion(employee: Employee, punchedInAt: Date) {
   return { shift, shiftDurationMs, punchOutAt };
 }
 
-export function getShiftTimeout(employee: Employee, punchedInAt: Date, now = new Date()) {
-  const completion = getShiftCompletion(employee, punchedInAt);
-
-  if (now.getTime() < completion.punchOutAt.getTime()) return null;
-
-  return completion;
-}
-
 export function computeRegularWorkedMsForDay(
   employee: Employee,
   punches: Punch[],
@@ -413,9 +414,10 @@ export function formatEmployeeShiftSummary(employee: Employee, instant = new Dat
     shiftLabel: `${shiftText} ${shiftCode}`,
     localLabel: localConv ? `${localConv.start}–${localConv.end} ${localCode}` : "",
     localStart: localConv?.start || employee.shiftStartTime || "09:00",
-    fullSummary: isCrossTimezone && localConv
-      ? `${shiftText} ${shiftCode} (${localConv.start}–${localConv.end} ${localCode})`
-      : `${shiftText} ${shiftCode}`,
+    fullSummary:
+      isCrossTimezone && localConv
+        ? `${shiftText} ${shiftCode} (${localConv.start}–${localConv.end} ${localCode})`
+        : `${shiftText} ${shiftCode}`,
   };
 }
 
@@ -507,9 +509,13 @@ export function getLiveAttendanceStatus(
   const isMissingLate =
     isScheduledDay && !firstIn && missingMinutes > effectiveGraceMinutes && now <= shift.end;
   const isEarly = Boolean(lateness?.isEarly);
-  const minutesEarly = isEarly && firstIn && lateness
-    ? Math.floor(Math.abs((firstIn.timestamp.toDate().getTime() - lateness.scheduledAt.getTime()) / 1000) / 60)
-    : 0;
+  const minutesEarly =
+    isEarly && firstIn && lateness
+      ? Math.floor(
+          Math.abs((firstIn.timestamp.toDate().getTime() - lateness.scheduledAt.getTime()) / 1000) /
+            60,
+        )
+      : 0;
 
   return {
     latest,

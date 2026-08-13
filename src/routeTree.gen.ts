@@ -18,6 +18,7 @@ import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
+import { Route as ApiPunchOutReminderRouteImport } from './routes/api.punch-out-reminder'
 import { Route as ApiSodMentionNotificationRouteImport } from './routes/api.sod-mention-notification'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
@@ -82,6 +83,11 @@ const ApiLeaveDecisionNotificationRoute =
 const ApiLeaveNotificationRoute = ApiLeaveNotificationRouteImport.update({
   id: '/api/leave-notification',
   path: '/api/leave-notification',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPunchOutReminderRoute = ApiPunchOutReminderRouteImport.update({
+  id: '/api/punch-out-reminder',
+  path: '/api/punch-out-reminder',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSodMentionNotificationRoute =
@@ -205,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -234,6 +241,7 @@ export interface FileRoutesByTo {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -266,6 +274,7 @@ export interface FileRoutesById {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -298,6 +307,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/punch-out-reminder'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/admin/company'
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/punch-out-reminder'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/admin/company'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/punch-out-reminder'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/_authenticated/admin/company'
@@ -388,6 +400,7 @@ export interface RootRouteChildren {
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
+  ApiPunchOutReminderRoute: typeof ApiPunchOutReminderRoute
   ApiSodMentionNotificationRoute: typeof ApiSodMentionNotificationRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
@@ -455,6 +468,13 @@ declare module '@tanstack/react-router' {
       path: '/api/leave-notification'
       fullPath: '/api/leave-notification'
       preLoaderRoute: typeof ApiLeaveNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/punch-out-reminder': {
+      id: '/api/punch-out-reminder'
+      path: '/api/punch-out-reminder'
+      fullPath: '/api/punch-out-reminder'
+      preLoaderRoute: typeof ApiPunchOutReminderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/sod-mention-notification': {
@@ -689,6 +709,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,
+  ApiPunchOutReminderRoute: ApiPunchOutReminderRoute,
   ApiSodMentionNotificationRoute: ApiSodMentionNotificationRoute,
   InviteTokenRoute: InviteTokenRoute,
 }

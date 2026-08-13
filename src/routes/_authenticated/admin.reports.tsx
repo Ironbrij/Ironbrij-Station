@@ -29,6 +29,7 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { getEmployeeForCompany, getPunchCompanyId } from "@/lib/company-context";
 
 type AttendanceRow = {
   key: string;
@@ -133,21 +134,35 @@ function ReportsPage() {
 
   const rows = useMemo(() => {
     const output: AttendanceRow[] = [];
-    for (const employee of filteredEmployees) {
+    for (const rawEmployee of filteredEmployees) {
+      const employee =
+        companyFilter === "all" ? rawEmployee : getEmployeeForCompany(rawEmployee, companyFilter);
+      const reportCompany =
+        companyFilter === "all"
+          ? company
+          : companies.find((item) => (item.id || COMPANY_ID) === companyFilter) || company;
+      const employeeLeaves = leaves.filter(
+        (leave) =>
+          companyFilter === "all" ||
+          (leave.companyId || rawEmployee.companyIds?.[0] || rawEmployee.companyId) ===
+            companyFilter,
+      );
       const ids = new Set([employee.id, employee.authUid].filter(Boolean));
       const shiftTimezone = getShiftTimezone(employee);
       const groups = new Map<string, Punch[]>();
       for (const punch of punches) {
         if (!ids.has(punch.employeeId) || !punch.timestamp) continue;
+        if (companyFilter !== "all" && getPunchCompanyId(punch, rawEmployee) !== companyFilter)
+          continue;
         const date = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
         if (date < from || date > to) continue;
         if (!groups.has(date)) groups.set(date, []);
         groups.get(date)!.push(punch);
       }
-      for (const date of getEmployeeHolidayDates(company, employee)) {
+      for (const date of getEmployeeHolidayDates(reportCompany, employee)) {
         if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
       }
-      for (const date of getEmployeeApprovedLeaveDates(employee, leaves)) {
+      for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
         if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
       }
       for (const [date, dayPunches] of groups) {
@@ -156,14 +171,14 @@ function ReportsPage() {
         );
         const firstIn = sorted.find((punch) => punch.type === "in");
         const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
-        const calculation = computeDay(sorted);
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, date);
-        const holiday = getEmployeeHoliday(company, employee, date);
+        const calculation = computeDay(sorted, { employee, company: reportCompany });
+        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
+        const holiday = getEmployeeHoliday(reportCompany, employee, date);
         const late = firstIn
           ? computeEmployeeLateness(
               firstIn.timestamp.toDate(),
               employee,
-              getEffectiveLateGraceMinutes(company?.lateGraceMinutes),
+              getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
             )
           : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
@@ -199,7 +214,17 @@ function ReportsPage() {
     return output.sort(
       (a, b) => b.date.localeCompare(a.date) || a.employee.name.localeCompare(b.employee.name),
     );
-  }, [filteredEmployees, punches, leaves, departments, from, to, company]);
+  }, [
+    filteredEmployees,
+    punches,
+    leaves,
+    departments,
+    from,
+    to,
+    company,
+    companies,
+    companyFilter,
+  ]);
 
   const exportData = useMemo(
     () =>

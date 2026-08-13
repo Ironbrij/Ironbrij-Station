@@ -42,8 +42,15 @@ export function reportTypeLabel(type: DailyReportType) {
   return type === "sod" ? "Start of Day" : "End of Day";
 }
 
-export function reportDocumentId(userId: string, date: string, type: DailyReportType) {
-  return `${userId}_${date}_${type}`;
+export function reportDocumentId(
+  userId: string,
+  date: string,
+  type: DailyReportType,
+  companyId?: string,
+) {
+  return companyId
+    ? `${userId}_${encodeURIComponent(companyId)}_${date}_${type}`
+    : `${userId}_${date}_${type}`;
 }
 
 export function reportDateForEmployee(employee: Employee, now = new Date()) {
@@ -59,8 +66,7 @@ export function deadlineForReport(
   const deadline =
     (type === "sod"
       ? settings.sodDeadline || settings.sodDeadlineTime
-      : settings.eodDeadline || settings.eodDeadlineTime) ||
-    (type === "sod" ? "10:00" : "18:00");
+      : settings.eodDeadline || settings.eodDeadlineTime) || (type === "sod" ? "10:00" : "18:00");
   return zonedDateTimeToDate(date, deadline, getEmployeeTimezone(employee));
 }
 

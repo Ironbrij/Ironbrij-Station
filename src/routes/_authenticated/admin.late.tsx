@@ -250,9 +250,13 @@ function LateArrivalsPage() {
       await addDoc(collection(db(), "punches"), {
         employeeId: targetEmp.id,
         employeeName: targetEmp.name,
+        companyId: targetEmp.companyId || targetEmp.companyIds?.[0] || COMPANY_ID,
         date: dateKey,
+        attendanceDate: dateKey,
         type: "in",
         timestamp: Timestamp.fromDate(punchDateObj),
+        source: "app",
+        attendanceStatus: "in_progress",
         manualNote: manualNotes.trim() || "Manual clock-in by admin",
         addedByAdmin: user?.email || "admin",
         createdAt: new Date().toISOString(),

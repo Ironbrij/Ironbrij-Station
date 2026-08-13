@@ -28,6 +28,9 @@ export interface Company {
   holidayAssignments?: CompanyHoliday[];
   workingDays: number[]; // 0=Sun..6=Sat
   lateGraceMinutes?: number;
+  punchOutGraceMinutes?: number;
+  punchOutReminderMinutes?: number;
+  timezone?: string;
   isMain?: boolean;
   createdAt?: string;
 }
@@ -52,6 +55,7 @@ export interface Employee {
   id: string;
   companyId?: string;
   companyIds?: string[]; // Multi-company membership (can belong to 1 or more companies)
+  companyMemberships?: Record<string, CompanyMembership>;
   deptId?: string;
   name: string;
   email: string;
@@ -70,6 +74,22 @@ export interface Employee {
   createdAt?: string; // ISO timestamp for when the employee profile was created
   reportingRequirement?: ReportingRequirement;
   workingDays?: number[]; // Custom per-employee working days 0=Sun..6=Sat
+  requiredWorkMinutes?: number; // Legacy/default requirement; company membership overrides this
+}
+
+export interface CompanyMembership {
+  companyId: string;
+  role?: "employee" | "manager" | "admin";
+  status?: "active" | "inactive";
+  requiredWorkMinutes?: number;
+  shiftId?: string;
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  shiftTimezone?: string;
+  workingDays?: number[];
+  departmentId?: string;
+  joinedAt?: string;
+  updatedAt?: string;
 }
 
 export interface ReportQuestion {
@@ -115,6 +135,7 @@ export interface DailyReport {
   id: string;
   userId: string;
   employeeId?: string;
+  companyId?: string;
   userName: string;
   userEmail: string;
   reportDate: string;
@@ -133,14 +154,32 @@ export interface Punch {
   type: PunchType;
   timestamp: Timestamp;
   source: "app" | "auto";
+  companyId?: string; // Optional only for historical records; new punches always include it
+  companyName?: string;
+  shiftId?: string;
+  attendanceDate?: string;
+  scheduledShiftStart?: string;
+  scheduledShiftEnd?: string;
+  shiftTimezone?: string;
+  requiredWorkMinutes?: number;
+  normalWorkMinutes?: number;
+  overtimeMinutes?: number;
+  totalEligibleMinutes?: number;
+  attendanceStatus?: AttendanceStatus;
   isEarly?: boolean;
   isAuto?: boolean;
   autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout";
 }
 
+export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";
+
 export interface LeaveRequest {
   id: string;
   employeeId: string;
+  companyId?: string; // Optional only for historical requests
+  leaveCategory?: "annual" | "sick" | "personal" | "other";
+  paymentStatus?: "paid" | "unpaid";
+  remarks?: string;
   leaveType?: "full_day" | "half_day" | "timed_break";
   halfDayPeriod?: "first_half" | "second_half";
   startTime?: string; // HH:mm in the employee shift timezone
@@ -154,6 +193,19 @@ export interface LeaveRequest {
   decidedBy?: string;
   decisionSource?: "admin" | "automatic";
   decisionReason?: string;
+}
+
+export interface PunchOutReminder {
+  id: string;
+  employeeId: string;
+  companyId: string;
+  punchInId: string;
+  attendanceDate: string;
+  shiftEndAt: string;
+  status: "pending" | "sent" | "failed";
+  createdAt: string;
+  sentAt?: string;
+  error?: string;
 }
 
 export interface DailySummary {

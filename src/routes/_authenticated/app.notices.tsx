@@ -1,15 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import {
-  COMPANY_ID,
-  type Company,
-  type CompanyNotice,
-  type LeaveRequest,
-  type Punch,
-} from "@/lib/types";
+import type { CompanyNotice, LeaveRequest, Punch } from "@/lib/types";
 import {
   formatInTimezone,
   getActiveEmployeeLeave,
@@ -25,6 +19,7 @@ import {
 import { CheckCircle2, Megaphone, AlertCircle, ShieldAlert, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
+import { getPunchCompanyId } from "@/lib/company-context";
 
 export const Route = createFileRoute("/_authenticated/app/notices")({
   head: () => ({
@@ -39,9 +34,8 @@ export const Route = createFileRoute("/_authenticated/app/notices")({
 });
 
 function UserNoticesPage() {
-  const { employee } = useAuth();
+  const { employee, company, activeCompanyId } = useAuth();
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
-  const [company, setCompany] = useState<Company | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
@@ -58,17 +52,26 @@ function UserNoticesPage() {
   const todayStr = employee ? zonedDateKey(now, getShiftTimezone(employee)) : "";
 
   useEffect(() => {
-    const unsubComp = onSnapshot(doc(db(), "companies", COMPANY_ID), (s) => {
-      if (s.exists()) setCompany(s.data() as Company);
-    });
     const unsubNotices = onSnapshot(collection(db(), "notices"), (s) =>
       setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
     );
     return () => {
-      unsubComp();
       unsubNotices();
     };
   }, []);
+
+  const companyPunches = useMemo(
+    () => punches.filter((punch) => getPunchCompanyId(punch, employee) === activeCompanyId),
+    [activeCompanyId, employee, punches],
+  );
+  const companyLeaves = useMemo(
+    () =>
+      leaves.filter(
+        (leave) =>
+          (leave.companyId || employee?.companyIds?.[0] || employee?.companyId) === activeCompanyId,
+      ),
+    [activeCompanyId, employee, leaves],
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -99,33 +102,33 @@ function UserNoticesPage() {
 
   const attendanceStatus = useMemo(
     () =>
-      employee && !getEmployeeApprovedLeaveForDate(employee, leaves, todayStr)
+      employee && !getEmployeeApprovedLeaveForDate(employee, companyLeaves, todayStr)
         ? getLiveAttendanceStatus(
             employee,
-            punches,
+            companyPunches,
             now,
             company?.lateGraceMinutes ?? 5,
             company?.workingDays,
             getEmployeeHolidayDates(company, employee),
           )
         : null,
-    [employee, punches, leaves, now, company, todayStr],
+    [employee, companyPunches, companyLeaves, now, company, todayStr],
   );
   const isHoliday = useMemo(() => {
     return Boolean(getEmployeeHoliday(company, employee, todayStr));
   }, [company, employee, todayStr]);
   const activeLeave = useMemo(
-    () => (employee ? getActiveEmployeeLeave(employee, leaves, now) : null),
-    [employee, leaves, now],
+    () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, now) : null),
+    [employee, companyLeaves, now],
   );
 
   // Filter notices relevant to this employee
   const allUserNotices = useMemo(() => {
     return notices
       .filter((notice) => isNoticePublished(notice, now))
-      .filter((notice) => noticeMatchesEmployee(notice, employee))
+      .filter((notice) => noticeMatchesEmployee(notice, employee, activeCompanyId))
       .sort((a, b) => getNoticeDeliveryTime(b).getTime() - getNoticeDeliveryTime(a).getTime());
-  }, [notices, employee, now]);
+  }, [notices, employee, now, activeCompanyId]);
 
   // Default: Filter to past 4 days only
   const visibleNotices = useMemo(() => {

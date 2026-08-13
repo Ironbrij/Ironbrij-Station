@@ -1,15 +1,15 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { AppShell } from "@/components/AppShell";
-import { useShiftAutoPunchOut } from "@/lib/use-shift-auto-punch-out";
+import { usePunchOutReminder } from "@/lib/use-punch-out-reminder";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: EmployeeLayout,
 });
 
 function EmployeeLayout() {
-  const { employee, isAdmin } = useAuth();
-  useShiftAutoPunchOut(employee);
+  const { isAdmin, user, employee, company, activeCompanyId } = useAuth();
+  usePunchOutReminder({ user, employee, company, activeCompanyId });
 
   const nav = [
     { to: "/app/punch", label: "Start/Stop Work" },

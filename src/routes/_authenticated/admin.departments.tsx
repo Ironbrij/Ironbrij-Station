@@ -271,7 +271,7 @@ function DepartmentsPage() {
         const sampleDate = firstIn?.timestamp
           ? firstIn.timestamp.toDate()
           : new Date(dateStr + "T00:00:00");
-        const dayCalc = computeDay(sorted);
+        const dayCalc = computeDay(sorted, { employee: emp, company });
 
         const holiday = getEmployeeHoliday(company, emp, dateStr);
         const approvedLeave = getEmployeeApprovedLeaveForDate(emp, leaves, dateStr);
@@ -405,7 +405,7 @@ function DepartmentsPage() {
         const lastOut = [...sorted]
           .reverse()
           .find((punch) => punch.type === "out" || punch.type === "extra_out");
-        const day = computeDay(sorted);
+        const day = computeDay(sorted, { employee, company });
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
         const holiday = getEmployeeHoliday(company, employee, dateKey);
         const lateness =

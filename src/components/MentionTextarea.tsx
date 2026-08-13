@@ -6,7 +6,7 @@ import React, {
   type KeyboardEvent,
   type TextareaHTMLAttributes,
 } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query as firestoreQuery, where } from "firebase/firestore";
 import { Building2, User } from "lucide-react";
 import { db } from "@/lib/firebase";
 import type { Department, Employee, MentionItem } from "@/lib/types";
@@ -16,8 +16,10 @@ import {
   type MentionCandidate,
 } from "@/lib/mentions";
 
-interface MentionTextareaProps
-  extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange"> {
+interface MentionTextareaProps extends Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "onChange"
+> {
   value: string;
   onChange: (value: string, mentions: MentionItem[]) => void;
   currentEmployee: Employee | null;
@@ -52,9 +54,14 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
   // Subscribe to employees and departments in Firestore
   useEffect(() => {
     if (!enableMentions) return;
+    const companyId = currentEmployee?.companyId;
+    if (!companyId) return;
 
     const unsubEmp = onSnapshot(
-      collection(db(), "employees"),
+      firestoreQuery(
+        collection(db(), "employees"),
+        where("companyIds", "array-contains", companyId),
+      ),
       (snapshot) => {
         setEmployees(
           snapshot.docs.map((doc) => ({
@@ -67,7 +74,7 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
     );
 
     const unsubDept = onSnapshot(
-      collection(db(), "departments"),
+      firestoreQuery(collection(db(), "departments"), where("companyId", "==", companyId)),
       (snapshot) => {
         setDepartments(
           snapshot.docs.map((doc) => ({
@@ -83,7 +90,7 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
       unsubEmp();
       unsubDept();
     };
-  }, [enableMentions]);
+  }, [currentEmployee?.companyId, enableMentions]);
 
   // Build company-isolated mention candidates
   const candidates = useMemo(() => {
@@ -199,7 +206,9 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
       setSelectedIndex((prev) => (prev + 1) % filteredCandidates.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + filteredCandidates.length) % filteredCandidates.length);
+      setSelectedIndex(
+        (prev) => (prev - 1 + filteredCandidates.length) % filteredCandidates.length,
+      );
     } else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
       const selected = filteredCandidates[selectedIndex];
@@ -251,7 +260,9 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
         >
           <div className="px-2 py-1 text-[11px] font-bold tracking-wider text-muted-foreground uppercase flex items-center justify-between border-b pb-1 mb-1">
             <span>Tag Person or Department</span>
-            <span className="text-[10px] font-semibold text-muted-foreground">↑↓ Navigate • ↵ Select</span>
+            <span className="text-[10px] font-semibold text-muted-foreground">
+              ↑↓ Navigate • ↵ Select
+            </span>
           </div>
 
           <div className="space-y-0.5">
@@ -305,7 +316,9 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
                       {candidate.subtitle && (
                         <div
                           className={`text-[11px] truncate ${
-                            isSelected ? "text-primary-foreground/80 font-medium" : "text-muted-foreground"
+                            isSelected
+                              ? "text-primary-foreground/80 font-medium"
+                              : "text-muted-foreground"
                           }`}
                         >
                           {candidate.subtitle}

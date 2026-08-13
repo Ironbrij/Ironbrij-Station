@@ -19,7 +19,6 @@ import { db } from "@/lib/firebase";
 import { sendMentionNotification, type MentionRecipient } from "@/lib/mention-notifications";
 import { companyEmailBranding } from "@/lib/email-branding";
 import {
-  getUserCompanyIds,
   isDepartmentInCompany,
   isEmployeeInCompany,
   resolveMentionRecipients,
@@ -65,7 +64,7 @@ function isItDepartmentName(name: string) {
 }
 
 function HelpFeedbackAutomationPage() {
-  const { user, employee, company } = useAuth();
+  const { user, employee, company, activeCompanyId } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [adminContacts, setAdminContacts] = useState<
@@ -94,16 +93,25 @@ function HelpFeedbackAutomationPage() {
 
   // Subscribe to employees & departments for mention resolution
   useEffect(() => {
-    const unsubEmp = onSnapshot(collection(db(), "employees"), (snapshot) => {
-      setEmployees(
-        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
-      );
-    });
-    const unsubDept = onSnapshot(collection(db(), "departments"), (snapshot) => {
-      setDepartments(
-        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Department, "id">) })),
-      );
-    });
+    const unsubEmp = onSnapshot(
+      query(collection(db(), "employees"), where("companyIds", "array-contains", activeCompanyId)),
+      (snapshot) => {
+        setEmployees(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
+        );
+      },
+    );
+    const unsubDept = onSnapshot(
+      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
+      (snapshot) => {
+        setDepartments(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<Department, "id">),
+          })),
+        );
+      },
+    );
     const unsubAdmins = onSnapshot(collection(db(), "admins"), (snapshot) => {
       setAdminContacts(
         snapshot.docs.map((item) => {
@@ -121,7 +129,7 @@ function HelpFeedbackAutomationPage() {
       unsubDept();
       unsubAdmins();
     };
-  }, []);
+  }, [activeCompanyId]);
 
   // Subscribe to personal automation API profile
   useEffect(() => {
@@ -178,7 +186,7 @@ function HelpFeedbackAutomationPage() {
 
     // 2. Silently route every Help/Feedback submission to the user's company IT team.
     // This only changes email recipients; it does not add a visible @IT tag to the message.
-    const userCompanyIds = getUserCompanyIds(employee);
+    const userCompanyIds = new Set([activeCompanyId]);
     const itDepartments = departments.filter(
       (department) =>
         isDepartmentInCompany(department, userCompanyIds) && isItDepartmentName(department.name),

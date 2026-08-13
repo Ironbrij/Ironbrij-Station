@@ -15,6 +15,7 @@ import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
   type Company,
+  type CompanyMembership,
   type CountryCode,
   type Department,
   type Employee,
@@ -22,16 +23,15 @@ import {
 } from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import { getStateOptions, normalizeState } from "@/lib/states";
-import {
-  ATTENDANCE_TIMEZONES,
-  DEFAULT_SHIFT_TIMEZONE,
-  formatInTimezone,
-  getShiftWindow,
-  zonedDateKey,
-} from "@/lib/attendance";
+import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding, findCompanyById } from "@/lib/email-branding";
+import {
+  buildCompanyMembership,
+  getCompanyMembership,
+  getEmployeeCompanyIds,
+} from "@/lib/company-context";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -327,7 +327,7 @@ function EmployeesListPage() {
           onClick={() => setShowForm(true)}
           className="btn-lift rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground font-bold"
         >
-          + New Employee
+          + Add Person
         </button>
       </div>
 
@@ -548,29 +548,112 @@ function EmployeesListPage() {
   );
 }
 
-function ShiftPreview({
-  shiftStartTime,
-  shiftEndTime,
-  shiftTimezone,
+function initialMemberships(
+  employee: Employee | null,
+  companyIds: string[],
+  defaults?: Partial<CompanyMembership>,
+): Record<string, CompanyMembership> {
+  return Object.fromEntries(
+    companyIds.map((companyId) => [
+      companyId,
+      employee
+        ? buildCompanyMembership(companyId, getCompanyMembership(employee, companyId))
+        : buildCompanyMembership(companyId, defaults || {}),
+    ]),
+  );
+}
+
+function CompanyMembershipSettings({
+  companies,
+  selectedCompanyIds,
+  value,
+  onChange,
 }: {
-  shiftStartTime: string;
-  shiftEndTime: string;
-  shiftTimezone: string;
+  companies: Company[];
+  selectedCompanyIds: string[];
+  value: Record<string, CompanyMembership>;
+  onChange: (memberships: Record<string, CompanyMembership>) => void;
 }) {
-  const shiftDate = zonedDateKey(new Date(), shiftTimezone);
-  const window = getShiftWindow(shiftDate, shiftStartTime, shiftEndTime, shiftTimezone);
+  if (selectedCompanyIds.length === 0) return null;
+
+  function update(companyId: string, change: Partial<CompanyMembership>) {
+    onChange({
+      ...value,
+      [companyId]: buildCompanyMembership(companyId, {
+        ...(value[companyId] || {}),
+        ...change,
+      }),
+    });
+  }
+
   return (
-    <div className="rounded-lg border bg-secondary/40 p-3 space-y-1.5">
-      <p className="text-xs font-bold text-primary">Live timezone conversion</p>
-      {ATTENDANCE_TIMEZONES.map((zone) => (
-        <div key={zone.value} className="flex justify-between gap-3 text-xs">
-          <span className="text-muted-foreground">{zone.short}</span>
-          <span className="font-mono font-semibold">
-            {formatInTimezone(window.start, zone.value)} –{" "}
-            {formatInTimezone(window.end, zone.value)}
-          </span>
-        </div>
-      ))}
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-medium">Company-specific work settings</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Required time is stored in minutes so durations such as 7h 30m remain exact.
+        </p>
+      </div>
+      {selectedCompanyIds.map((companyId) => {
+        const membership = value[companyId] || buildCompanyMembership(companyId, {});
+        const companyName =
+          companies.find((company) => (company.id || COMPANY_ID) === companyId)?.name ||
+          "Main Company";
+        return (
+          <div key={companyId} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+            <div className="text-xs font-semibold text-foreground">{companyName}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium">Required minutes</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={15}
+                  value={membership.requiredWorkMinutes || 480}
+                  onChange={(event) =>
+                    update(companyId, { requiredWorkMinutes: Number(event.target.value) })
+                  }
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium">Shift timezone</label>
+                <select
+                  value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
+                  onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  {ATTENDANCE_TIMEZONES.map((zone) => (
+                    <option key={zone.value} value={zone.value}>
+                      {zone.short}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium">Shift start</label>
+                <input
+                  type="time"
+                  value={membership.shiftStartTime || "09:00"}
+                  onChange={(event) => update(companyId, { shiftStartTime: event.target.value })}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium">Shift end</label>
+                <input
+                  type="time"
+                  value={membership.shiftEndTime || "17:00"}
+                  onChange={(event) => update(companyId, { shiftEndTime: event.target.value })}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -586,12 +669,14 @@ export function PromoteModal({
   companies?: Company[];
   onClose: () => void;
 }) {
+  const initialCompanyIds = getEmployeeCompanyIds(emp);
   const [name, setName] = useState(emp.name ?? "");
   const [email, setEmail] = useState(emp.email ?? "");
   const [jobTitle, setJobTitle] = useState(emp.jobTitle ?? "");
   const [deptId, setDeptId] = useState(emp.deptId ?? "");
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(
-    emp.companyIds && emp.companyIds.length > 0 ? emp.companyIds : [emp.companyId || COMPANY_ID],
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(initialCompanyIds);
+  const [companyMemberships, setCompanyMemberships] = useState<Record<string, CompanyMembership>>(
+    () => initialMemberships(emp, initialCompanyIds),
   );
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
   const [state, setState] = useState(
@@ -612,19 +697,33 @@ export function PromoteModal({
     const emailChanged = cleanEmail && cleanEmail !== (emp.email || "").toLowerCase().trim();
 
     try {
+      const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
+      const normalizedMemberships = Object.fromEntries(
+        finalCompanyIds.map((companyId) => [
+          companyId,
+          buildCompanyMembership(companyId, {
+            ...(companyMemberships[companyId] || {}),
+            departmentId: deptId,
+            workingDays,
+          }),
+        ]),
+      );
+      const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
       await updateDoc(doc(db(), "employees", emp.id), {
         name: cleanName,
         email: cleanEmail || emp.email,
         jobTitle: jobTitle.trim() || emp.jobTitle,
         deptId,
-        companyId: selectedCompanyIds[0] || COMPANY_ID,
-        companyIds: selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID],
+        companyId: finalCompanyIds[0],
+        companyIds: finalCompanyIds,
+        companyMemberships: normalizedMemberships,
         country,
         state,
         timezone: COUNTRY_TIMEZONES[country].timezone,
-        shiftTimezone,
-        shiftStartTime: shiftStartTime || "09:00",
-        shiftEndTime: shiftEndTime || "17:00",
+        requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+        shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
+        shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
+        shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
         workingDays,
       });
 
@@ -661,9 +760,9 @@ export function PromoteModal({
                   jobTitle: jobTitle.trim() || emp.jobTitle,
                   country,
                   state,
-                  shiftStartTime,
-                  shiftEndTime,
-                  shiftTimezone,
+                  shiftStartTime: primaryMembership.shiftStartTime,
+                  shiftEndTime: primaryMembership.shiftEndTime,
+                  shiftTimezone: primaryMembership.shiftTimezone,
                 }),
               });
               emailSent = notificationResponse.ok;
@@ -747,9 +846,22 @@ export function PromoteModal({
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => {
-                      setSelectedCompanyIds((prev) =>
-                        isChecked ? prev.filter((id) => id !== cId) : [...prev, cId],
-                      );
+                      setSelectedCompanyIds((prev) => {
+                        if (isChecked) return prev.filter((id) => id !== cId);
+                        setCompanyMemberships((current) => ({
+                          ...current,
+                          [cId]:
+                            current[cId] ||
+                            buildCompanyMembership(cId, {
+                              shiftStartTime,
+                              shiftEndTime,
+                              shiftTimezone,
+                              workingDays,
+                              departmentId: deptId,
+                            }),
+                        }));
+                        return [...prev, cId];
+                      });
                     }}
                   />
                   <span>
@@ -760,6 +872,12 @@ export function PromoteModal({
             })}
           </div>
         </div>
+        <CompanyMembershipSettings
+          companies={companies}
+          selectedCompanyIds={selectedCompanyIds}
+          value={companyMemberships}
+          onChange={setCompanyMemberships}
+        />
         <div>
           <label className="text-sm font-medium">Employee location</label>
           <select
@@ -789,37 +907,7 @@ export function PromoteModal({
             ))}
           </select>
         </div>
-        <div>
-          <label className="text-sm font-medium">Shift reference timezone</label>
-          <select
-            value={shiftTimezone}
-            onChange={(e) => setShiftTimezone(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
-          >
-            {ATTENDANCE_TIMEZONES.map((zone) => (
-              <option key={zone.value} value={zone.value}>
-                {zone.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field
-            label="Shift start"
-            type="time"
-            value={shiftStartTime}
-            onChange={setShiftStartTime}
-          />
-          <Field label="Shift end" type="time" value={shiftEndTime} onChange={setShiftEndTime} />
-        </div>
-
         <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
-
-        <ShiftPreview
-          shiftStartTime={shiftStartTime}
-          shiftEndTime={shiftEndTime}
-          shiftTimezone={shiftTimezone}
-        />
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -853,6 +941,15 @@ function NewEmployeeForm({
   const [jobTitle, setJobTitle] = useState("");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([COMPANY_ID]);
+  const [companyMemberships, setCompanyMemberships] = useState<Record<string, CompanyMembership>>(
+    () =>
+      initialMemberships(null, [COMPANY_ID], {
+        requiredWorkMinutes: 480,
+        shiftStartTime: "09:00",
+        shiftEndTime: "17:00",
+        shiftTimezone: DEFAULT_SHIFT_TIMEZONE,
+      }),
+  );
   const [country, setCountry] = useState<CountryCode>("PH");
   const [state, setState] = useState(
     normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
@@ -879,17 +976,62 @@ function NewEmployeeForm({
     const token = crypto.randomUUID().replace(/-/g, "");
     const inviteUrl = `${window.location.origin}/invite/${token}`;
     try {
+      const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
+      const normalizedMemberships = Object.fromEntries(
+        finalCompanyIds.map((companyId) => [
+          companyId,
+          buildCompanyMembership(companyId, {
+            ...(companyMemberships[companyId] || {}),
+            departmentId: deptId,
+            workingDays,
+          }),
+        ]),
+      );
+      const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
+      const existingEmployees = await getDocs(
+        query(collection(db(), "employees"), where("email", "==", cleanEmail)),
+      );
+      if (!existingEmployees.empty) {
+        const existingDoc =
+          existingEmployees.docs.find((item) => item.data().inviteStatus === "accepted") ||
+          existingEmployees.docs[0];
+        const existingEmployee = {
+          id: existingDoc.id,
+          ...(existingDoc.data() as Omit<Employee, "id">),
+        };
+        const existingCompanyIds = getEmployeeCompanyIds(existingEmployee);
+        const mergedCompanyIds = [...new Set([...existingCompanyIds, ...finalCompanyIds])];
+        await updateDoc(existingDoc.ref, {
+          companyId: existingEmployee.companyId || mergedCompanyIds[0],
+          companyIds: mergedCompanyIds,
+          companyMemberships: {
+            ...initialMemberships(existingEmployee, existingCompanyIds),
+            ...(existingEmployee.companyMemberships || {}),
+            ...normalizedMemberships,
+          },
+          updatedAt: new Date().toISOString(),
+        });
+        toast.success(
+          `${existingEmployee.name} was added to the selected company without a duplicate account.`,
+        );
+        onClose();
+        navigate({ to: "/admin/employees/$id", params: { id: existingEmployee.id } });
+        return;
+      }
+
       await Promise.all([
         setDoc(empRef, {
-          companyId: selectedCompanyIds[0] || COMPANY_ID,
-          companyIds: selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID],
+          companyId: finalCompanyIds[0],
+          companyIds: finalCompanyIds,
+          companyMemberships: normalizedMemberships,
           deptId,
           name: cleanName,
           email: cleanEmail,
           jobTitle: jobTitle.trim(),
-          shiftStartTime,
-          shiftEndTime,
-          shiftTimezone,
+          requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+          shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime,
+          shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime,
+          shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
           workingDays,
           country,
           state,
@@ -933,9 +1075,9 @@ function NewEmployeeForm({
               jobTitle: jobTitle.trim(),
               country,
               state,
-              shiftStartTime,
-              shiftEndTime,
-              shiftTimezone,
+              shiftStartTime: primaryMembership.shiftStartTime,
+              shiftEndTime: primaryMembership.shiftEndTime,
+              shiftTimezone: primaryMembership.shiftTimezone,
             }),
           });
           emailSent = notificationResponse.ok;
@@ -1015,7 +1157,11 @@ function NewEmployeeForm({
         onSubmit={submit}
         className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto"
       >
-        <h3 className="text-lg font-semibold text-primary">New Employee</h3>
+        <h3 className="text-lg font-semibold text-primary">Add person to company</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          If the email already exists, the person is attached to the selected companies without a
+          duplicate account.
+        </p>
         <div className="mt-4 space-y-3">
           <Field label="Full name" value={name} onChange={setName} />
           <Field label="Email" type="email" value={email} onChange={setEmail} />
@@ -1061,9 +1207,22 @@ function NewEmployeeForm({
                       type="checkbox"
                       checked={isChecked}
                       onChange={() => {
-                        setSelectedCompanyIds((prev) =>
-                          isChecked ? prev.filter((id) => id !== cId) : [...prev, cId],
-                        );
+                        setSelectedCompanyIds((prev) => {
+                          if (isChecked) return prev.filter((id) => id !== cId);
+                          setCompanyMemberships((current) => ({
+                            ...current,
+                            [cId]:
+                              current[cId] ||
+                              buildCompanyMembership(cId, {
+                                shiftStartTime,
+                                shiftEndTime,
+                                shiftTimezone,
+                                workingDays,
+                                departmentId: deptId,
+                              }),
+                          }));
+                          return [...prev, cId];
+                        });
                       }}
                     />
                     <span>
@@ -1074,6 +1233,12 @@ function NewEmployeeForm({
               })}
             </div>
           </div>
+          <CompanyMembershipSettings
+            companies={companies}
+            selectedCompanyIds={selectedCompanyIds}
+            value={companyMemberships}
+            onChange={setCompanyMemberships}
+          />
           <div>
             <label className="text-sm font-medium">Employee location</label>
             <select
@@ -1103,37 +1268,7 @@ function NewEmployeeForm({
               ))}
             </select>
           </div>
-          <div>
-            <label className="text-sm font-medium">Shift reference timezone</label>
-            <select
-              value={shiftTimezone}
-              onChange={(e) => setShiftTimezone(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
-            >
-              {ATTENDANCE_TIMEZONES.map((zone) => (
-                <option key={zone.value} value={zone.value}>
-                  {zone.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Shift start"
-              type="time"
-              value={shiftStartTime}
-              onChange={setShiftStartTime}
-            />
-            <Field label="Shift end" type="time" value={shiftEndTime} onChange={setShiftEndTime} />
-          </div>
-
           <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
-
-          <ShiftPreview
-            shiftStartTime={shiftStartTime}
-            shiftEndTime={shiftEndTime}
-            shiftTimezone={shiftTimezone}
-          />
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
@@ -1143,7 +1278,7 @@ function NewEmployeeForm({
             disabled={busy}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
-            {busy ? "Creating…" : "Create & Invite"}
+            {busy ? "Saving…" : "Add / Invite"}
           </button>
         </div>
       </form>
