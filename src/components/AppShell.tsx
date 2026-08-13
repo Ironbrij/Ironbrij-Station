@@ -36,8 +36,13 @@ export function AppShell({
   } = useAuth();
   const navigate = useNavigate();
   const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
+  const [pendingCompanyId, setPendingCompanyId] = useState(activeCompanyId);
   const unreadLateCount = useAdminLateNotificationCount({ enabled: isAdmin, company });
   useAutoRejectExpiredLeaves(isAdmin);
+
+  useEffect(() => {
+    setPendingCompanyId(activeCompanyId);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     if (!employee) return;
@@ -64,7 +69,9 @@ export function AppShell({
       .map(([companyId]) => companyId);
   }, [employee, employeePunches]);
 
-  function switchCompany(companyId: string) {
+  function switchCompany() {
+    const companyId = pendingCompanyId;
+    if (companyId === activeCompanyId) return;
     const otherActiveCompanyId = activeAttendanceCompanyIds.find((id) => id !== companyId);
     if (otherActiveCompanyId) {
       const activeName =
@@ -77,6 +84,37 @@ export function AppShell({
     }
     setActiveCompanyId(companyId);
   }
+
+  const companySwitcher =
+    companies.length > 1 ? (
+      <div className="flex shrink-0 items-center gap-2 rounded-md border bg-muted/30 p-1.5">
+        <label className="flex items-center gap-2">
+          <span className="hidden text-xs font-medium text-muted-foreground xl:inline">
+            Company
+          </span>
+          <select
+            value={pendingCompanyId}
+            onChange={(event) => setPendingCompanyId(event.target.value)}
+            className="max-w-36 rounded-md border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground sm:max-w-48"
+            aria-label="Choose company"
+          >
+            {companies.map((item) => (
+              <option key={item.id || item.name} value={item.id || COMPANY_ID}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={switchCompany}
+          disabled={pendingCompanyId === activeCompanyId}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-muted disabled:text-muted-foreground"
+        >
+          Switch
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">
@@ -100,24 +138,6 @@ export function AppShell({
           </Link>
 
           <div className="flex shrink-0 items-center gap-2.5">
-            {companies.length > 1 && (
-              <label className="flex items-center gap-2">
-                <span className="sr-only">Active company</span>
-                <select
-                  value={activeCompanyId}
-                  onChange={(event) => switchCompany(event.target.value)}
-                  className="max-w-28 rounded-md border bg-background px-2 py-2 text-xs font-medium text-foreground sm:max-w-44 sm:px-2.5"
-                  aria-label="Switch active company"
-                >
-                  {companies.map((item) => (
-                    <option key={item.id || item.name} value={item.id || COMPANY_ID}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
             {isAdmin && (
               <>
                 <Link
@@ -172,6 +192,8 @@ export function AppShell({
 
         <div className="hidden border-t bg-background md:block">
           <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
+            {companySwitcher}
+            {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 bg-border" />}
             {nav.map((item) => (
               <Link
                 key={item.to}
@@ -198,6 +220,8 @@ export function AppShell({
         </div>
 
         <div className="flex gap-1 overflow-x-auto border-t bg-background px-4 py-2 md:hidden scrollbar-none">
+          {companySwitcher}
+          {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 self-center bg-border" />}
           {nav.map((item) => (
             <Link
               key={item.to}
