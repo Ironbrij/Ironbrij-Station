@@ -33,6 +33,7 @@ import {
   calculateShiftEndTime,
   calculateShiftMinutes,
   calculateTotalShiftMinutes,
+  cleanFirestoreData,
   getCompanyMembership,
   getEmployeeCompanyIds,
 } from "@/lib/company-context";
@@ -975,25 +976,28 @@ export function PromoteModal({
         ]),
       );
       const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
-      await updateDoc(doc(db(), "employees", emp.id), {
-        name: cleanName,
-        email: cleanEmail || emp.email,
-        jobTitle: jobTitle.trim() || emp.jobTitle,
-        deptId,
-        companyId: finalCompanyIds[0],
-        companyIds: finalCompanyIds,
-        companyMemberships: normalizedMemberships,
-        country,
-        state,
-        timezone: COUNTRY_TIMEZONES[country].timezone,
-        requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
-        isMultipleShift: primaryMembership.isMultipleShift ?? false,
-        shifts: primaryMembership.shifts || [],
-        shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
-        shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
-        shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
-        workingDays,
-      });
+      await updateDoc(
+        doc(db(), "employees", emp.id),
+        cleanFirestoreData({
+          name: cleanName,
+          email: cleanEmail || emp.email,
+          jobTitle: jobTitle.trim() || emp.jobTitle,
+          deptId: deptId || "",
+          companyId: finalCompanyIds[0],
+          companyIds: finalCompanyIds,
+          companyMemberships: normalizedMemberships,
+          country,
+          state: state || "N/A",
+          timezone: COUNTRY_TIMEZONES[country].timezone,
+          requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+          isMultipleShift: primaryMembership.isMultipleShift ?? false,
+          shifts: primaryMembership.shifts || [],
+          shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
+          shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
+          shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
+          workingDays,
+        }),
+      );
 
       if (emailChanged) {
         if (emp.inviteStatus === "pending") {
@@ -1269,16 +1273,19 @@ function NewEmployeeForm({
         };
         const existingCompanyIds = getEmployeeCompanyIds(existingEmployee);
         const mergedCompanyIds = [...new Set([...existingCompanyIds, ...finalCompanyIds])];
-        await updateDoc(existingDoc.ref, {
-          companyId: existingEmployee.companyId || mergedCompanyIds[0],
-          companyIds: mergedCompanyIds,
-          companyMemberships: {
-            ...initialMemberships(existingEmployee, existingCompanyIds),
-            ...(existingEmployee.companyMemberships || {}),
-            ...normalizedMemberships,
-          },
-          updatedAt: new Date().toISOString(),
-        });
+        await updateDoc(
+          existingDoc.ref,
+          cleanFirestoreData({
+            companyId: existingEmployee.companyId || mergedCompanyIds[0],
+            companyIds: mergedCompanyIds,
+            companyMemberships: {
+              ...initialMemberships(existingEmployee, existingCompanyIds),
+              ...(existingEmployee.companyMemberships || {}),
+              ...normalizedMemberships,
+            },
+            updatedAt: new Date().toISOString(),
+          }),
+        );
         toast.success(
           `${existingEmployee.name} was added to the selected company without a duplicate account.`,
         );
@@ -1288,29 +1295,32 @@ function NewEmployeeForm({
       }
 
       await Promise.all([
-        setDoc(empRef, {
-          companyId: finalCompanyIds[0],
-          companyIds: finalCompanyIds,
-          companyMemberships: normalizedMemberships,
-          deptId,
-          name: cleanName,
-          email: cleanEmail,
-          jobTitle: jobTitle.trim(),
-          requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
-          isMultipleShift: primaryMembership.isMultipleShift ?? false,
-          shifts: primaryMembership.shifts || [],
-          shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime,
-          shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime,
-          shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
-          workingDays,
-          country,
-          state,
-          timezone: COUNTRY_TIMEZONES[country].timezone,
-          status: "active",
-          inviteStatus: "pending",
-          reportingRequirement: "sod_eod",
-          createdAt: new Date().toISOString(),
-        }),
+        setDoc(
+          empRef,
+          cleanFirestoreData({
+            companyId: finalCompanyIds[0],
+            companyIds: finalCompanyIds,
+            companyMemberships: normalizedMemberships,
+            deptId: deptId || "",
+            name: cleanName,
+            email: cleanEmail,
+            jobTitle: jobTitle.trim() || "Virtual Assistant",
+            requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+            isMultipleShift: primaryMembership.isMultipleShift ?? false,
+            shifts: primaryMembership.shifts || [],
+            shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
+            shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
+            shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
+            workingDays: workingDays || [0, 1, 2, 3, 4, 5],
+            country: country || "NP",
+            state: state || "N/A",
+            timezone: COUNTRY_TIMEZONES[country]?.timezone || "Asia/Kathmandu",
+            status: "active",
+            inviteStatus: "pending",
+            reportingRequirement: "sod_eod",
+            createdAt: new Date().toISOString(),
+          }),
+        ),
         setDoc(doc(db(), "invites", token), {
           employeeId: empId,
           email: cleanEmail,

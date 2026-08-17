@@ -125,7 +125,7 @@ export function buildCompanyMembership(
             { startTime: "04:00", endTime: "07:00" },
             { startTime: "12:00", endTime: "15:00" },
           ]
-        : undefined;
+        : [];
 
   const shiftStartTime = shifts?.[0]?.startTime || input.shiftStartTime || "09:00";
   const shiftEndTime =
@@ -137,7 +137,7 @@ export function buildCompanyMembership(
     calculateTotalShiftMinutes(isMultipleShift, shifts, shiftStartTime, shiftEndTime);
 
   return {
-    companyId,
+    companyId: companyId || COMPANY_ID,
     role: input.role || "employee",
     status: input.status || "active",
     requiredWorkMinutes,
@@ -147,8 +147,22 @@ export function buildCompanyMembership(
     shiftEndTime,
     shiftTimezone: input.shiftTimezone || "Australia/Sydney",
     workingDays: input.workingDays || [0, 1, 2, 3, 4, 5],
-    departmentId: input.departmentId,
+    departmentId: input.departmentId || "",
     joinedAt: input.joinedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function cleanFirestoreData<T extends Record<string, any>>(data: T): T {
+  if (data === null || data === undefined) return {} as T;
+  const result: any = Array.isArray(data) ? [] : {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+      result[key] = cleanFirestoreData(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
