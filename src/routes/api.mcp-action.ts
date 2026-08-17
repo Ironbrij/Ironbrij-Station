@@ -183,6 +183,7 @@ function getOpenApiSchema(appUrl: string) {
                 "list_departments",
                 "add_or_fix_punch",
                 "list_punches",
+                "get_live_attendance",
                 "list_leaves",
                 "decide_leave",
                 "create_notice",
@@ -806,23 +807,163 @@ export const Route = createFileRoute("/api/mcp-action")({
             return Response.json({ ok: true, result: { count: filtered.length, leaves: filtered } });
           }
 
-          // 7. LIST PUNCHES
+          // 7. LIST PUNCHES (Sorted with readable timestamps)
           if (action === "list_punches") {
             const res = await fetch(
-              `${baseUrl}/punches?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              `${baseUrl}/punches?pageSize=300&key=${encodeURIComponent(apiKey)}`,
             );
             const data = await res.json();
             const list = (data.documents || []).map((doc: any) => {
               const id = doc.name.split("/").pop();
-              return { id, ...fromFirestoreFields(doc.fields) };
+              const fields = fromFirestoreFields(doc.fields);
+              let timestampISO = "";
+              if (fields.timestamp?.seconds) {
+                timestampISO = new Date(fields.timestamp.seconds * 1000).toISOString();
+              } else if (typeof fields.timestamp === "string") {
+                timestampISO = fields.timestamp;
+              }
+              return {
+                id,
+                ...fields,
+                timestampISO,
+                date: timestampISO ? timestampISO.slice(0, 10) : "N/A",
+                time: timestampISO ? new Date(timestampISO).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }) : "N/A",
+              };
             });
+
+            // Sort newest first
+            list.sort((a: any, b: any) => new Date(b.timestampISO || 0).getTime() - new Date(a.timestampISO || 0).getTime());
+
             let filtered = list;
             if (params.employeeId) filtered = filtered.filter((p: any) => p.employeeId === params.employeeId);
             if (params.companyId) filtered = filtered.filter((p: any) => p.companyId === params.companyId);
+            if (params.date) filtered = filtered.filter((p: any) => p.date === params.date);
+
             return Response.json({ ok: true, result: { count: filtered.length, punches: filtered } });
           }
 
-          // 8. DECIDE LEAVE
+          // 8. GET LIVE ATTENDANCE (Real-time live status for all employees)
+          if (action === "get_live_attendance") {
+            const [empRes, punchRes] = await Promise.all([
+              fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+              fetch(`${baseUrl}/punches?pageSize=500&key=${encodeURIComponent(apiKey)}`),
+            ]);
+
+            const empData = await empRes.json();
+            const punchData = await punchRes.json();
+
+            const employees = (empData.documents || []).map((doc: any) => ({
+              id: doc.name.split("/").pop(),
+              ...fromFirestoreFields(doc.fields),
+            })).filter((e: any) => e.status !== "inactive");
+
+            const punches = (punchData.documents || []).map((doc: any) => {
+              const id = doc.name.split("/").pop();
+              const fields = fromFirestoreFields(doc.fields);
+              const sec = fields.timestamp?.seconds;
+              const dateObj = sec ? new Date(sec * 1000) : new Date(fields.timestamp || 0);
+              return {
+                id,
+                ...fields,
+                timeMillis: dateObj.getTime(),
+                isoString: dateObj.toISOString(),
+                dateStr: dateObj.toISOString().slice(0, 10),
+              };
+            });
+
+            const now = new Date();
+            const todayUtc = now.toISOString().slice(0, 10);
+            const twentyFourHoursAgo = now.getTime() - 24 * 60 * 60 * 1000;
+
+            const liveStatusList = employees.map((emp: any) => {
+              const empPunches = punches
+                .filter((p: any) => p.employeeId === emp.id)
+                .sort((a: any, b: any) => b.timeMillis - a.timeMillis);
+
+              const latestPunch = empPunches[0];
+
+              if (!latestPunch) {
+                return {
+                  employeeId: emp.id,
+                  name: emp.name,
+                  email: emp.email,
+                  department: emp.deptId || "General",
+                  companyId: emp.companyId || "default",
+                  shiftHours: `${emp.shiftStartTime || "09:00"} - ${emp.shiftEndTime || "17:00"}`,
+                  liveStatus: "OFF_SHIFT",
+                  isCurrentlyPunchedIn: false,
+                  note: "No punch records found",
+                };
+              }
+
+              const isRecent = latestPunch.timeMillis >= twentyFourHoursAgo;
+              const isToday = latestPunch.dateStr === todayUtc;
+
+              if (latestPunch.type === "in") {
+                if (isRecent || isToday) {
+                  return {
+                    employeeId: emp.id,
+                    name: emp.name,
+                    email: emp.email,
+                    department: emp.deptId || "General",
+                    companyId: emp.companyId || "default",
+                    shiftHours: `${emp.shiftStartTime || "09:00"} - ${emp.shiftEndTime || "17:00"}`,
+                    liveStatus: "PUNCHED_IN",
+                    isCurrentlyPunchedIn: true,
+                    punchedInAt: latestPunch.isoString,
+                    punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                    note: `Currently working (punched in at ${new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })})`,
+                  };
+                } else {
+                  // Old unclosed punch from a previous day
+                  return {
+                    employeeId: emp.id,
+                    name: emp.name,
+                    email: emp.email,
+                    department: emp.deptId || "General",
+                    companyId: emp.companyId || "default",
+                    shiftHours: `${emp.shiftStartTime || "09:00"} - ${emp.shiftEndTime || "17:00"}`,
+                    liveStatus: "MISSED_PUNCH_OUT",
+                    isCurrentlyPunchedIn: false,
+                    missedDate: latestPunch.dateStr,
+                    note: `Missed punch-out from ${latestPunch.dateStr} (Not currently working today)`,
+                  };
+                }
+              }
+
+              // Latest punch is "out"
+              return {
+                employeeId: emp.id,
+                name: emp.name,
+                email: emp.email,
+                department: emp.deptId || "General",
+                companyId: emp.companyId || "default",
+                shiftHours: `${emp.shiftStartTime || "09:00"} - ${emp.shiftEndTime || "17:00"}`,
+                liveStatus: "PUNCHED_OUT",
+                isCurrentlyPunchedIn: false,
+                punchedOutAt: latestPunch.isoString,
+                punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                note: `Punched out at ${new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
+              };
+            });
+
+            const currentlyWorking = liveStatusList.filter((e) => e.isCurrentlyPunchedIn);
+            const missedPunches = liveStatusList.filter((e) => e.liveStatus === "MISSED_PUNCH_OUT");
+
+            return Response.json({
+              ok: true,
+              result: {
+                totalEmployees: liveStatusList.length,
+                currentlyWorkingCount: currentlyWorking.length,
+                currentlyWorking,
+                missedPunchOutsCount: missedPunches.length,
+                missedPunchOuts: missedPunches,
+                allEmployeesStatus: liveStatusList,
+              },
+            });
+          }
+
+          // 9. DECIDE LEAVE
           if (action === "decide_leave") {
             const fieldsToUpdate = {
               status: params.decision,

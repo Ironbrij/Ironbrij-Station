@@ -130,6 +130,11 @@ const MCP_TOOLS = [
     },
   },
   {
+    name: "get_live_attendance",
+    description: "Get real-time live attendance status for all employees: who is currently punched in right now, who is off-shift, and who has missed punch-outs from previous days.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "add_or_fix_punch",
     description: "Add a manual punch or fix a missed punch out for an employee.",
     inputSchema: {
@@ -400,7 +405,85 @@ export const Route = createFileRoute("/api/mcp")({
               });
             }
 
-            // Fallback for others
+            // 5. GET LIVE ATTENDANCE
+            if (toolName === "get_live_attendance") {
+              const [empRes, punchRes] = await Promise.all([
+                fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+                fetch(`${baseUrl}/punches?pageSize=500&key=${encodeURIComponent(apiKey)}`),
+              ]);
+
+              const empData = await empRes.json();
+              const punchData = await punchRes.json();
+
+              const employees = (empData.documents || []).map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              })).filter((e: any) => e.status !== "inactive");
+
+              const punches = (punchData.documents || []).map((doc: any) => {
+                const id = doc.name.split("/").pop();
+                const fields = fromFirestoreFields(doc.fields);
+                const sec = fields.timestamp?.seconds;
+                const dateObj = sec ? new Date(sec * 1000) : new Date(fields.timestamp || 0);
+                return {
+                  id,
+                  ...fields,
+                  timeMillis: dateObj.getTime(),
+                  isoString: dateObj.toISOString(),
+                  dateStr: dateObj.toISOString().slice(0, 10),
+                };
+              });
+
+              const now = new Date();
+              const todayUtc = now.toISOString().slice(0, 10);
+              const twentyFourHoursAgo = now.getTime() - 24 * 60 * 60 * 1000;
+
+              const liveList = employees.map((emp: any) => {
+                const empPunches = punches
+                  .filter((p: any) => p.employeeId === emp.id)
+                  .sort((a: any, b: any) => b.timeMillis - a.timeMillis);
+
+                const latest = empPunches[0];
+                if (!latest) {
+                  return { name: emp.name, email: emp.email, status: "OFF_SHIFT", isCurrentlyWorking: false };
+                }
+
+                if (latest.type === "in") {
+                  if (latest.timeMillis >= twentyFourHoursAgo || latest.dateStr === todayUtc) {
+                    return {
+                      name: emp.name,
+                      email: emp.email,
+                      status: "PUNCHED_IN",
+                      isCurrentlyWorking: true,
+                      punchedInAt: latest.isoString,
+                    };
+                  }
+                  return {
+                    name: emp.name,
+                    email: emp.email,
+                    status: "MISSED_PUNCH_OUT",
+                    isCurrentlyWorking: false,
+                    missedDate: latest.dateStr,
+                  };
+                }
+
+                return {
+                  name: emp.name,
+                  email: emp.email,
+                  status: "PUNCHED_OUT",
+                  isCurrentlyWorking: false,
+                  punchedOutAt: latest.isoString,
+                };
+              });
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(liveList, null, 2) }],
+                },
+              });
+            }
             return Response.json({
               jsonrpc: "2.0",
               id,
