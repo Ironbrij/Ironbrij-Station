@@ -307,6 +307,51 @@ export const Route = createFileRoute("/api/mcp")({
               });
             }
 
+            // 3. UPDATE EMPLOYEE
+            if (toolName === "update_employee") {
+              let targetId = args.id;
+              if (!targetId) {
+                const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+                if (listRes.ok) {
+                  const listData = await listRes.json();
+                  const matchedDoc = (listData.documents || []).find((doc: any) => {
+                    const fields = fromFirestoreFields(doc.fields);
+                    if (args.email && fields.email?.toLowerCase() === args.email.toLowerCase()) return true;
+                    if (args.name && fields.name?.toLowerCase() === args.name.toLowerCase()) return true;
+                    return false;
+                  });
+                  if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+                }
+              }
+
+              if (!targetId) throw new Error("Employee not found by ID, email, or name.");
+
+              const fieldsToUpdate: Record<string, any> = {};
+              if (args.name) fieldsToUpdate.name = args.name;
+              if (args.email) fieldsToUpdate.email = args.email;
+              if (args.jobTitle) fieldsToUpdate.jobTitle = args.jobTitle;
+              if (args.status) fieldsToUpdate.status = args.status;
+              if (args.deptId || args.department) fieldsToUpdate.deptId = args.deptId || args.department;
+              if (args.shiftStartTime) fieldsToUpdate.shiftStartTime = args.shiftStartTime;
+              if (args.shiftEndTime) fieldsToUpdate.shiftEndTime = args.shiftEndTime;
+
+              const updateMask = Object.keys(fieldsToUpdate).map((k) => `updateMask.fieldPaths=${k}`).join("&");
+              const res = await fetch(`${baseUrl}/employees/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+              });
+              if (!res.ok) throw new Error("Failed to update employee in database.");
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Employee ${targetId} successfully updated with: ${JSON.stringify(fieldsToUpdate)}` }],
+                },
+              });
+            }
+
             // 3. LIST LEAVES
             if (toolName === "list_leaves") {
               const res = await fetch(`${baseUrl}/leaveRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`);

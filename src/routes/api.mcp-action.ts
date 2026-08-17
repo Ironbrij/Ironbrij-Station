@@ -528,20 +528,80 @@ export const Route = createFileRoute("/api/mcp-action")({
 
           // 3. UPDATE EMPLOYEE
           if (action === "update_employee") {
-            const { id, ...fieldsToUpdate } = params;
+            let targetId = params.id;
+            let targetEmail = params.email;
+            let targetName = params.name;
+
+            // If ID is missing, search by email or name
+            if (!targetId) {
+              const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              if (listRes.ok) {
+                const listData = await listRes.json();
+                const matchedDoc = (listData.documents || []).find((doc: any) => {
+                  const fields = fromFirestoreFields(doc.fields);
+                  if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase()) return true;
+                  if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase()) return true;
+                  return false;
+                });
+                if (matchedDoc) {
+                  targetId = matchedDoc.name.split("/").pop();
+                }
+              }
+            }
+
+            if (!targetId) {
+              return Response.json(
+                { ok: false, error: "Employee not found. Please provide employee ID or valid email address." },
+                { status: 404 },
+              );
+            }
+
+            // Extract fields to update
+            const fieldsToUpdate: Record<string, any> = {};
+            if (params.name) fieldsToUpdate.name = params.name;
+            if (params.email) fieldsToUpdate.email = params.email;
+            if (params.jobTitle || params.role) fieldsToUpdate.jobTitle = params.jobTitle || params.role;
+            if (params.status) fieldsToUpdate.status = params.status;
+            if (params.deptId || params.department) fieldsToUpdate.deptId = params.deptId || params.department;
+            if (params.companyId) {
+              fieldsToUpdate.companyId = params.companyId;
+              fieldsToUpdate.companyIds = [params.companyId];
+            }
+            if (params.shiftStartTime) fieldsToUpdate.shiftStartTime = params.shiftStartTime;
+            if (params.shiftEndTime) fieldsToUpdate.shiftEndTime = params.shiftEndTime;
+            if (params.shiftTimezone) fieldsToUpdate.shiftTimezone = params.shiftTimezone;
+
             const updateMask = Object.keys(fieldsToUpdate)
               .map((k) => `updateMask.fieldPaths=${k}`)
               .join("&");
-            const res = await fetch(
-              `${baseUrl}/employees/${id}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+
+            const patchUrl = updateMask
+              ? `${baseUrl}/employees/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`
+              : `${baseUrl}/employees/${targetId}?key=${encodeURIComponent(apiKey)}`;
+
+            const res = await fetch(patchUrl, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+            });
+
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error?.message || "Failed to update employee");
+            }
+
+            const updatedDoc = await res.json();
+            const updatedFields = fromFirestoreFields(updatedDoc.fields);
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Employee '${updatedFields.name || targetId}' updated successfully.`,
+                employeeId: targetId,
+                updatedFields: fieldsToUpdate,
+                employee: { id: targetId, ...updatedFields },
               },
-            );
-            if (!res.ok) throw new Error("Failed to update employee");
-            return Response.json({ ok: true, result: { message: `Employee '${id}' updated successfully.` } });
+            });
           }
 
           // 4. LIST COMPANIES
