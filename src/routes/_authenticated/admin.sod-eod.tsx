@@ -196,8 +196,8 @@ function AdminSodEodPage() {
 
   async function saveSettings() {
     if (
-      !/^\d{2}:\d{2}$/.test(settings.sodDeadline) ||
-      !/^\d{2}:\d{2}$/.test(settings.eodDeadline)
+      !/^\d{2}:\d{2}$/.test(settings.sodDeadline || "") ||
+      !/^\d{2}:\d{2}$/.test(settings.eodDeadline || "")
     ) {
       toast.error("Enter valid SOD and EOD deadlines.");
       return;

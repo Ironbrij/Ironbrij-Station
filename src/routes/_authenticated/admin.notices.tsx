@@ -469,7 +469,7 @@ function NotificationsPage() {
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {deptMap.get(employee.deptId) || "No department"}
+                    {deptMap.get(employee.deptId || "") || "No department"}
                   </div>
                 </div>
                 <div className="text-left sm:text-right">

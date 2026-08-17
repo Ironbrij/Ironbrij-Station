@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from "@tanstack/react-router";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 import { resolveAppUrl } from "@/lib/app-url";

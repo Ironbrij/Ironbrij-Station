@@ -49,7 +49,7 @@ export type CountryCode = "NP" | "AU" | "PH";
 
 export interface ShiftInterval {
   startTime: string; // e.g. "04:00"
-  endTime: string;   // e.g. "07:00"
+  endTime: string; // e.g. "07:00"
 }
 
 export type ReportingRequirement = "sod_only" | "eod_only" | "sod_eod" | "none";

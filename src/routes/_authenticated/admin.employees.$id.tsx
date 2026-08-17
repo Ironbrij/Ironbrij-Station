@@ -942,8 +942,6 @@ function MetricCard({
   );
 }
 
-
-
 function formatDecimal(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }

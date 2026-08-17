@@ -40,9 +40,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { computeDay } from "@/lib/time";
-import {
-  calculateAttendanceSession,
-} from "@/lib/attendance-calculation";
+import { calculateAttendanceSession } from "@/lib/attendance-calculation";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -57,7 +55,11 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
-import { getEmployeeForCompany, getPunchCompanyId, getRequiredWorkMinutes } from "@/lib/company-context";
+import {
+  getEmployeeForCompany,
+  getPunchCompanyId,
+  getRequiredWorkMinutes,
+} from "@/lib/company-context";
 import { companyEmailBranding } from "@/lib/email-branding";
 
 export interface DailyIntervalRecord {
@@ -306,8 +308,7 @@ function ReportsPage() {
         output.push({
           key: `${employee.id}-${date}`,
           employee,
-          department:
-            departments.find((item) => item.id === employee.deptId)?.name || "General",
+          department: departments.find((item) => item.id === employee.deptId)?.name || "General",
           date,
           firstIn,
           lastOut,
@@ -533,8 +534,7 @@ function ReportsPage() {
         employeeId: employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
-        department:
-          departments.find((d) => d.id === employee.deptId)?.name || "General",
+        department: departments.find((d) => d.id === employee.deptId)?.name || "General",
         role: employee.jobTitle || "V.A.",
         regularHours: reg,
         overtimeHours: ot,
@@ -919,7 +919,11 @@ function ReportsPage() {
         }),
       });
 
-      const data = (await response.json()) as { ok: boolean; error?: string; recipientCount?: number };
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        recipientCount?: number;
+      };
 
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Failed to send report email");
@@ -1264,9 +1268,7 @@ function ReportsPage() {
             <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Accepted Overtime
           </div>
           <div className="mt-1 text-2xl font-black text-amber-600">
-            {reportTotals.totalOvertime > 0
-              ? `+${reportTotals.totalOvertime.toFixed(1)}h`
-              : "0.0h"}
+            {reportTotals.totalOvertime > 0 ? `+${reportTotals.totalOvertime.toFixed(1)}h` : "0.0h"}
           </div>
         </div>
 
@@ -1332,7 +1334,9 @@ function ReportsPage() {
                   <tr
                     key={row.id}
                     className={`transition-colors ${
-                      row.worked ? "hover:bg-secondary/20" : "bg-muted/30 opacity-70 hover:opacity-100"
+                      row.worked
+                        ? "hover:bg-secondary/20"
+                        : "bg-muted/30 opacity-70 hover:opacity-100"
                     }`}
                   >
                     {/* Worked Toggle Checkbox */}
@@ -1351,7 +1355,11 @@ function ReportsPage() {
                             : "Mark as worked during period"
                         }
                       >
-                        {row.worked ? <Check className="h-4 w-4" /> : <Ban className="h-3.5 w-3.5" />}
+                        {row.worked ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Ban className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </td>
 
@@ -1432,7 +1440,10 @@ function ReportsPage() {
                       </div>
 
                       {/* 1-Click Accept Overtime button for this employee */}
-                      {(row.overtimeHours > 0 || row.pendingOvertimeHours > 0 || (row.dailyIntervals && row.dailyIntervals.some((d) => d.rawOvertimeHours > 0))) && (
+                      {(row.overtimeHours > 0 ||
+                        row.pendingOvertimeHours > 0 ||
+                        (row.dailyIntervals &&
+                          row.dailyIntervals.some((d) => d.rawOvertimeHours > 0))) && (
                         <button
                           type="button"
                           onClick={() => handleToggleRowOvertimeApproval(row.id)}
@@ -1449,7 +1460,8 @@ function ReportsPage() {
                             </>
                           ) : (
                             <>
-                              <ClockAlert className="h-3 w-3 text-amber-700" /> Accept OT (+{row.pendingOvertimeHours.toFixed(1)}h)
+                              <ClockAlert className="h-3 w-3 text-amber-700" /> Accept OT (+
+                              {row.pendingOvertimeHours.toFixed(1)}h)
                             </>
                           )}
                         </button>
@@ -1556,8 +1568,8 @@ function ReportsPage() {
                 {reportRows.length === 0 && (
                   <tr>
                     <td colSpan={11} className="p-10 text-center text-muted-foreground">
-                      No team members found for this company and period. Click &quot;+ Add Person&quot;
-                      to add custom entries.
+                      No team members found for this company and period. Click &quot;+ Add
+                      Person&quot; to add custom entries.
                     </td>
                   </tr>
                 )}
@@ -1599,7 +1611,9 @@ function ReportsPage() {
                     </td>
                     <td className="p-3">{row.department}</td>
                     <td className="p-3 font-mono text-xs">
-                      {row.firstIn ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone) : "—"}
+                      {row.firstIn
+                        ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone)
+                        : "—"}
                     </td>
                     <td className="p-3 font-mono text-xs">
                       {row.lastOut
@@ -1885,8 +1899,8 @@ function ReportsPage() {
 
             <div className="p-4 border-t bg-secondary/30 flex items-center justify-between">
               <div className="text-xs text-muted-foreground">
-                All edits immediately recalculate regular hours, overtime, and overtime dates in
-                the report table.
+                All edits immediately recalculate regular hours, overtime, and overtime dates in the
+                report table.
               </div>
               <button
                 type="button"
@@ -2184,7 +2198,9 @@ function ReportsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-muted-foreground mb-1">Remarks</label>
+                <label className="block text-xs font-bold text-muted-foreground mb-1">
+                  Remarks
+                </label>
                 <input
                   type="text"
                   value={newRowData.remarks}

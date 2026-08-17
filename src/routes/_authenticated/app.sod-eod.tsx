@@ -166,7 +166,7 @@ function EmployeeSodEodPage() {
             }))
             .filter(
               (report) =>
-                (report.companyId || employee.companyIds?.[0] || employee.companyId) ===
+                (report.companyId || employee?.companyIds?.[0] || employee?.companyId) ===
                 activeCompanyId,
             ),
         ),

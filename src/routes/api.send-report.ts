@@ -69,9 +69,7 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
           ${row.regularHours.toFixed(1)}h
         </td>
         <td style="padding: 10px 12px; text-align: right; font-size: 13px;">
-          <span style="font-weight: 600; color: ${
-            row.overtimeHours > 0 ? "#b45309" : "#64748b"
-          };">
+          <span style="font-weight: 600; color: ${row.overtimeHours > 0 ? "#b45309" : "#64748b"};">
             ${row.overtimeHours > 0 ? `+${row.overtimeHours.toFixed(1)}h` : "0h"}
           </span>
           ${overtimeDatesStr}
@@ -114,8 +112,8 @@ export const Route = createFileRoute("/api/send-report")({
           ok: true,
           configured: Boolean(
             process.env.N8N_REPORT_WEBHOOK_URL ||
-              process.env.N8N_LEAVE_WEBHOOK_URL ||
-              process.env.N8N_INVITE_WEBHOOK_URL,
+            process.env.N8N_LEAVE_WEBHOOK_URL ||
+            process.env.N8N_INVITE_WEBHOOK_URL,
           ),
         }),
       POST: async ({ request }) => {
@@ -165,7 +163,10 @@ export const Route = createFileRoute("/api/send-report")({
           .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
         if (validEmails.length === 0) {
-          return Response.json({ ok: false, error: "No valid recipient email addresses provided" }, { status: 400 });
+          return Response.json(
+            { ok: false, error: "No valid recipient email addresses provided" },
+            { status: 400 },
+          );
         }
 
         const companyName = body.companyName || body.company?.name || "SavyTimes";

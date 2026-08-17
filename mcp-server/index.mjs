@@ -145,7 +145,8 @@ const TOOLS = [
   },
   {
     name: "update_employee",
-    description: "Update details, shift times, status, regular hours, or company of an existing employee.",
+    description:
+      "Update details, shift times, status, regular hours, or company of an existing employee.",
     inputSchema: {
       type: "object",
       properties: {
@@ -242,7 +243,10 @@ const TOOLS = [
         employeeName: { type: "string" },
         companyId: { type: "string" },
         type: { type: "string", enum: ["in", "out", "extra_in", "extra_out"] },
-        timestampISO: { type: "string", description: "ISO date timestamp string (e.g. '2026-08-12T17:00:00Z')" },
+        timestampISO: {
+          type: "string",
+          description: "ISO date timestamp string (e.g. '2026-08-12T17:00:00Z')",
+        },
         source: { type: "string", enum: ["app", "auto"], description: "Source of punch" },
       },
       required: ["employeeId", "type", "timestampISO"],
@@ -635,7 +639,9 @@ rl.on("line", async (line) => {
           )}`,
         );
         if (!tokenRes.ok) {
-          throw new Error("Unauthorized: Invalid or revoked SAVYTIMES_ADMIN_TOKEN. Please check your key in the Admin AI & MCP tab.");
+          throw new Error(
+            "Unauthorized: Invalid or revoked SAVYTIMES_ADMIN_TOKEN. Please check your key in the Admin AI & MCP tab.",
+          );
         }
       }
 

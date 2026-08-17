@@ -13,7 +13,8 @@ export function calculateShiftMinutes(startTime: string, endTime: string): numbe
   if (!startTime || !endTime) return DEFAULT_REQUIRED_WORK_MINUTES;
   const [startH, startM] = startTime.split(":").map(Number);
   const [endH, endM] = endTime.split(":").map(Number);
-  if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return DEFAULT_REQUIRED_WORK_MINUTES;
+  if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM))
+    return DEFAULT_REQUIRED_WORK_MINUTES;
   let startMinutes = startH * 60 + startM;
   let endMinutes = endH * 60 + endM;
   if (endMinutes <= startMinutes) {
@@ -29,10 +30,7 @@ export function calculateTotalShiftMinutes(
   singleEnd?: string,
 ): number {
   if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
-    return shifts.reduce(
-      (sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime),
-      0,
-    );
+    return shifts.reduce((sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime), 0);
   }
   return calculateShiftMinutes(singleStart || "09:00", singleEnd || "17:00");
 }

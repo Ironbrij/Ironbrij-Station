@@ -30,7 +30,8 @@ function toFirestoreFields(obj: Record<string, unknown>) {
             if (typeof item === "string") return { stringValue: item };
             if (typeof item === "number") return { doubleValue: item };
             if (typeof item === "boolean") return { booleanValue: item };
-            if (typeof item === "object") return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
+            if (typeof item === "object")
+              return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
             return { stringValue: String(item) };
           }),
         },
@@ -70,7 +71,8 @@ function fromFirestoreFields(fields: Record<string, any>) {
 const MCP_TOOLS = [
   {
     name: "add_employee",
-    description: "Add a new employee / Virtual Assistant (V.A.) to SavyTimes with shift schedule, company, and department.",
+    description:
+      "Add a new employee / Virtual Assistant (V.A.) to SavyTimes with shift schedule, company, and department.",
     inputSchema: {
       type: "object",
       properties: {
@@ -88,7 +90,8 @@ const MCP_TOOLS = [
   },
   {
     name: "list_employees",
-    description: "List all employees and Virtual Assistants in SavyTimes with their details and shift hours.",
+    description:
+      "List all employees and Virtual Assistants in SavyTimes with their details and shift hours.",
     inputSchema: {
       type: "object",
       properties: {
@@ -131,7 +134,8 @@ const MCP_TOOLS = [
   },
   {
     name: "get_live_attendance",
-    description: "Get real-time live attendance status for all employees: who is currently punched in right now, who is off-shift, and who has missed punch-outs from previous days.",
+    description:
+      "Get real-time live attendance status for all employees: who is currently punched in right now, who is off-shift, and who has missed punch-outs from previous days.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -150,7 +154,8 @@ const MCP_TOOLS = [
   },
   {
     name: "list_leaves",
-    description: "List leave requests with optional status filtering (pending, approved, rejected).",
+    description:
+      "List leave requests with optional status filtering (pending, approved, rejected).",
     inputSchema: {
       type: "object",
       properties: {
@@ -179,7 +184,8 @@ async function validateAdminAuth(request: Request): Promise<boolean> {
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : auth.trim();
   if (!token) return false;
 
-  const masterKey = process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+  const masterKey =
+    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
   if (token === masterKey) return true;
 
   const { baseUrl, apiKey } = getFirestoreConfig();
@@ -212,7 +218,10 @@ export const Route = createFileRoute("/api/mcp")({
           return Response.json(
             {
               jsonrpc: "2.0",
-              error: { code: -32000, message: "Unauthorized: Invalid or missing SavyTimes Admin API Token" },
+              error: {
+                code: -32000,
+                message: "Unauthorized: Invalid or missing SavyTimes Admin API Token",
+              },
             },
             { status: 401 },
           );
@@ -222,7 +231,10 @@ export const Route = createFileRoute("/api/mcp")({
         try {
           body = await request.json();
         } catch {
-          return Response.json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" } }, { status: 400 });
+          return Response.json(
+            { jsonrpc: "2.0", error: { code: -32700, message: "Parse error" } },
+            { status: 400 },
+          );
         }
 
         const { id, method, params } = body;
@@ -271,36 +283,51 @@ export const Route = createFileRoute("/api/mcp")({
                 shiftEndTime: args.shiftEndTime || "17:00",
                 shiftTimezone: args.shiftTimezone || "Asia/Kathmandu",
                 isMultipleShift: false,
-                shifts: [{ startTime: args.shiftStartTime || "09:00", endTime: args.shiftEndTime || "17:00" }],
+                shifts: [
+                  {
+                    startTime: args.shiftStartTime || "09:00",
+                    endTime: args.shiftEndTime || "17:00",
+                  },
+                ],
                 createdAt: new Date().toISOString(),
               };
 
-              const res = await fetch(`${baseUrl}/employees/${docId}?key=${encodeURIComponent(apiKey)}`, {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
-              });
+              const res = await fetch(
+                `${baseUrl}/employees/${docId}?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
+                },
+              );
               if (!res.ok) throw new Error("Failed to add employee");
 
               return Response.json({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Employee '${args.name}' created with ID: ${docId}` }],
+                  content: [
+                    { type: "text", text: `Employee '${args.name}' created with ID: ${docId}` },
+                  ],
                 },
               });
             }
 
             // 2. LIST EMPLOYEES
             if (toolName === "list_employees") {
-              const res = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
                 ...fromFirestoreFields(doc.fields),
               }));
               const filtered = args.companyId
-                ? list.filter((e: any) => e.companyId === args.companyId || e.companyIds?.includes(args.companyId))
+                ? list.filter(
+                    (e: any) =>
+                      e.companyId === args.companyId || e.companyIds?.includes(args.companyId),
+                  )
                 : list;
 
               return Response.json({
@@ -316,13 +343,17 @@ export const Route = createFileRoute("/api/mcp")({
             if (toolName === "update_employee") {
               let targetId = args.id;
               if (!targetId) {
-                const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+                const listRes = await fetch(
+                  `${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+                );
                 if (listRes.ok) {
                   const listData = await listRes.json();
                   const matchedDoc = (listData.documents || []).find((doc: any) => {
                     const fields = fromFirestoreFields(doc.fields);
-                    if (args.email && fields.email?.toLowerCase() === args.email.toLowerCase()) return true;
-                    if (args.name && fields.name?.toLowerCase() === args.name.toLowerCase()) return true;
+                    if (args.email && fields.email?.toLowerCase() === args.email.toLowerCase())
+                      return true;
+                    if (args.name && fields.name?.toLowerCase() === args.name.toLowerCase())
+                      return true;
                     return false;
                   });
                   if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
@@ -336,30 +367,43 @@ export const Route = createFileRoute("/api/mcp")({
               if (args.email) fieldsToUpdate.email = args.email;
               if (args.jobTitle) fieldsToUpdate.jobTitle = args.jobTitle;
               if (args.status) fieldsToUpdate.status = args.status;
-              if (args.deptId || args.department) fieldsToUpdate.deptId = args.deptId || args.department;
+              if (args.deptId || args.department)
+                fieldsToUpdate.deptId = args.deptId || args.department;
               if (args.shiftStartTime) fieldsToUpdate.shiftStartTime = args.shiftStartTime;
               if (args.shiftEndTime) fieldsToUpdate.shiftEndTime = args.shiftEndTime;
 
-              const updateMask = Object.keys(fieldsToUpdate).map((k) => `updateMask.fieldPaths=${k}`).join("&");
-              const res = await fetch(`${baseUrl}/employees/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`, {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
-              });
+              const updateMask = Object.keys(fieldsToUpdate)
+                .map((k) => `updateMask.fieldPaths=${k}`)
+                .join("&");
+              const res = await fetch(
+                `${baseUrl}/employees/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+                },
+              );
               if (!res.ok) throw new Error("Failed to update employee in database.");
 
               return Response.json({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Employee ${targetId} successfully updated with: ${JSON.stringify(fieldsToUpdate)}` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Employee ${targetId} successfully updated with: ${JSON.stringify(fieldsToUpdate)}`,
+                    },
+                  ],
                 },
               });
             }
 
             // 3. LIST LEAVES
             if (toolName === "list_leaves") {
-              const res = await fetch(`${baseUrl}/leaveRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/leaveRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
@@ -400,7 +444,12 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Leave request ${args.leaveId} marked as ${args.decision}.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Leave request ${args.leaveId} marked as ${args.decision}.`,
+                    },
+                  ],
                 },
               });
             }
@@ -415,10 +464,12 @@ export const Route = createFileRoute("/api/mcp")({
               const empData = await empRes.json();
               const punchData = await punchRes.json();
 
-              const employees = (empData.documents || []).map((doc: any) => ({
-                id: doc.name.split("/").pop(),
-                ...fromFirestoreFields(doc.fields),
-              })).filter((e: any) => e.status !== "inactive");
+              const employees = (empData.documents || [])
+                .map((doc: any) => ({
+                  id: doc.name.split("/").pop(),
+                  ...fromFirestoreFields(doc.fields),
+                }))
+                .filter((e: any) => e.status !== "inactive");
 
               const punches = (punchData.documents || []).map((doc: any) => {
                 const id = doc.name.split("/").pop();
@@ -445,7 +496,12 @@ export const Route = createFileRoute("/api/mcp")({
 
                 const latest = empPunches[0];
                 if (!latest) {
-                  return { name: emp.name, email: emp.email, status: "OFF_SHIFT", isCurrentlyWorking: false };
+                  return {
+                    name: emp.name,
+                    email: emp.email,
+                    status: "OFF_SHIFT",
+                    isCurrentlyWorking: false,
+                  };
                 }
 
                 if (latest.type === "in") {
@@ -497,13 +553,22 @@ export const Route = createFileRoute("/api/mcp")({
               id,
               result: {
                 isError: true,
-                content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : "Execution failed"}` }],
+                content: [
+                  {
+                    type: "text",
+                    text: `Error: ${err instanceof Error ? err.message : "Execution failed"}`,
+                  },
+                ],
               },
             });
           }
         }
 
-        return Response.json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
+        return Response.json({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: "Method not found" },
+        });
       },
     },
   },

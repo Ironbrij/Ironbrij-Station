@@ -32,7 +32,8 @@ function toFirestoreFields(obj: Record<string, unknown>) {
             if (typeof item === "string") return { stringValue: item };
             if (typeof item === "number") return { doubleValue: item };
             if (typeof item === "boolean") return { booleanValue: item };
-            if (typeof item === "object") return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
+            if (typeof item === "object")
+              return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
             return { stringValue: String(item) };
           }),
         },
@@ -75,7 +76,8 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
   if (!token || token.length < 20) return { ok: false };
 
   // Master Admin Key
-  const masterKey = process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+  const masterKey =
+    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
   if (token === masterKey) {
     return { ok: true, adminEmail: "pabibek9@gmail.com" };
   }
@@ -84,9 +86,7 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
 
   // Check if token exists in Firestore adminApiTokens
   const tokenDocRes = await fetch(
-    `${baseUrl}/adminApiTokens/${encodeURIComponent(token)}?key=${encodeURIComponent(
-      apiKey,
-    )}`,
+    `${baseUrl}/adminApiTokens/${encodeURIComponent(token)}?key=${encodeURIComponent(apiKey)}`,
   );
   if (tokenDocRes.ok) {
     const data = await tokenDocRes.json();
@@ -98,9 +98,7 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
 
   // Fallback: check Firebase ID Token
   const identityResponse = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(
-      apiKey,
-    )}`,
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -193,7 +191,8 @@ function getOpenApiSchema(appUrl: string) {
             },
             params: {
               type: "object",
-              description: "Parameters for the action. Examples:\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId }\n• update_employee: { id or email, name, role, department, status, shiftStartTime, shiftEndTime }\n• create_company: { name, code, timezone, defaultShiftHours, clientEmail, ownerName, logoUrl }\n• update_company: { id or name, timezone, defaultShiftHours, clientEmail }\n• create_department: { name, code, companyId, description }\n• add_or_fix_punch: { employeeId, type: 'in'|'out', timestampISO }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• create_notice: { title, content, priority, companyId }",
+              description:
+                "Parameters for the action. Examples:\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId }\n• update_employee: { id or email, name, role, department, status, shiftStartTime, shiftEndTime }\n• create_company: { name, code, timezone, defaultShiftHours, clientEmail, ownerName, logoUrl }\n• update_company: { id or name, timezone, defaultShiftHours, clientEmail }\n• create_department: { name, code, companyId, description }\n• add_or_fix_punch: { employeeId, type: 'in'|'out', timestampISO }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• create_notice: { title, content, priority, companyId }",
             },
           },
         },
@@ -303,7 +302,10 @@ export const Route = createFileRoute("/api/mcp-action")({
               shiftTimezone: params.shiftTimezone || "Asia/Kathmandu",
               isMultipleShift: Boolean(params.isMultipleShift),
               shifts: params.shifts || [
-                { startTime: params.shiftStartTime || "09:00", endTime: params.shiftEndTime || "17:00" },
+                {
+                  startTime: params.shiftStartTime || "09:00",
+                  endTime: params.shiftEndTime || "17:00",
+                },
               ],
               createdAt: new Date().toISOString(),
             };
@@ -333,14 +335,11 @@ export const Route = createFileRoute("/api/mcp-action")({
               status: "pending",
               createdAt: new Date().toISOString(),
             };
-            await fetch(
-              `${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ fields: toFirestoreFields(inviteData) }),
-              },
-            );
+            await fetch(`${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ fields: toFirestoreFields(inviteData) }),
+            });
 
             // Dispatch invite email if webhook exists
             const appUrl = resolveAppUrl();
@@ -386,14 +385,18 @@ export const Route = createFileRoute("/api/mcp-action")({
             let targetEmail = params.email;
             let targetName = params.name;
 
-            const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+            const listRes = await fetch(
+              `${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+            );
             const listData = await listRes.json();
             const matchedDoc = (listData.documents || []).find((doc: any) => {
               const id = doc.name.split("/").pop();
               const fields = fromFirestoreFields(doc.fields);
               if (targetId && id === targetId) return true;
-              if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase()) return true;
-              if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase()) return true;
+              if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase())
+                return true;
+              if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase())
+                return true;
               return false;
             });
 
@@ -408,25 +411,22 @@ export const Route = createFileRoute("/api/mcp-action")({
             const inviteUrl = `${appUrl}/invite/${inviteToken}`;
 
             // Save invite doc
-            await fetch(
-              `${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  fields: toFirestoreFields({
-                    token: inviteToken,
-                    employeeId: empId,
-                    email: empFields.email,
-                    name: empFields.name,
-                    companyId: empFields.companyId || "default",
-                    role: empFields.jobTitle || "Virtual Assistant",
-                    status: "pending",
-                    createdAt: new Date().toISOString(),
-                  }),
+            await fetch(`${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                fields: toFirestoreFields({
+                  token: inviteToken,
+                  employeeId: empId,
+                  email: empFields.email,
+                  name: empFields.name,
+                  companyId: empFields.companyId || "default",
+                  role: empFields.jobTitle || "Virtual Assistant",
+                  status: "pending",
+                  createdAt: new Date().toISOString(),
                 }),
-              },
-            );
+              }),
+            });
 
             // Update employee with invite token
             await fetch(
@@ -477,7 +477,9 @@ export const Route = createFileRoute("/api/mcp-action")({
           if (action === "delete_employee") {
             let targetId = params.id || params.employeeId;
             if (!targetId && params.email) {
-              const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const matchedDoc = (listData.documents || []).find((doc: any) => {
                 const fields = fromFirestoreFields(doc.fields);
@@ -494,7 +496,10 @@ export const Route = createFileRoute("/api/mcp-action")({
               method: "DELETE",
             });
 
-            return Response.json({ ok: true, result: { message: `Employee '${targetId}' removed from SavyTimes.` } });
+            return Response.json({
+              ok: true,
+              result: { message: `Employee '${targetId}' removed from SavyTimes.` },
+            });
           }
 
           // 4. CREATE COMPANY
@@ -558,7 +563,8 @@ export const Route = createFileRoute("/api/mcp-action")({
             if (params.name) fieldsToUpdate.name = params.name;
             if (params.code) fieldsToUpdate.code = params.code;
             if (params.timezone) fieldsToUpdate.timezone = params.timezone;
-            if (params.defaultShiftHours) fieldsToUpdate.defaultShiftHours = params.defaultShiftHours;
+            if (params.defaultShiftHours)
+              fieldsToUpdate.defaultShiftHours = params.defaultShiftHours;
             if (params.workingDays) fieldsToUpdate.workingDays = params.workingDays;
             if (params.holidays) fieldsToUpdate.holidays = params.holidays;
             if (params.clientEmail) fieldsToUpdate.clientEmail = params.clientEmail;
@@ -581,7 +587,10 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             return Response.json({
               ok: true,
-              result: { message: `Company '${targetId}' updated successfully.`, updatedFields: fieldsToUpdate },
+              result: {
+                message: `Company '${targetId}' updated successfully.`,
+                updatedFields: fieldsToUpdate,
+              },
             });
           }
 
@@ -607,7 +616,11 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             return Response.json({
               ok: true,
-              result: { message: `Department '${params.name}' created with ID: ${docId}`, departmentId: docId, department: deptData },
+              result: {
+                message: `Department '${params.name}' created with ID: ${docId}`,
+                departmentId: docId,
+                department: deptData,
+              },
             });
           }
 
@@ -619,8 +632,13 @@ export const Route = createFileRoute("/api/mcp-action")({
               id: doc.name.split("/").pop(),
               ...fromFirestoreFields(doc.fields),
             }));
-            const filtered = params.companyId ? list.filter((d: any) => d.companyId === params.companyId) : list;
-            return Response.json({ ok: true, result: { count: filtered.length, departments: filtered } });
+            const filtered = params.companyId
+              ? list.filter((d: any) => d.companyId === params.companyId)
+              : list;
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, departments: filtered },
+            });
           }
 
           // 8. CREATE NOTICE / ANNOUNCEMENT
@@ -644,7 +662,10 @@ export const Route = createFileRoute("/api/mcp-action")({
               },
             );
             if (!res.ok) throw new Error("Failed to create notice");
-            return Response.json({ ok: true, result: { message: `Notice '${params.title}' posted successfully.`, noticeId: docId } });
+            return Response.json({
+              ok: true,
+              result: { message: `Notice '${params.title}' posted successfully.`, noticeId: docId },
+            });
           }
 
           // 9. LIST NOTICES
@@ -669,9 +690,15 @@ export const Route = createFileRoute("/api/mcp-action")({
               return { id, ...fromFirestoreFields(doc.fields) };
             });
             const filtered = params.companyId
-              ? list.filter((e: any) => e.companyId === params.companyId || e.companyIds?.includes(params.companyId))
+              ? list.filter(
+                  (e: any) =>
+                    e.companyId === params.companyId || e.companyIds?.includes(params.companyId),
+                )
               : list;
-            return Response.json({ ok: true, result: { count: filtered.length, employees: filtered } });
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, employees: filtered },
+            });
           }
 
           // 3. UPDATE EMPLOYEE
@@ -682,13 +709,17 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             // If ID is missing, search by email or name
             if (!targetId) {
-              const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               if (listRes.ok) {
                 const listData = await listRes.json();
                 const matchedDoc = (listData.documents || []).find((doc: any) => {
                   const fields = fromFirestoreFields(doc.fields);
-                  if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase()) return true;
-                  if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase()) return true;
+                  if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase())
+                    return true;
+                  if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase())
+                    return true;
                   return false;
                 });
                 if (matchedDoc) {
@@ -699,7 +730,10 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             if (!targetId) {
               return Response.json(
-                { ok: false, error: "Employee not found. Please provide employee ID or valid email address." },
+                {
+                  ok: false,
+                  error: "Employee not found. Please provide employee ID or valid email address.",
+                },
                 { status: 404 },
               );
             }
@@ -708,9 +742,11 @@ export const Route = createFileRoute("/api/mcp-action")({
             const fieldsToUpdate: Record<string, any> = {};
             if (params.name) fieldsToUpdate.name = params.name;
             if (params.email) fieldsToUpdate.email = params.email;
-            if (params.jobTitle || params.role) fieldsToUpdate.jobTitle = params.jobTitle || params.role;
+            if (params.jobTitle || params.role)
+              fieldsToUpdate.jobTitle = params.jobTitle || params.role;
             if (params.status) fieldsToUpdate.status = params.status;
-            if (params.deptId || params.department) fieldsToUpdate.deptId = params.deptId || params.department;
+            if (params.deptId || params.department)
+              fieldsToUpdate.deptId = params.deptId || params.department;
             if (params.companyId) {
               fieldsToUpdate.companyId = params.companyId;
               fieldsToUpdate.companyIds = [params.companyId];
@@ -754,9 +790,7 @@ export const Route = createFileRoute("/api/mcp-action")({
 
           // 4. LIST COMPANIES
           if (action === "list_companies") {
-            const res = await fetch(
-              `${baseUrl}/companies?key=${encodeURIComponent(apiKey)}`,
-            );
+            const res = await fetch(`${baseUrl}/companies?key=${encodeURIComponent(apiKey)}`);
             const data = await res.json();
             const list = (data.documents || []).map((doc: any) => {
               const id = doc.name.split("/").pop();
@@ -788,7 +822,10 @@ export const Route = createFileRoute("/api/mcp-action")({
               },
             );
             if (!res.ok) throw new Error("Failed to add punch");
-            return Response.json({ ok: true, result: { message: `Punch saved with ID ${docId}`, punch: punchData } });
+            return Response.json({
+              ok: true,
+              result: { message: `Punch saved with ID ${docId}`, punch: punchData },
+            });
           }
 
           // 6. LIST LEAVES
@@ -803,8 +840,12 @@ export const Route = createFileRoute("/api/mcp-action")({
             });
             let filtered = list;
             if (params.status) filtered = filtered.filter((l: any) => l.status === params.status);
-            if (params.employeeId) filtered = filtered.filter((l: any) => l.employeeId === params.employeeId);
-            return Response.json({ ok: true, result: { count: filtered.length, leaves: filtered } });
+            if (params.employeeId)
+              filtered = filtered.filter((l: any) => l.employeeId === params.employeeId);
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, leaves: filtered },
+            });
           }
 
           // 7. LIST PUNCHES (Sorted with readable timestamps)
@@ -827,19 +868,33 @@ export const Route = createFileRoute("/api/mcp-action")({
                 ...fields,
                 timestampISO,
                 date: timestampISO ? timestampISO.slice(0, 10) : "N/A",
-                time: timestampISO ? new Date(timestampISO).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }) : "N/A",
+                time: timestampISO
+                  ? new Date(timestampISO).toLocaleTimeString("en-AU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: true,
+                    })
+                  : "N/A",
               };
             });
 
             // Sort newest first
-            list.sort((a: any, b: any) => new Date(b.timestampISO || 0).getTime() - new Date(a.timestampISO || 0).getTime());
+            list.sort(
+              (a: any, b: any) =>
+                new Date(b.timestampISO || 0).getTime() - new Date(a.timestampISO || 0).getTime(),
+            );
 
             let filtered = list;
-            if (params.employeeId) filtered = filtered.filter((p: any) => p.employeeId === params.employeeId);
-            if (params.companyId) filtered = filtered.filter((p: any) => p.companyId === params.companyId);
+            if (params.employeeId)
+              filtered = filtered.filter((p: any) => p.employeeId === params.employeeId);
+            if (params.companyId)
+              filtered = filtered.filter((p: any) => p.companyId === params.companyId);
             if (params.date) filtered = filtered.filter((p: any) => p.date === params.date);
 
-            return Response.json({ ok: true, result: { count: filtered.length, punches: filtered } });
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, punches: filtered },
+            });
           }
 
           // 8. GET LIVE ATTENDANCE (Real-time live status for all employees)
@@ -852,10 +907,12 @@ export const Route = createFileRoute("/api/mcp-action")({
             const empData = await empRes.json();
             const punchData = await punchRes.json();
 
-            const employees = (empData.documents || []).map((doc: any) => ({
-              id: doc.name.split("/").pop(),
-              ...fromFirestoreFields(doc.fields),
-            })).filter((e: any) => e.status !== "inactive");
+            const employees = (empData.documents || [])
+              .map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              }))
+              .filter((e: any) => e.status !== "inactive");
 
             const punches = (punchData.documents || []).map((doc: any) => {
               const id = doc.name.split("/").pop();
@@ -911,7 +968,11 @@ export const Route = createFileRoute("/api/mcp-action")({
                     liveStatus: "PUNCHED_IN",
                     isCurrentlyPunchedIn: true,
                     punchedInAt: latestPunch.isoString,
-                    punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                    punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: true,
+                    }),
                     note: `Currently working (punched in at ${new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })})`,
                   };
                 } else {
@@ -942,13 +1003,17 @@ export const Route = createFileRoute("/api/mcp-action")({
                 liveStatus: "PUNCHED_OUT",
                 isCurrentlyPunchedIn: false,
                 punchedOutAt: latestPunch.isoString,
-                punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                punchTime: new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                }),
                 note: `Punched out at ${new Date(latestPunch.timeMillis).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
               };
             });
 
-            const currentlyWorking = liveStatusList.filter((e) => e.isCurrentlyPunchedIn);
-            const missedPunches = liveStatusList.filter((e) => e.liveStatus === "MISSED_PUNCH_OUT");
+            const currentlyWorking = liveStatusList.filter((e: any) => e.isCurrentlyPunchedIn);
+            const missedPunches = liveStatusList.filter((e: any) => e.liveStatus === "MISSED_PUNCH_OUT");
 
             return Response.json({
               ok: true,
@@ -985,7 +1050,10 @@ export const Route = createFileRoute("/api/mcp-action")({
               },
             );
             if (!res.ok) throw new Error("Failed to decide leave");
-            return Response.json({ ok: true, result: { message: `Leave request ${params.leaveId} marked as ${params.decision}.` } });
+            return Response.json({
+              ok: true,
+              result: { message: `Leave request ${params.leaveId} marked as ${params.decision}.` },
+            });
           }
 
           return Response.json({ ok: false, error: `Unknown action: ${action}` }, { status: 400 });

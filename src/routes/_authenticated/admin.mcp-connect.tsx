@@ -148,7 +148,9 @@ function McpConnectPage() {
         toast.error(data.error || "Action failed");
       }
     } catch (err) {
-      setTestResult(JSON.stringify({ error: err instanceof Error ? err.message : "Test failed" }, null, 2));
+      setTestResult(
+        JSON.stringify({ error: err instanceof Error ? err.message : "Test failed" }, null, 2),
+      );
       toast.error("Invalid JSON or network error");
     } finally {
       setIsTesting(false);
@@ -337,8 +339,9 @@ function McpConnectPage() {
                   Step 2: Add Actions & Import OpenAPI Schema
                 </div>
                 <p className="text-xs text-foreground">
-                  Scroll down to <strong>Actions</strong> and click <strong>Create new action</strong>.
-                  Click <strong>Import from URL</strong> and paste:
+                  Scroll down to <strong>Actions</strong> and click{" "}
+                  <strong>Create new action</strong>. Click <strong>Import from URL</strong> and
+                  paste:
                 </p>
                 <div className="flex items-center gap-2">
                   <input
@@ -373,9 +376,7 @@ function McpConnectPage() {
                     className="w-full font-mono text-xs px-3 py-2 rounded-lg border bg-muted/30"
                   />
                   <button
-                    onClick={() =>
-                      copyToClipboard(activeToken?.token || "", "Admin Token copied!")
-                    }
+                    onClick={() => copyToClipboard(activeToken?.token || "", "Admin Token copied!")}
                     className="px-3 py-2 rounded-lg bg-secondary text-xs font-bold flex items-center gap-1 shrink-0"
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy Key
@@ -389,7 +390,9 @@ function McpConnectPage() {
                   <Check className="h-4 w-4" /> Ready to Chat!
                 </div>
                 <p className="text-xs">
-                  You can now ask ChatGPT: <em>&quot;Add a new V.A. named Sarah with 9-5 shift in Sydney&quot;</em> or <em>&quot;Fix Maria&apos;s missed punch out on Monday&quot;</em>.
+                  You can now ask ChatGPT:{" "}
+                  <em>&quot;Add a new V.A. named Sarah with 9-5 shift in Sydney&quot;</em> or{" "}
+                  <em>&quot;Fix Maria&apos;s missed punch out on Monday&quot;</em>.
                 </p>
               </div>
             </div>
@@ -416,16 +419,15 @@ function McpConnectPage() {
                   <Terminal className="h-3.5 w-3.5" /> For Claude Code (1-Click Terminal Command)
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Run this command in your terminal on any computer to add SavyTimes MCP to Claude Code:
+                  Run this command in your terminal on any computer to add SavyTimes MCP to Claude
+                  Code:
                 </p>
                 <div className="relative">
                   <pre className="p-3 pr-24 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">
                     {claudeCodeCmd}
                   </pre>
                   <button
-                    onClick={() =>
-                      copyToClipboard(claudeCodeCmd, "Claude Code command copied!")
-                    }
+                    onClick={() => copyToClipboard(claudeCodeCmd, "Claude Code command copied!")}
                     className="absolute top-2 right-2 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1"
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy Command
@@ -439,16 +441,15 @@ function McpConnectPage() {
                   For Claude Desktop (`claude_desktop_config.json`)
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Paste this Remote MCP config into `%APPDATA%\Claude\claude_desktop_config.json` (no local files needed):
+                  Paste this Remote MCP config into `%APPDATA%\Claude\claude_desktop_config.json`
+                  (no local files needed):
                 </p>
                 <div className="relative">
                   <pre className="p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">
                     {claudeDesktopJson}
                   </pre>
                   <button
-                    onClick={() =>
-                      copyToClipboard(claudeDesktopJson, "Claude config JSON copied!")
-                    }
+                    onClick={() => copyToClipboard(claudeDesktopJson, "Claude config JSON copied!")}
                     className="absolute top-2 right-2 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1"
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy JSON

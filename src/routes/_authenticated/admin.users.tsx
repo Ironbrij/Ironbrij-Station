@@ -2,7 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { COMPANY_ID, type Company, type CountryCode, type Department, type Employee } from "@/lib/types";
+import {
+  COMPANY_ID,
+  type Company,
+  type CountryCode,
+  type Department,
+  type Employee,
+} from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";

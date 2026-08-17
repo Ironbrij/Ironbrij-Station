@@ -3,7 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { COMPANY_ID, type Company, type Department, type Employee, type LeaveRequest, type Punch } from "@/lib/types";
+import {
+  COMPANY_ID,
+  type Company,
+  type Department,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+} from "@/lib/types";
 import {
   computeEmployeeLateness,
   formatInTimezone,

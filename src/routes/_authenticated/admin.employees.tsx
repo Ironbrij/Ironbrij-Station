@@ -167,7 +167,9 @@ export function formatShiftRange(
   };
 
   if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
-    return shifts.map((s) => `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`).join(", ");
+    return shifts
+      .map((s) => `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`)
+      .join(", ");
   }
 
   const s = start || "09:00";
@@ -423,7 +425,13 @@ function EmployeesListPage() {
                   <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
                   <td className="p-3 text-xs whitespace-nowrap">
                     <div className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                      ⏰ {formatShiftRange(e.shiftStartTime, e.shiftEndTime, e.isMultipleShift, e.shifts)}
+                      ⏰{" "}
+                      {formatShiftRange(
+                        e.shiftStartTime,
+                        e.shiftEndTime,
+                        e.isMultipleShift,
+                        e.shifts,
+                      )}
                     </div>
                     <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
                       📅 {formatWorkingDaysSummary(e.workingDays)}
@@ -611,14 +619,22 @@ function CompanyMembershipSettings({
       shifts = undefined;
     }
 
-    const updatedStart = shifts?.[0]?.startTime ?? change.shiftStartTime ?? current.shiftStartTime ?? "09:00";
-    let updatedEnd = shifts?.[shifts.length - 1]?.endTime ?? change.shiftEndTime ?? current.shiftEndTime ?? "17:00";
+    const updatedStart =
+      shifts?.[0]?.startTime ?? change.shiftStartTime ?? current.shiftStartTime ?? "09:00";
+    let updatedEnd =
+      shifts?.[shifts.length - 1]?.endTime ??
+      change.shiftEndTime ??
+      current.shiftEndTime ??
+      "17:00";
 
     if (!isMulti && (change.shiftStartTime || change.requiredWorkMinutes)) {
       if (!change.shiftEndTime) {
         const hours = change.requiredWorkMinutes
           ? change.requiredWorkMinutes / 60
-          : calculateShiftMinutes(current.shiftStartTime || "09:00", current.shiftEndTime || "17:00") / 60;
+          : calculateShiftMinutes(
+              current.shiftStartTime || "09:00",
+              current.shiftEndTime || "17:00",
+            ) / 60;
         updatedEnd = calculateShiftEndTime(updatedStart, hours);
       }
     }
@@ -802,7 +818,12 @@ function CompanyMembershipSettings({
                               type="time"
                               value={s.startTime}
                               onChange={(e) =>
-                                handleShiftIntervalChange(companyId, idx, "startTime", e.target.value)
+                                handleShiftIntervalChange(
+                                  companyId,
+                                  idx,
+                                  "startTime",
+                                  e.target.value,
+                                )
                               }
                               className="rounded border bg-background px-1.5 py-1 text-xs font-semibold"
                             />
@@ -854,7 +875,10 @@ function CompanyMembershipSettings({
                     <ShiftHoursInput
                       hours={shiftHoursVal}
                       onChangeHours={(newHours) => {
-                        const newEnd = calculateShiftEndTime(membership.shiftStartTime || "09:00", newHours);
+                        const newEnd = calculateShiftEndTime(
+                          membership.shiftStartTime || "09:00",
+                          newHours,
+                        );
                         update(companyId, {
                           shiftStartTime: membership.shiftStartTime || "09:00",
                           shiftEndTime: newEnd,
