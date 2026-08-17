@@ -119,297 +119,108 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
 
 // OpenAPI 3.1.0 schema for ChatGPT Custom GPT Actions
 function getOpenApiSchema(appUrl: string) {
-  const jsonResponse = (desc: string) => ({
-    "200": {
-      description: desc,
-      content: {
-        "application/json": {
-          schema: {
-            type: "object",
-            properties: {
-              ok: { type: "boolean" },
-              result: { type: "object" },
-            },
-          },
-        },
-      },
-    },
-    "401": { description: "Unauthorized — invalid or missing admin API token" },
-  });
-
   return {
     openapi: "3.1.0",
     info: {
       title: "SavyTimes Admin API",
       description:
-        "Full admin API for SavyTimes (https://station.savykids.com). You can list employees, add new Virtual Assistants, fix missed punch-outs, view and approve/reject leave requests, list client companies, and more. All actions require a Bearer admin API token.",
-      version: "1.1.0",
+        "Full admin API for SavyTimes (https://station.savykids.com). Manage employees, create companies, send invites, fix punch-outs, approve leaves, manage departments, and post notices.",
+      version: "1.2.0",
     },
     servers: [{ url: appUrl }],
     paths: {
-      "/api/mcp-action#listEmployees": {
+      "/api/mcp-action": {
         post: {
-          summary: "List all employees and Virtual Assistants",
-          description:
-            "Returns all employees/VAs in SavyTimes with their name, email, shift times, company, department, and status. You can optionally filter by companyId.",
-          operationId: "listEmployees",
+          summary: "Execute SavyTimes Admin Tool Action",
+          description: "Execute administrative actions across all modules of SavyTimes.",
+          operationId: "executeAdminAction",
           requestBody: {
             required: true,
             content: {
               "application/json": {
                 schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["list_employees"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        companyId: { type: "string", description: "Optional company ID to filter by" },
-                      },
-                    },
-                  },
-                  required: ["action"],
+                  $ref: "#/components/schemas/AdminActionRequest",
                 },
               },
             },
           },
-          responses: jsonResponse("List of employees returned successfully"),
-        },
-      },
-      "/api/mcp-action#addEmployee": {
-        post: {
-          summary: "Add a new employee or Virtual Assistant",
-          description:
-            "Creates a new employee/VA record in SavyTimes. Provide their name, email, job title, shift start/end times, timezone, country, and company assignment.",
-          operationId: "addEmployee",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["add_employee"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", description: "Full name of the employee" },
-                        email: { type: "string", description: "Email address" },
-                        jobTitle: { type: "string", description: "Job title e.g. 'Virtual Assistant'" },
-                        companyId: { type: "string", description: "Company ID (defaults to 'default')" },
-                        shiftStartTime: { type: "string", description: "Shift start in HH:mm e.g. '09:00'" },
-                        shiftEndTime: { type: "string", description: "Shift end in HH:mm e.g. '17:00'" },
-                        shiftTimezone: { type: "string", description: "Timezone e.g. 'Australia/Sydney'" },
-                        country: { type: "string", enum: ["NP", "AU", "PH"], description: "Country code" },
-                      },
-                      required: ["name", "email"],
-                    },
+          responses: {
+            "200": {
+              description: "Action executed successfully",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AdminActionResponse",
                   },
-                  required: ["action", "params"],
                 },
               },
             },
-          },
-          responses: jsonResponse("Employee created successfully"),
-        },
-      },
-      "/api/mcp-action#updateEmployee": {
-        post: {
-          summary: "Update an existing employee's details",
-          description:
-            "Update name, email, job title, shift times, status (active/inactive), or company assignment for an employee. You must provide the employee's document ID.",
-          operationId: "updateEmployee",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["update_employee"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        id: { type: "string", description: "Employee document ID (get from listEmployees)" },
-                        name: { type: "string" },
-                        email: { type: "string" },
-                        jobTitle: { type: "string" },
-                        status: { type: "string", enum: ["active", "inactive"] },
-                        shiftStartTime: { type: "string" },
-                        shiftEndTime: { type: "string" },
-                      },
-                      required: ["id"],
-                    },
-                  },
-                  required: ["action", "params"],
-                },
-              },
+            "401": {
+              description: "Unauthorized - Missing or invalid Admin API Token",
             },
           },
-          responses: jsonResponse("Employee updated successfully"),
-        },
-      },
-      "/api/mcp-action#listLeaves": {
-        post: {
-          summary: "List leave requests (pending, approved, or rejected)",
-          description:
-            "Returns all leave requests from employees. You can filter by status (pending/approved/rejected) and/or employeeId. Use this to check who has submitted leave requests and their current approval status.",
-          operationId: "listLeaves",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["list_leaves"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        status: { type: "string", enum: ["pending", "approved", "rejected"], description: "Filter by leave status" },
-                        employeeId: { type: "string", description: "Filter by specific employee ID" },
-                      },
-                    },
-                  },
-                  required: ["action"],
-                },
-              },
-            },
-          },
-          responses: jsonResponse("Leave requests returned successfully"),
-        },
-      },
-      "/api/mcp-action#decideLeave": {
-        post: {
-          summary: "Approve or reject a leave request",
-          description:
-            "Approve or reject a pending leave request. Specify the leaveId, decision (approved/rejected), and optionally paymentStatus (paid/unpaid).",
-          operationId: "decideLeave",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["decide_leave"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        leaveId: { type: "string", description: "Leave request document ID (get from listLeaves)" },
-                        decision: { type: "string", enum: ["approved", "rejected"] },
-                        paymentStatus: { type: "string", enum: ["paid", "unpaid"], description: "Whether the leave is paid or unpaid" },
-                      },
-                      required: ["leaveId", "decision"],
-                    },
-                  },
-                  required: ["action", "params"],
-                },
-              },
-            },
-          },
-          responses: jsonResponse("Leave decision applied successfully"),
-        },
-      },
-      "/api/mcp-action#listCompanies": {
-        post: {
-          summary: "List all client companies",
-          description: "Returns all registered client companies in SavyTimes with their names, timezones, and settings.",
-          operationId: "listCompanies",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["list_companies"] },
-                    params: { type: "object" },
-                  },
-                  required: ["action"],
-                },
-              },
-            },
-          },
-          responses: jsonResponse("Companies returned successfully"),
-        },
-      },
-      "/api/mcp-action#listPunches": {
-        post: {
-          summary: "List punch-in/out attendance logs",
-          description:
-            "Returns punch-in and punch-out attendance logs. Filter by employeeId or companyId. Use this to check who punched in/out and when.",
-          operationId: "listPunches",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["list_punches"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        employeeId: { type: "string" },
-                        companyId: { type: "string" },
-                      },
-                    },
-                  },
-                  required: ["action"],
-                },
-              },
-            },
-          },
-          responses: jsonResponse("Punch logs returned successfully"),
-        },
-      },
-      "/api/mcp-action#addOrFixPunch": {
-        post: {
-          summary: "Add a manual punch or fix a missed punch-out",
-          description:
-            "Record a manual punch-in or punch-out for an employee, or fix a missed punch-out. Provide employeeId, type (in/out), and the timestamp in ISO format.",
-          operationId: "addOrFixPunch",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    action: { type: "string", enum: ["add_or_fix_punch"] },
-                    params: {
-                      type: "object",
-                      properties: {
-                        employeeId: { type: "string", description: "Employee ID" },
-                        employeeName: { type: "string", description: "Employee name (optional)" },
-                        type: { type: "string", enum: ["in", "out"], description: "Punch type" },
-                        timestampISO: { type: "string", description: "ISO timestamp e.g. '2026-08-12T17:00:00Z'" },
-                        companyId: { type: "string" },
-                      },
-                      required: ["employeeId", "type", "timestampISO"],
-                    },
-                  },
-                  required: ["action", "params"],
-                },
-              },
-            },
-          },
-          responses: jsonResponse("Punch recorded successfully"),
         },
       },
     },
     components: {
+      schemas: {
+        AdminActionRequest: {
+          type: "object",
+          required: ["action"],
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_employees",
+                "add_employee",
+                "send_employee_invite",
+                "update_employee",
+                "delete_employee",
+                "create_company",
+                "update_company",
+                "list_companies",
+                "create_department",
+                "list_departments",
+                "add_or_fix_punch",
+                "list_punches",
+                "list_leaves",
+                "decide_leave",
+                "create_notice",
+                "list_notices",
+              ],
+              description: "The admin tool action to execute.",
+            },
+            params: {
+              type: "object",
+              description: "Parameters for the action. Examples:\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId }\n• update_employee: { id or email, name, role, department, status, shiftStartTime, shiftEndTime }\n• create_company: { name, code, timezone, defaultShiftHours, clientEmail, ownerName, logoUrl }\n• update_company: { id or name, timezone, defaultShiftHours, clientEmail }\n• create_department: { name, code, companyId, description }\n• add_or_fix_punch: { employeeId, type: 'in'|'out', timestampISO }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• create_notice: { title, content, priority, companyId }",
+            },
+          },
+        },
+        AdminActionResponse: {
+          type: "object",
+          properties: {
+            ok: {
+              type: "boolean",
+            },
+            result: {
+              type: "object",
+            },
+          },
+        },
+      },
       securitySchemes: {
         BearerAuth: {
           type: "http",
           scheme: "bearer",
-          description:
-            "SavyTimes Admin API Token. Generate one from the Admin > AI & MCP tab at https://station.savykids.com/admin/mcp-connect",
+          description: "SavyTimes Admin API Token (st_adm_...)",
         },
       },
     },
-    security: [{ BearerAuth: [] }],
+    security: [
+      {
+        BearerAuth: [],
+      },
+    ],
   };
 }
 
@@ -468,20 +279,24 @@ export const Route = createFileRoute("/api/mcp-action")({
         const { baseUrl, apiKey } = getFirestoreConfig();
 
         try {
-          // 1. ADD EMPLOYEE
+          // 1. ADD EMPLOYEE (with automatic invite token and email dispatch)
           if (action === "add_employee") {
             const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const companyId = params.companyId || "default";
+
             const employeeData = {
               name: params.name,
               email: params.email,
-              companyId: params.companyId || "default",
-              companyIds: [params.companyId || "default"],
-              jobTitle: params.jobTitle || "Virtual Assistant",
-              deptId: params.deptId || "",
+              companyId,
+              companyIds: [companyId],
+              jobTitle: params.jobTitle || params.role || "Virtual Assistant",
+              deptId: params.deptId || params.department || "",
               country: params.country || "NP",
               state: params.state || "N/A",
               status: "active",
               inviteStatus: "pending",
+              inviteToken,
               shiftStartTime: params.shiftStartTime || "09:00",
               shiftEndTime: params.shiftEndTime || "17:00",
               shiftTimezone: params.shiftTimezone || "Asia/Kathmandu",
@@ -492,6 +307,7 @@ export const Route = createFileRoute("/api/mcp-action")({
               createdAt: new Date().toISOString(),
             };
 
+            // Save employee document
             const res = await fetch(
               `${baseUrl}/employees/${docId}?key=${encodeURIComponent(apiKey)}`,
               {
@@ -504,10 +320,341 @@ export const Route = createFileRoute("/api/mcp-action")({
               const err = await res.json();
               throw new Error(err.error?.message || "Failed to add employee");
             }
+
+            // Save invite document
+            const inviteData = {
+              token: inviteToken,
+              employeeId: docId,
+              email: params.email,
+              name: params.name,
+              companyId,
+              role: employeeData.jobTitle,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            };
+            await fetch(
+              `${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(inviteData) }),
+              },
+            );
+
+            // Dispatch invite email if webhook exists
+            const appUrl = resolveAppUrl();
+            const inviteUrl = `${appUrl}/invite/${inviteToken}`;
+            const webhookUrl = process.env.N8N_INVITE_WEBHOOK_URL;
+            if (webhookUrl && params.sendInviteEmail !== false) {
+              try {
+                await fetch(webhookUrl, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    employeeId: docId,
+                    employeeName: params.name,
+                    employeeEmail: params.email,
+                    inviteToken,
+                    inviteUrl,
+                    companyName: companyId,
+                    jobTitle: employeeData.jobTitle,
+                    shiftStartTime: employeeData.shiftStartTime,
+                    shiftEndTime: employeeData.shiftEndTime,
+                  }),
+                });
+              } catch {
+                // non-blocking
+              }
+            }
+
             return Response.json({
               ok: true,
-              result: { message: `Employee '${params.name}' added successfully.`, employeeId: docId, data: employeeData },
+              result: {
+                message: `Employee '${params.name}' successfully added and invite generated!`,
+                employeeId: docId,
+                inviteUrl,
+                inviteToken,
+                employee: employeeData,
+              },
             });
+          }
+
+          // 2. SEND / RESEND EMPLOYEE INVITE
+          if (action === "send_employee_invite") {
+            let targetId = params.id || params.employeeId;
+            let targetEmail = params.email;
+            let targetName = params.name;
+
+            const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+            const listData = await listRes.json();
+            const matchedDoc = (listData.documents || []).find((doc: any) => {
+              const id = doc.name.split("/").pop();
+              const fields = fromFirestoreFields(doc.fields);
+              if (targetId && id === targetId) return true;
+              if (targetEmail && fields.email?.toLowerCase() === targetEmail.toLowerCase()) return true;
+              if (targetName && fields.name?.toLowerCase() === targetName.toLowerCase()) return true;
+              return false;
+            });
+
+            if (!matchedDoc) {
+              return Response.json({ ok: false, error: "Employee not found." }, { status: 404 });
+            }
+
+            const empId = matchedDoc.name.split("/").pop();
+            const empFields = fromFirestoreFields(matchedDoc.fields);
+            const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const appUrl = resolveAppUrl();
+            const inviteUrl = `${appUrl}/invite/${inviteToken}`;
+
+            // Save invite doc
+            await fetch(
+              `${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  fields: toFirestoreFields({
+                    token: inviteToken,
+                    employeeId: empId,
+                    email: empFields.email,
+                    name: empFields.name,
+                    companyId: empFields.companyId || "default",
+                    role: empFields.jobTitle || "Virtual Assistant",
+                    status: "pending",
+                    createdAt: new Date().toISOString(),
+                  }),
+                }),
+              },
+            );
+
+            // Update employee with invite token
+            await fetch(
+              `${baseUrl}/employees/${empId}?updateMask.fieldPaths=inviteToken&updateMask.fieldPaths=inviteStatus&key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  fields: toFirestoreFields({ inviteToken, inviteStatus: "pending" }),
+                }),
+              },
+            );
+
+            // Dispatch email webhook
+            const webhookUrl = process.env.N8N_INVITE_WEBHOOK_URL;
+            if (webhookUrl) {
+              try {
+                await fetch(webhookUrl, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    employeeId: empId,
+                    employeeName: empFields.name,
+                    employeeEmail: empFields.email,
+                    inviteToken,
+                    inviteUrl,
+                    companyName: empFields.companyId || "default",
+                    jobTitle: empFields.jobTitle,
+                  }),
+                });
+              } catch {
+                // non-blocking
+              }
+            }
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Invitation generated and dispatched for ${empFields.name} (${empFields.email})!`,
+                employeeId: empId,
+                inviteUrl,
+                inviteToken,
+              },
+            });
+          }
+
+          // 3. DELETE / DEACTIVATE EMPLOYEE
+          if (action === "delete_employee") {
+            let targetId = params.id || params.employeeId;
+            if (!targetId && params.email) {
+              const listRes = await fetch(`${baseUrl}/employees?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listData = await listRes.json();
+              const matchedDoc = (listData.documents || []).find((doc: any) => {
+                const fields = fromFirestoreFields(doc.fields);
+                return fields.email?.toLowerCase() === params.email.toLowerCase();
+              });
+              if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+            }
+
+            if (!targetId) {
+              return Response.json({ ok: false, error: "Employee not found." }, { status: 404 });
+            }
+
+            await fetch(`${baseUrl}/employees/${targetId}?key=${encodeURIComponent(apiKey)}`, {
+              method: "DELETE",
+            });
+
+            return Response.json({ ok: true, result: { message: `Employee '${targetId}' removed from SavyTimes.` } });
+          }
+
+          // 4. CREATE COMPANY
+          if (action === "create_company") {
+            const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const companyData = {
+              name: params.name,
+              code: params.code || params.name.slice(0, 4).toUpperCase(),
+              timezone: params.timezone || "Australia/Sydney",
+              defaultShiftHours: params.defaultShiftHours || 8,
+              workingDays: params.workingDays || [1, 2, 3, 4, 5],
+              holidays: params.holidays || [],
+              clientEmail: params.clientEmail || params.email || "",
+              ownerName: params.ownerName || params.clientName || "",
+              logoUrl: params.logoUrl || "",
+              notes: params.notes || "",
+              createdAt: new Date().toISOString(),
+            };
+
+            const res = await fetch(
+              `${baseUrl}/companies/${docId}?key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
+              },
+            );
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error?.message || "Failed to create company");
+            }
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Client company '${params.name}' created successfully with ID: ${docId}`,
+                companyId: docId,
+                company: companyData,
+              },
+            });
+          }
+
+          // 5. UPDATE COMPANY
+          if (action === "update_company") {
+            let targetId = params.id || params.companyId;
+            if (!targetId && params.name) {
+              const listRes = await fetch(`${baseUrl}/companies?key=${encodeURIComponent(apiKey)}`);
+              const listData = await listRes.json();
+              const matchedDoc = (listData.documents || []).find((doc: any) => {
+                const fields = fromFirestoreFields(doc.fields);
+                return fields.name?.toLowerCase() === params.name.toLowerCase();
+              });
+              if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+            }
+
+            if (!targetId) {
+              return Response.json({ ok: false, error: "Company not found." }, { status: 404 });
+            }
+
+            const fieldsToUpdate: Record<string, any> = {};
+            if (params.name) fieldsToUpdate.name = params.name;
+            if (params.code) fieldsToUpdate.code = params.code;
+            if (params.timezone) fieldsToUpdate.timezone = params.timezone;
+            if (params.defaultShiftHours) fieldsToUpdate.defaultShiftHours = params.defaultShiftHours;
+            if (params.workingDays) fieldsToUpdate.workingDays = params.workingDays;
+            if (params.holidays) fieldsToUpdate.holidays = params.holidays;
+            if (params.clientEmail) fieldsToUpdate.clientEmail = params.clientEmail;
+            if (params.ownerName) fieldsToUpdate.ownerName = params.ownerName;
+            if (params.logoUrl) fieldsToUpdate.logoUrl = params.logoUrl;
+
+            const updateMask = Object.keys(fieldsToUpdate)
+              .map((k) => `updateMask.fieldPaths=${k}`)
+              .join("&");
+
+            const res = await fetch(
+              `${baseUrl}/companies/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+              },
+            );
+            if (!res.ok) throw new Error("Failed to update company");
+
+            return Response.json({
+              ok: true,
+              result: { message: `Company '${targetId}' updated successfully.`, updatedFields: fieldsToUpdate },
+            });
+          }
+
+          // 6. CREATE DEPARTMENT
+          if (action === "create_department") {
+            const docId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const deptData = {
+              name: params.name,
+              code: params.code || params.name.slice(0, 3).toUpperCase(),
+              companyId: params.companyId || "default",
+              description: params.description || "",
+              createdAt: new Date().toISOString(),
+            };
+            const res = await fetch(
+              `${baseUrl}/departments/${docId}?key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+              },
+            );
+            if (!res.ok) throw new Error("Failed to create department");
+
+            return Response.json({
+              ok: true,
+              result: { message: `Department '${params.name}' created with ID: ${docId}`, departmentId: docId, department: deptData },
+            });
+          }
+
+          // 7. LIST DEPARTMENTS
+          if (action === "list_departments") {
+            const res = await fetch(`${baseUrl}/departments?key=${encodeURIComponent(apiKey)}`);
+            const data = await res.json();
+            const list = (data.documents || []).map((doc: any) => ({
+              id: doc.name.split("/").pop(),
+              ...fromFirestoreFields(doc.fields),
+            }));
+            const filtered = params.companyId ? list.filter((d: any) => d.companyId === params.companyId) : list;
+            return Response.json({ ok: true, result: { count: filtered.length, departments: filtered } });
+          }
+
+          // 8. CREATE NOTICE / ANNOUNCEMENT
+          if (action === "create_notice") {
+            const docId = `notice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const noticeData = {
+              title: params.title,
+              content: params.content,
+              companyId: params.companyId || "default",
+              priority: params.priority || "normal",
+              targetDepartments: params.targetDepartments || [],
+              createdBy: authResult.adminEmail || "Admin",
+              createdAt: new Date().toISOString(),
+            };
+            const res = await fetch(
+              `${baseUrl}/notices/${docId}?key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields(noticeData) }),
+              },
+            );
+            if (!res.ok) throw new Error("Failed to create notice");
+            return Response.json({ ok: true, result: { message: `Notice '${params.title}' posted successfully.`, noticeId: docId } });
+          }
+
+          // 9. LIST NOTICES
+          if (action === "list_notices") {
+            const res = await fetch(`${baseUrl}/notices?key=${encodeURIComponent(apiKey)}`);
+            const data = await res.json();
+            const list = (data.documents || []).map((doc: any) => ({
+              id: doc.name.split("/").pop(),
+              ...fromFirestoreFields(doc.fields),
+            }));
+            return Response.json({ ok: true, result: { count: list.length, notices: list } });
           }
 
           // 2. LIST EMPLOYEES
