@@ -2,13 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type {
-  DailyReport,
-  Department,
-  Employee,
-  LeaveRequest,
-  Punch,
-  ReportingSettings,
+import {
+  COMPANY_ID,
+  type Company,
+  type DailyReport,
+  type Department,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+  type ReportingSettings,
 } from "@/lib/types";
 import {
   DEFAULT_REPORTING_SETTINGS,

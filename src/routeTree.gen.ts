@@ -18,7 +18,10 @@ import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
+import { Route as ApiMcpRouteImport } from './routes/api.mcp'
+import { Route as ApiMcpActionRouteImport } from './routes/api.mcp-action'
 import { Route as ApiPunchOutReminderRouteImport } from './routes/api.punch-out-reminder'
+import { Route as ApiSendReportRouteImport } from './routes/api.send-report'
 import { Route as ApiSodMentionNotificationRouteImport } from './routes/api.sod-mention-notification'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
@@ -27,6 +30,7 @@ import { Route as AuthenticatedAdminDepartmentsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminEmployeesRouteImport } from './routes/_authenticated/admin.employees'
 import { Route as AuthenticatedAdminLateRouteImport } from './routes/_authenticated/admin.late'
 import { Route as AuthenticatedAdminLeavesRouteImport } from './routes/_authenticated/admin.leaves'
+import { Route as AuthenticatedAdminMcpConnectRouteImport } from './routes/_authenticated/admin.mcp-connect'
 import { Route as AuthenticatedAdminNoticesRouteImport } from './routes/_authenticated/admin.notices'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin.reports'
 import { Route as AuthenticatedAdminSodEodRouteImport } from './routes/_authenticated/admin.sod-eod'
@@ -85,9 +89,24 @@ const ApiLeaveNotificationRoute = ApiLeaveNotificationRouteImport.update({
   path: '/api/leave-notification',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpActionRoute = ApiMcpActionRouteImport.update({
+  id: '/api/mcp-action',
+  path: '/api/mcp-action',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPunchOutReminderRoute = ApiPunchOutReminderRouteImport.update({
   id: '/api/punch-out-reminder',
   path: '/api/punch-out-reminder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSendReportRoute = ApiSendReportRouteImport.update({
+  id: '/api/send-report',
+  path: '/api/send-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSodMentionNotificationRoute =
@@ -133,6 +152,12 @@ const AuthenticatedAdminLeavesRoute =
   AuthenticatedAdminLeavesRouteImport.update({
     id: '/leaves',
     path: '/leaves',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminMcpConnectRoute =
+  AuthenticatedAdminMcpConnectRouteImport.update({
+    id: '/mcp-connect',
+    path: '/mcp-connect',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminNoticesRoute =
@@ -211,7 +236,10 @@ export interface FileRoutesByFullPath {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/mcp': typeof ApiMcpRoute
+  '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -219,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/admin/employees': typeof AuthenticatedAdminEmployeesRouteWithChildren
   '/admin/late': typeof AuthenticatedAdminLateRoute
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
+  '/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
@@ -241,7 +270,10 @@ export interface FileRoutesByTo {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/mcp': typeof ApiMcpRoute
+  '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -249,6 +281,7 @@ export interface FileRoutesByTo {
   '/admin/employees': typeof AuthenticatedAdminEmployeesRouteWithChildren
   '/admin/late': typeof AuthenticatedAdminLateRoute
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
+  '/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
@@ -274,7 +307,10 @@ export interface FileRoutesById {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/mcp': typeof ApiMcpRoute
+  '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -282,6 +318,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/employees': typeof AuthenticatedAdminEmployeesRouteWithChildren
   '/_authenticated/admin/late': typeof AuthenticatedAdminLateRoute
   '/_authenticated/admin/leaves': typeof AuthenticatedAdminLeavesRoute
+  '/_authenticated/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/_authenticated/admin/notices': typeof AuthenticatedAdminNoticesRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
@@ -307,7 +344,10 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/mcp'
+    | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/admin/company'
@@ -315,6 +355,7 @@ export interface FileRouteTypes {
     | '/admin/employees'
     | '/admin/late'
     | '/admin/leaves'
+    | '/admin/mcp-connect'
     | '/admin/notices'
     | '/admin/reports'
     | '/admin/sod-eod'
@@ -337,7 +378,10 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/mcp'
+    | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/admin/company'
@@ -345,6 +389,7 @@ export interface FileRouteTypes {
     | '/admin/employees'
     | '/admin/late'
     | '/admin/leaves'
+    | '/admin/mcp-connect'
     | '/admin/notices'
     | '/admin/reports'
     | '/admin/sod-eod'
@@ -369,7 +414,10 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/mcp'
+    | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/invite/$token'
     | '/_authenticated/admin/company'
@@ -377,6 +425,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/employees'
     | '/_authenticated/admin/late'
     | '/_authenticated/admin/leaves'
+    | '/_authenticated/admin/mcp-connect'
     | '/_authenticated/admin/notices'
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/sod-eod'
@@ -400,7 +449,10 @@ export interface RootRouteChildren {
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
+  ApiMcpRoute: typeof ApiMcpRoute
+  ApiMcpActionRoute: typeof ApiMcpActionRoute
   ApiPunchOutReminderRoute: typeof ApiPunchOutReminderRoute
+  ApiSendReportRoute: typeof ApiSendReportRoute
   ApiSodMentionNotificationRoute: typeof ApiSodMentionNotificationRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
@@ -470,11 +522,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLeaveNotificationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp-action': {
+      id: '/api/mcp-action'
+      path: '/api/mcp-action'
+      fullPath: '/api/mcp-action'
+      preLoaderRoute: typeof ApiMcpActionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/punch-out-reminder': {
       id: '/api/punch-out-reminder'
       path: '/api/punch-out-reminder'
       fullPath: '/api/punch-out-reminder'
       preLoaderRoute: typeof ApiPunchOutReminderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/send-report': {
+      id: '/api/send-report'
+      path: '/api/send-report'
+      fullPath: '/api/send-report'
+      preLoaderRoute: typeof ApiSendReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/sod-mention-notification': {
@@ -531,6 +604,13 @@ declare module '@tanstack/react-router' {
       path: '/leaves'
       fullPath: '/admin/leaves'
       preLoaderRoute: typeof AuthenticatedAdminLeavesRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/mcp-connect': {
+      id: '/_authenticated/admin/mcp-connect'
+      path: '/mcp-connect'
+      fullPath: '/admin/mcp-connect'
+      preLoaderRoute: typeof AuthenticatedAdminMcpConnectRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/notices': {
@@ -640,6 +720,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminEmployeesRoute: typeof AuthenticatedAdminEmployeesRouteWithChildren
   AuthenticatedAdminLateRoute: typeof AuthenticatedAdminLateRoute
   AuthenticatedAdminLeavesRoute: typeof AuthenticatedAdminLeavesRoute
+  AuthenticatedAdminMcpConnectRoute: typeof AuthenticatedAdminMcpConnectRoute
   AuthenticatedAdminNoticesRoute: typeof AuthenticatedAdminNoticesRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
   AuthenticatedAdminSodEodRoute: typeof AuthenticatedAdminSodEodRoute
@@ -655,6 +736,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
     AuthenticatedAdminEmployeesRouteWithChildren,
   AuthenticatedAdminLateRoute: AuthenticatedAdminLateRoute,
   AuthenticatedAdminLeavesRoute: AuthenticatedAdminLeavesRoute,
+  AuthenticatedAdminMcpConnectRoute: AuthenticatedAdminMcpConnectRoute,
   AuthenticatedAdminNoticesRoute: AuthenticatedAdminNoticesRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
   AuthenticatedAdminSodEodRoute: AuthenticatedAdminSodEodRoute,
@@ -709,7 +791,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,
+  ApiMcpRoute: ApiMcpRoute,
+  ApiMcpActionRoute: ApiMcpActionRoute,
   ApiPunchOutReminderRoute: ApiPunchOutReminderRoute,
+  ApiSendReportRoute: ApiSendReportRoute,
   ApiSodMentionNotificationRoute: ApiSodMentionNotificationRoute,
   InviteTokenRoute: InviteTokenRoute,
 }

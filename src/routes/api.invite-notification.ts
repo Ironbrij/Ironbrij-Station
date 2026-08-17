@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import { resolveAppUrl } from "@/lib/app-url";
 
 type InviteNotificationInput = {
   employeeId: string;
@@ -93,7 +94,7 @@ export const Route = createFileRoute("/api/invite-notification")({
 
         const company = body.company || { name: body.companyName?.trim() || "SavyTimes" };
         const companyName = company.name?.trim() || "SavyTimes";
-        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const appUrl = resolveAppUrl(request.url);
         const inviteUrl = `${appUrl}/invite/${body.inviteToken}`;
         const subject = `You're invited to ${companyName}`;
         const shift =

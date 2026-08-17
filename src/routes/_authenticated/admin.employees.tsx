@@ -20,6 +20,7 @@ import {
   type Department,
   type Employee,
   type Punch,
+  type ShiftInterval,
 } from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import { getStateOptions, normalizeState } from "@/lib/states";
@@ -29,6 +30,9 @@ import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding, findCompanyById } from "@/lib/email-branding";
 import {
   buildCompanyMembership,
+  calculateShiftEndTime,
+  calculateShiftMinutes,
+  calculateTotalShiftMinutes,
   getCompanyMembership,
   getEmployeeCompanyIds,
 } from "@/lib/company-context";
@@ -147,17 +151,26 @@ export function WorkingDaysPicker({
   );
 }
 
-function formatShiftRange(start?: string, end?: string): string {
-  const s = start || "09:00";
-  const e = end || "17:00";
-
+export function formatShiftRange(
+  start?: string,
+  end?: string,
+  isMultipleShift?: boolean,
+  shifts?: ShiftInterval[],
+): string {
   const formatTimeStr = (tStr: string) => {
+    if (!tStr) return "";
     const [h, m] = tStr.split(":").map(Number);
     const d = new Date();
-    d.setHours(h || 9, m || 0, 0, 0);
+    d.setHours(isNaN(h) ? 9 : h, isNaN(m) ? 0 : m, 0, 0);
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
   };
 
+  if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
+    return shifts.map((s) => `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`).join(", ");
+  }
+
+  const s = start || "09:00";
+  const e = end || "17:00";
   return `${formatTimeStr(s)} - ${formatTimeStr(e)}`;
 }
 
@@ -185,36 +198,36 @@ function EmployeesPage() {
 }
 
 function EmployeesListPage() {
-  const [depts, setDepts] = useState<Department[]>([]);
   const [employees, setEmployees] = useState<Employee[] | null>(null);
+  const [depts, setDepts] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
-  const [filterDept, setFilterDept] = useState("");
-  const [filterCompany, setFilterCompany] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [empToPromote, setEmpToPromote] = useState<Employee | null>(null);
 
-  const { user, loading: authLoading } = useAuth();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterCompany, setFilterCompany] = useState<string>("all");
+  const [filterDept, setFilterDept] = useState<string>("");
 
   useEffect(() => {
-    const unsubCompanies = onSnapshot(collection(db(), "companies"), (s) =>
-      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
+    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snap) =>
+      setCompanies(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Company, "id">),
+        })),
+      ),
     );
-
-    const unsubDepts = onSnapshot(collection(db(), "departments"), (s) =>
-      setDepts(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
+    const unsubDepts = onSnapshot(collection(db(), "departments"), (snap) =>
+      setDepts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
     );
-
-    const unsubEmps = onSnapshot(collection(db(), "employees"), (s) =>
-      setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
+    const unsubEmps = onSnapshot(collection(db(), "employees"), (snap) =>
+      setEmployees(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
-
-    const unsubPunches = onSnapshot(collection(db(), "punches"), (s) =>
-      setPunches(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
+    const unsubPunches = onSnapshot(collection(db(), "punches"), (snap) =>
+      setPunches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
     );
-
     return () => {
       unsubCompanies();
       unsubDepts();
@@ -262,16 +275,6 @@ function EmployeesListPage() {
     }
   }
 
-  async function handleToggleStatus(emp: Employee) {
-    const newStatus = emp.status === "active" ? "inactive" : "active";
-    try {
-      await updateDoc(doc(db(), "employees", emp.id), { status: newStatus });
-      toast.success(`${emp.name} marked as ${newStatus}`);
-    } catch (err) {
-      toast.error("Failed to update status: " + (err as Error).message);
-    }
-  }
-
   async function confirmDeleteEmployee() {
     if (!empToDelete) return;
     try {
@@ -283,7 +286,6 @@ function EmployeesListPage() {
     }
   }
 
-  // Deduplicate employees by email (prefer accepted over pending to hide temp invitation docs once accepted)
   const uniqueEmps = new Map<string, Employee>();
   (employees ?? []).forEach((e) => {
     const emailStr = (e.email || e.id || "").toLowerCase().trim();
@@ -354,7 +356,6 @@ function EmployeesListPage() {
           value={filterCompany}
           onChange={(e) => setFilterCompany(e.target.value)}
           className="rounded-md border bg-background px-3 py-2 text-sm font-semibold sm:w-48 cursor-pointer"
-          aria-label="Filter employees by company"
         >
           <option value="all">All companies ({companies.length})</option>
           {companies.map((c) => (
@@ -391,7 +392,6 @@ function EmployeesListPage() {
                 <th className="p-3">Name</th>
                 <th className="p-3">Title</th>
                 <th className="p-3">Department</th>
-                <th className="p-3">Country</th>
                 <th className="p-3">Shift Hours</th>
                 <th className="p-3">Status</th>
                 <th className="p-3">Invite Link</th>
@@ -401,8 +401,8 @@ function EmployeesListPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
-                    No employees yet. Click "New Employee" to invite one.
+                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    No employees yet.
                   </td>
                 </tr>
               )}
@@ -420,19 +420,9 @@ function EmployeesListPage() {
                   </td>
                   <td className="p-3">{e.jobTitle}</td>
                   <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
-                  <td className="p-3 text-xs">
-                    <span
-                      className="inline-flex items-center gap-1 font-semibold"
-                      title={COUNTRY_TIMEZONES[e.country ?? "PH"]?.name || "Philippines"}
-                    >
-                      <span>{COUNTRY_TIMEZONES[e.country ?? "PH"]?.flag || "🇵🇭"}</span>
-                      <span>{COUNTRY_TIMEZONES[e.country ?? "PH"]?.name || "Philippines"}</span>
-                      <span className="text-muted-foreground">· {normalizeState(e.state)}</span>
-                    </span>
-                  </td>
                   <td className="p-3 text-xs whitespace-nowrap">
                     <div className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                      ⏰ {formatShiftRange(e.shiftStartTime, e.shiftEndTime)}
+                      ⏰ {formatShiftRange(e.shiftStartTime, e.shiftEndTime, e.isMultipleShift, e.shifts)}
                     </div>
                     <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
                       📅 {formatWorkingDaysSummary(e.workingDays)}
@@ -475,21 +465,12 @@ function EmployeesListPage() {
                       <button
                         onClick={() => setEmpToPromote(e)}
                         className="btn-lift text-xs px-2.5 py-1 rounded border border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500 hover:text-white font-bold transition-colors"
-                        title="Edit employee profile and shift"
                       >
                         Edit
                       </button>
-                      <Link
-                        to="/admin/employees/$id"
-                        params={{ id: e.id }}
-                        className="btn-lift text-xs px-2.5 py-1 rounded border border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground font-semibold transition-colors flex items-center gap-1"
-                      >
-                        Report ↗
-                      </Link>
                       <button
                         onClick={() => setEmpToDelete(e)}
                         className="btn-lift text-xs px-2 py-1 rounded border border-rose-300 text-rose-600 hover:bg-rose-50 transition-colors"
-                        title="Remove Employee"
                       >
                         Remove
                       </button>
@@ -507,8 +488,7 @@ function EmployeesListPage() {
           <div className="max-w-sm w-full rounded-xl bg-card p-6 shadow-lift text-left">
             <h3 className="text-lg font-bold text-destructive">Remove Employee?</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Are you sure you want to permanently remove <strong>{empToDelete.name}</strong> (
-              {empToDelete.email})?
+              Are you sure you want to permanently remove <strong>{empToDelete.name}</strong>?
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -527,7 +507,6 @@ function EmployeesListPage() {
           </div>
         </div>
       )}
-
       {empToPromote && (
         <PromoteModal
           emp={empToPromote}
@@ -563,6 +542,47 @@ function initialMemberships(
   );
 }
 
+function ShiftHoursInput({
+  hours,
+  onChangeHours,
+}: {
+  hours: number;
+  onChangeHours: (newHours: number) => void;
+}) {
+  const [text, setText] = useState<string>(() => String(hours));
+
+  useEffect(() => {
+    setText(String(hours));
+  }, [hours]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const val = e.target.value;
+        setText(val);
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed) && parsed > 0) {
+          onChangeHours(parsed);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(text);
+        if (isNaN(parsed) || parsed <= 0) {
+          setText(String(hours));
+        } else {
+          setText(String(parsed));
+        }
+      }}
+      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/20"
+      placeholder="e.g. 8"
+    />
+  );
+}
+
 function CompanyMembershipSettings({
   companies,
   selectedCompanyIds,
@@ -577,80 +597,326 @@ function CompanyMembershipSettings({
   if (selectedCompanyIds.length === 0) return null;
 
   function update(companyId: string, change: Partial<CompanyMembership>) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const isMulti = change.isMultipleShift ?? current.isMultipleShift ?? false;
+    let shifts = change.shifts ?? current.shifts;
+
+    if (isMulti && (!shifts || shifts.length === 0)) {
+      shifts = [
+        { startTime: "04:00", endTime: "07:00" },
+        { startTime: "12:00", endTime: "15:00" },
+      ];
+    } else if (!isMulti) {
+      shifts = undefined;
+    }
+
+    const updatedStart = shifts?.[0]?.startTime ?? change.shiftStartTime ?? current.shiftStartTime ?? "09:00";
+    let updatedEnd = shifts?.[shifts.length - 1]?.endTime ?? change.shiftEndTime ?? current.shiftEndTime ?? "17:00";
+
+    if (!isMulti && (change.shiftStartTime || change.requiredWorkMinutes)) {
+      if (!change.shiftEndTime) {
+        const hours = change.requiredWorkMinutes
+          ? change.requiredWorkMinutes / 60
+          : calculateShiftMinutes(current.shiftStartTime || "09:00", current.shiftEndTime || "17:00") / 60;
+        updatedEnd = calculateShiftEndTime(updatedStart, hours);
+      }
+    }
+
+    const calculatedMinutes = calculateTotalShiftMinutes(isMulti, shifts, updatedStart, updatedEnd);
+
     onChange({
       ...value,
       [companyId]: buildCompanyMembership(companyId, {
-        ...(value[companyId] || {}),
+        ...current,
         ...change,
+        isMultipleShift: isMulti,
+        shifts,
+        shiftStartTime: updatedStart,
+        shiftEndTime: updatedEnd,
+        requiredWorkMinutes: calculatedMinutes,
       }),
+    });
+  }
+
+  function handleToggleMultiple(companyId: string) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const currentlyMulti = Boolean(current.isMultipleShift);
+    const nextMulti = !currentlyMulti;
+    if (nextMulti) {
+      const defaultShifts: ShiftInterval[] =
+        current.shifts && current.shifts.length > 0
+          ? current.shifts
+          : [
+              { startTime: "04:00", endTime: "07:00" },
+              { startTime: "12:00", endTime: "15:00" },
+            ];
+      update(companyId, {
+        isMultipleShift: true,
+        shifts: defaultShifts,
+      });
+    } else {
+      update(companyId, {
+        isMultipleShift: false,
+        shifts: undefined,
+      });
+    }
+  }
+
+  function handleAddShiftSlot(companyId: string) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const existingShifts = current.shifts || [
+      { startTime: "04:00", endTime: "07:00" },
+      { startTime: "12:00", endTime: "15:00" },
+    ];
+    const lastShift = existingShifts[existingShifts.length - 1];
+    let nextStart = "16:00";
+    let nextEnd = "19:00";
+    if (lastShift) {
+      const [h, m] = lastShift.endTime.split(":").map(Number);
+      if (!isNaN(h)) {
+        const startH = (h + 1) % 24;
+        const endH = (startH + 3) % 24;
+        nextStart = `${String(startH).padStart(2, "0")}:${String(m || 0).padStart(2, "0")}`;
+        nextEnd = `${String(endH).padStart(2, "0")}:${String(m || 0).padStart(2, "0")}`;
+      }
+    }
+    const updatedShifts = [...existingShifts, { startTime: nextStart, endTime: nextEnd }];
+    update(companyId, {
+      isMultipleShift: true,
+      shifts: updatedShifts,
+    });
+  }
+
+  function handleRemoveShiftSlot(companyId: string, index: number) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const existingShifts = current.shifts || [];
+    if (existingShifts.length <= 1) return;
+    const updatedShifts = existingShifts.filter((_, i) => i !== index);
+    update(companyId, {
+      isMultipleShift: true,
+      shifts: updatedShifts,
+    });
+  }
+
+  function handleShiftIntervalChange(
+    companyId: string,
+    index: number,
+    field: "startTime" | "endTime",
+    val: string,
+  ) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const existingShifts = [...(current.shifts || [])];
+    if (!existingShifts[index]) return;
+    existingShifts[index] = {
+      ...existingShifts[index],
+      [field]: val,
+    };
+    update(companyId, {
+      isMultipleShift: true,
+      shifts: existingShifts,
     });
   }
 
   return (
     <div className="space-y-3">
-      <div>
-        <div className="text-sm font-medium">Company-specific work settings</div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Required time is stored in minutes so durations such as 7h 30m remain exact.
-        </p>
-      </div>
+      <div className="text-sm font-medium">Company-specific work settings</div>
       {selectedCompanyIds.map((companyId) => {
         const membership = value[companyId] || buildCompanyMembership(companyId, {});
         const companyName =
           companies.find((company) => (company.id || COMPANY_ID) === companyId)?.name ||
           "Main Company";
+        const isMulti = Boolean(membership.isMultipleShift);
+        const shifts = membership.shifts || [
+          { startTime: "04:00", endTime: "07:00" },
+          { startTime: "12:00", endTime: "15:00" },
+        ];
+        const durationMins = calculateTotalShiftMinutes(
+          isMulti,
+          shifts,
+          membership.shiftStartTime || "09:00",
+          membership.shiftEndTime || "17:00",
+        );
+        const shiftHoursVal = Number((durationMins / 60).toFixed(1));
+        const hoursLabel = `${shiftHoursVal} Hours${isMulti ? ` (${shifts.length} shifts)` : ""}`;
+
         return (
           <div key={companyId} className="rounded-lg border bg-muted/20 p-3 space-y-3">
-            <div className="text-xs font-semibold text-foreground">{companyName}</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Required minutes</label>
-                <input
-                  type="number"
-                  min={1}
-                  step={15}
-                  value={membership.requiredWorkMinutes || 480}
-                  onChange={(event) =>
-                    update(companyId, { requiredWorkMinutes: Number(event.target.value) })
-                  }
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Shift timezone</label>
-                <select
-                  value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
-                  onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-foreground">{companyName}</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleToggleMultiple(companyId)}
+                  className={`px-2 py-0.5 rounded text-xs font-bold transition-all border ${
+                    isMulti
+                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted"
+                  }`}
                 >
-                  {ATTENDANCE_TIMEZONES.map((zone) => (
-                    <option key={zone.value} value={zone.value}>
-                      {zone.short}
-                    </option>
-                  ))}
-                </select>
+                  {isMulti ? "✓ Multiple Shift" : "+ Multiple Shift"}
+                </button>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                  {hoursLabel}
+                </span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Shift start</label>
-                <input
-                  type="time"
-                  value={membership.shiftStartTime || "09:00"}
-                  onChange={(event) => update(companyId, { shiftStartTime: event.target.value })}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                />
+
+            {isMulti ? (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Multiple Shift Intervals ({shifts.length})
+                  </span>
+                  <div className="w-44">
+                    <select
+                      value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
+                      onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
+                      className="w-full rounded-md border bg-background px-2 py-1 text-xs font-medium"
+                    >
+                      {ATTENDANCE_TIMEZONES.map((zone) => (
+                        <option key={zone.value} value={zone.value}>
+                          {zone.short}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {shifts.map((s, idx) => {
+                    const singleMins = calculateShiftMinutes(s.startTime, s.endTime);
+                    const singleHours = Number((singleMins / 60).toFixed(1));
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 p-2 rounded-md bg-background border text-xs"
+                      >
+                        <span className="font-bold text-muted-foreground min-w-[48px] shrink-0">
+                          Shift #{idx + 1}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">Start</span>
+                            <input
+                              type="time"
+                              value={s.startTime}
+                              onChange={(e) =>
+                                handleShiftIntervalChange(companyId, idx, "startTime", e.target.value)
+                              }
+                              className="rounded border bg-background px-1.5 py-1 text-xs font-semibold"
+                            />
+                          </div>
+                          <span className="text-muted-foreground mt-3">–</span>
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block">End</span>
+                            <input
+                              type="time"
+                              value={s.endTime}
+                              onChange={(e) =>
+                                handleShiftIntervalChange(companyId, idx, "endTime", e.target.value)
+                              }
+                              className="rounded border bg-background px-1.5 py-1 text-xs font-semibold"
+                            />
+                          </div>
+                        </div>
+                        <span className="font-mono text-[11px] text-primary font-bold px-1.5 py-0.5 rounded bg-primary/5 border border-primary/10 shrink-0">
+                          {singleHours}h
+                        </span>
+                        {shifts.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveShiftSlot(companyId, idx)}
+                            className="p-1 rounded text-rose-500 hover:bg-rose-500/10 font-bold text-xs shrink-0"
+                            title="Remove shift"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleAddShiftSlot(companyId)}
+                  className="w-full py-1.5 rounded-md border border-dashed border-primary/40 text-primary hover:bg-primary/5 text-xs font-bold flex items-center justify-center gap-1 transition-colors"
+                >
+                  + Add Shift Slot
+                </button>
               </div>
-              <div>
-                <label className="text-xs font-medium">Shift end</label>
-                <input
-                  type="time"
-                  value={membership.shiftEndTime || "17:00"}
-                  onChange={(event) => update(companyId, { shiftEndTime: event.target.value })}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium">Shift Hours</label>
+                    <ShiftHoursInput
+                      hours={shiftHoursVal}
+                      onChangeHours={(newHours) => {
+                        const newEnd = calculateShiftEndTime(membership.shiftStartTime || "09:00", newHours);
+                        update(companyId, {
+                          shiftStartTime: membership.shiftStartTime || "09:00",
+                          shiftEndTime: newEnd,
+                          requiredWorkMinutes: Math.round(newHours * 60),
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Shift timezone</label>
+                    <select
+                      value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
+                      onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
+                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      {ATTENDANCE_TIMEZONES.map((zone) => (
+                        <option key={zone.value} value={zone.value}>
+                          {zone.short}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium">Shift start</label>
+                    <input
+                      type="time"
+                      value={membership.shiftStartTime || "09:00"}
+                      onChange={(event) => {
+                        const newStart = event.target.value;
+                        const newEnd = calculateShiftEndTime(newStart, shiftHoursVal);
+                        update(companyId, {
+                          shiftStartTime: newStart,
+                          shiftEndTime: newEnd,
+                          requiredWorkMinutes: Math.round(shiftHoursVal * 60),
+                        });
+                      }}
+                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Shift end</label>
+                    <input
+                      type="time"
+                      value={membership.shiftEndTime || "17:00"}
+                      onChange={(event) => {
+                        const newEnd = event.target.value;
+                        const calculatedMins = calculateShiftMinutes(
+                          membership.shiftStartTime || "09:00",
+                          newEnd,
+                        );
+                        update(companyId, {
+                          shiftEndTime: newEnd,
+                          requiredWorkMinutes: calculatedMins,
+                        });
+                      }}
+                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         );
       })}
@@ -721,6 +987,8 @@ export function PromoteModal({
         state,
         timezone: COUNTRY_TIMEZONES[country].timezone,
         requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+        isMultipleShift: primaryMembership.isMultipleShift ?? false,
+        shifts: primaryMembership.shifts || [],
         shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
         shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
         shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
@@ -1029,6 +1297,8 @@ function NewEmployeeForm({
           email: cleanEmail,
           jobTitle: jobTitle.trim(),
           requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+          isMultipleShift: primaryMembership.isMultipleShift ?? false,
+          shifts: primaryMembership.shifts || [],
           shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime,
           shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime,
           shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,

@@ -23,6 +23,7 @@ function AdminLayout() {
     { to: "/admin/leaves", label: "Leave" },
     { to: "/admin/sod-eod", label: "SOD & EOD" },
     { to: "/admin/reports", label: "Reports" },
+    { to: "/admin/mcp-connect", label: "AI & MCP" },
   ];
 
   return (

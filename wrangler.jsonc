@@ -12,5 +12,6 @@
     "N8N_LEAVE_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-request",
     "N8N_LEAVE_DECISION_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision",
     "N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL": "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
+    "ADMIN_API_KEY": "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc"
   },
 }

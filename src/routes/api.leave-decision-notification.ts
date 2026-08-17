@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from '@tanstack/react-router'
 import type { CompanyEmailBranding } from "@/lib/email-branding";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import { resolveAppUrl } from "@/lib/app-url";
 
 type LeaveDecisionInput = {
   company?: CompanyEmailBranding;
@@ -115,7 +116,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           : `Your ${requestType} request for ${dateRange} has been rejected.`;
         const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTimes to view the updated status for ${companyName}.`;
         const accentColor = approved ? "#047857" : "#be123c";
-        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const appUrl = resolveAppUrl(request.url);
         const html = renderCompanyEmail({
           company,
           preheader: decisionText,

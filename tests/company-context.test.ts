@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  calculateTotalShiftMinutes,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
@@ -51,4 +52,14 @@ test("company-aware punch filtering does not mix companies", () => {
 
 test("historical punch without company remains attached to the legacy primary company", () => {
   assert.equal(getPunchCompanyId({} as Punch, employee), "alpha");
+});
+
+test("calculateTotalShiftMinutes correctly sums multiple shift intervals", () => {
+  const shifts = [
+    { startTime: "04:00", endTime: "07:00" }, // 3 hours = 180 min
+    { startTime: "12:00", endTime: "15:00" }, // 3 hours = 180 min
+    { startTime: "16:00", endTime: "19:00" }, // 3 hours = 180 min
+  ];
+  const total = calculateTotalShiftMinutes(true, shifts);
+  assert.equal(total, 540); // 9 hours total = 540 minutes
 });

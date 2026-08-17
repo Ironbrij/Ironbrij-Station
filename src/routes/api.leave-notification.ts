@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from '@tanstack/react-router'
 import type { CompanyEmailBranding } from "@/lib/email-branding";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import { resolveAppUrl } from "@/lib/app-url";
 
 type LeaveNotificationInput = {
   company?: CompanyEmailBranding;
@@ -95,7 +96,7 @@ export const Route = createFileRoute("/api/leave-notification")({
               : "full-day leave";
         const subject = `New ${requestType} request from ${body.employeeName}`;
         const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange} at ${companyName}.\n\nReason: ${body.reason}\n\nOpen SavyTimes to approve or reject this request.`;
-        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const appUrl = resolveAppUrl(request.url);
         const html = renderCompanyEmail({
           company,
           preheader: `${body.employeeName} submitted a new leave request.`,

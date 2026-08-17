@@ -47,6 +47,11 @@ export type InviteStatus = "pending" | "accepted";
 
 export type CountryCode = "NP" | "AU" | "PH";
 
+export interface ShiftInterval {
+  startTime: string; // e.g. "04:00"
+  endTime: string;   // e.g. "07:00"
+}
+
 export type ReportingRequirement = "sod_only" | "eod_only" | "sod_eod" | "none";
 export type DailyReportType = "sod" | "eod";
 export type DailyReportStatus = "submitted";
@@ -65,6 +70,8 @@ export interface Employee {
   photoUrl?: string;
   photoURL?: string; // Legacy/Firebase-style Google profile photo field
   inviteStatus: InviteStatus;
+  isMultipleShift?: boolean;
+  shifts?: ShiftInterval[];
   shiftStartTime?: string; // e.g. "09:00"
   shiftEndTime?: string; // e.g. "17:00"
   country?: CountryCode; // "NP" = Nepal, "AU" = Australia, "PH" = Philippines
@@ -83,6 +90,8 @@ export interface CompanyMembership {
   status?: "active" | "inactive";
   requiredWorkMinutes?: number;
   shiftId?: string;
+  isMultipleShift?: boolean;
+  shifts?: ShiftInterval[];
   shiftStartTime?: string;
   shiftEndTime?: string;
   shiftTimezone?: string;
@@ -151,10 +160,12 @@ export interface DailyReport {
 export interface Punch {
   id: string;
   employeeId: string;
+  employeeName?: string;
+  date?: string;
   type: PunchType;
   timestamp: Timestamp;
   source: "app" | "auto";
-  companyId?: string; // Optional only for historical records; new punches always include it
+  companyId?: string;
   companyName?: string;
   shiftId?: string;
   attendanceDate?: string;
@@ -169,6 +180,9 @@ export interface Punch {
   isEarly?: boolean;
   isAuto?: boolean;
   autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout";
+  isExcused?: boolean;
+  excusedBy?: string;
+  excusedAt?: string;
 }
 
 export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";

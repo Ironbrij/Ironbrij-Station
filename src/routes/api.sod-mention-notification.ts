@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 import type { MentionNotificationRequest, MentionRecipient } from "@/lib/mention-notifications";
+import { resolveAppUrl } from "@/lib/app-url";
 
 function validText(value: unknown, maxLength = 1000): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
@@ -82,7 +83,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
         const reportTypeLabel =
           body.reportType === "eod" ? "End of Day (EOD)" : "Start of Day (SOD)";
         const reportTypeShort = (body.reportType || "sod").toUpperCase();
-        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const appUrl = resolveAppUrl(request.url);
         const answersToProcess = body.answers.filter((answer) => answer.answer?.trim());
         const finalAnswers = answersToProcess.length > 0 ? answersToProcess : body.answers;
 

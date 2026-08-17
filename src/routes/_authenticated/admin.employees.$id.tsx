@@ -41,7 +41,7 @@ import { useAuth } from "@/lib/auth-context";
 import { normalizeState } from "@/lib/states";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
-import { formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
+import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
 import {
   getEmployeeForCompany,
   getPunchCompanyId,
@@ -564,7 +564,12 @@ function EmployeeDetail() {
           <DetailRow
             icon={<Clock3 className="h-4 w-4" />}
             label="Shift"
-            value={`${formatClock(employee.shiftStartTime)} – ${formatClock(employee.shiftEndTime)}`}
+            value={formatShiftRange(
+              employee.shiftStartTime,
+              employee.shiftEndTime,
+              employee.isMultipleShift,
+              employee.shifts,
+            )}
           />
           <DetailRow
             icon={<CalendarDays className="h-4 w-4" />}
@@ -937,11 +942,7 @@ function MetricCard({
   );
 }
 
-function formatClock(value?: string): string {
-  const [hour = 9, minute = 0] = (value || "09:00").split(":").map(Number);
-  const date = new Date(2000, 0, 1, hour, minute);
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
+
 
 function formatDecimal(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });

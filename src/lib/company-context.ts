@@ -4,9 +4,48 @@ import {
   type CompanyMembership,
   type Employee,
   type Punch,
+  type ShiftInterval,
 } from "./types.ts";
 
 const DEFAULT_REQUIRED_WORK_MINUTES = 8 * 60;
+
+export function calculateShiftMinutes(startTime: string, endTime: string): number {
+  if (!startTime || !endTime) return DEFAULT_REQUIRED_WORK_MINUTES;
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
+  if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return DEFAULT_REQUIRED_WORK_MINUTES;
+  let startMinutes = startH * 60 + startM;
+  let endMinutes = endH * 60 + endM;
+  if (endMinutes <= startMinutes) {
+    endMinutes += 1440;
+  }
+  return endMinutes - startMinutes;
+}
+
+export function calculateTotalShiftMinutes(
+  isMultipleShift?: boolean,
+  shifts?: ShiftInterval[],
+  singleStart?: string,
+  singleEnd?: string,
+): number {
+  if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
+    return shifts.reduce(
+      (sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime),
+      0,
+    );
+  }
+  return calculateShiftMinutes(singleStart || "09:00", singleEnd || "17:00");
+}
+
+export function calculateShiftEndTime(startTime: string, shiftHours = 8): string {
+  if (!startTime) return "17:00";
+  const [h, m] = startTime.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return "17:00";
+  const totalM = (h * 60 + m + Math.round(shiftHours * 60)) % 1440;
+  const endH = String(Math.floor(totalM / 60)).padStart(2, "0");
+  const endM = String(totalM % 60).padStart(2, "0");
+  return `${endH}:${endM}`;
+}
 
 export function getEmployeeCompanyIds(employee: Employee | null | undefined): string[] {
   if (!employee) return [];
@@ -29,6 +68,8 @@ export function getCompanyMembership(employee: Employee, companyId: string): Com
     role: "employee",
     status: "active",
     requiredWorkMinutes: employee.requiredWorkMinutes,
+    isMultipleShift: employee.isMultipleShift,
+    shifts: employee.shifts,
     shiftStartTime: employee.shiftStartTime,
     shiftEndTime: employee.shiftEndTime,
     shiftTimezone: employee.shiftTimezone,
@@ -43,6 +84,8 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
     ...employee,
     companyId,
     requiredWorkMinutes: membership.requiredWorkMinutes ?? employee.requiredWorkMinutes,
+    isMultipleShift: membership.isMultipleShift ?? employee.isMultipleShift,
+    shifts: membership.shifts || employee.shifts,
     shiftStartTime: membership.shiftStartTime || employee.shiftStartTime,
     shiftEndTime: membership.shiftEndTime || employee.shiftEndTime,
     shiftTimezone: membership.shiftTimezone || employee.shiftTimezone,
@@ -52,8 +95,14 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
 }
 
 export function getRequiredWorkMinutes(employee: Employee, company?: Company | null): number {
+  if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
+    return calculateTotalShiftMinutes(true, employee.shifts);
+  }
   const configured = employee.requiredWorkMinutes;
   if (Number.isFinite(configured) && configured! > 0) return Math.round(configured!);
+  if (employee.shiftStartTime && employee.shiftEndTime) {
+    return calculateShiftMinutes(employee.shiftStartTime, employee.shiftEndTime);
+  }
   const companyMinutes = Number(company?.defaultShiftHours) * 60;
   if (Number.isFinite(companyMinutes) && companyMinutes > 0) return Math.round(companyMinutes);
   return DEFAULT_REQUIRED_WORK_MINUTES;
@@ -67,16 +116,35 @@ export function buildCompanyMembership(
   companyId: string,
   input: Partial<CompanyMembership>,
 ): CompanyMembership {
+  const isMultipleShift = Boolean(input.isMultipleShift);
+  const shifts =
+    input.shifts && input.shifts.length > 0
+      ? input.shifts
+      : isMultipleShift
+        ? [
+            { startTime: "04:00", endTime: "07:00" },
+            { startTime: "12:00", endTime: "15:00" },
+          ]
+        : undefined;
+
+  const shiftStartTime = shifts?.[0]?.startTime || input.shiftStartTime || "09:00";
+  const shiftEndTime =
+    shifts?.[shifts.length - 1]?.endTime ||
+    input.shiftEndTime ||
+    calculateShiftEndTime(shiftStartTime, 8);
+  const requiredWorkMinutes =
+    input.requiredWorkMinutes ??
+    calculateTotalShiftMinutes(isMultipleShift, shifts, shiftStartTime, shiftEndTime);
+
   return {
     companyId,
     role: input.role || "employee",
     status: input.status || "active",
-    requiredWorkMinutes: Math.max(
-      1,
-      Math.round(input.requiredWorkMinutes || DEFAULT_REQUIRED_WORK_MINUTES),
-    ),
-    shiftStartTime: input.shiftStartTime || "09:00",
-    shiftEndTime: input.shiftEndTime || "17:00",
+    requiredWorkMinutes,
+    isMultipleShift,
+    shifts,
+    shiftStartTime,
+    shiftEndTime,
     shiftTimezone: input.shiftTimezone || "Australia/Sydney",
     workingDays: input.workingDays || [0, 1, 2, 3, 4, 5],
     departmentId: input.departmentId,
