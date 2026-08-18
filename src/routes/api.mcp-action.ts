@@ -399,8 +399,10 @@ export const Route = createFileRoute("/api/mcp-action")({
             // Dispatch invite email if webhook exists
             const appUrl = resolveAppUrl();
             const inviteUrl = `${appUrl}/invite/${inviteToken}`;
-            const webhookUrl = process.env.N8N_INVITE_WEBHOOK_URL;
-            if (webhookUrl && params.sendInviteEmail !== false) {
+            const webhookUrl =
+              process.env.N8N_INVITE_WEBHOOK_URL ||
+              "https://vmi3182726.contaboserver.net/webhook/time-station-invite";
+            if (params.sendInviteEmail !== false) {
               try {
                 await fetch(webhookUrl, {
                   method: "POST",
