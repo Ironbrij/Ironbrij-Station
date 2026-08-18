@@ -71,12 +71,24 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family:
-      ui-sans-serif,
-      system-ui,
+      "Plus Jakarta Sans",
+      "Inter",
       -apple-system,
+      BlinkMacSystemFont,
       "Segoe UI",
       Roboto,
       sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.025em;
   }
   /* Hide up/down spinner arrows on input[type=number] */
   input[type="number"]::-webkit-inner-spin-button,

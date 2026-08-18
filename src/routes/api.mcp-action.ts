@@ -1013,7 +1013,9 @@ export const Route = createFileRoute("/api/mcp-action")({
             });
 
             const currentlyWorking = liveStatusList.filter((e: any) => e.isCurrentlyPunchedIn);
-            const missedPunches = liveStatusList.filter((e: any) => e.liveStatus === "MISSED_PUNCH_OUT");
+            const missedPunches = liveStatusList.filter(
+              (e: any) => e.liveStatus === "MISSED_PUNCH_OUT",
+            );
 
             return Response.json({
               ok: true,
@@ -1053,7 +1055,9 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             // Also trigger decision notification webhook asynchronously
             try {
-              const leaveGetRes = await fetch(`${baseUrl}/leaveRequests/${params.leaveId}?key=${encodeURIComponent(apiKey)}`);
+              const leaveGetRes = await fetch(
+                `${baseUrl}/leaveRequests/${params.leaveId}?key=${encodeURIComponent(apiKey)}`,
+              );
               if (leaveGetRes.ok) {
                 const leaveDoc = await leaveGetRes.json();
                 const leaveData = fromFirestoreFields(leaveDoc.fields);
@@ -1062,8 +1066,13 @@ export const Route = createFileRoute("/api/mcp-action")({
                   "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision";
 
                 const approved = params.decision === "approved";
-                const dateRange = leaveData.dateFrom === leaveData.dateTo ? leaveData.dateFrom : `${leaveData.dateFrom} to ${leaveData.dateTo}`;
-                const subject = approved ? "Your leave request was approved" : "Your leave request was rejected";
+                const dateRange =
+                  leaveData.dateFrom === leaveData.dateTo
+                    ? leaveData.dateFrom
+                    : `${leaveData.dateFrom} to ${leaveData.dateTo}`;
+                const subject = approved
+                  ? "Your leave request was approved"
+                  : "Your leave request was rejected";
                 const text = `Hi ${leaveData.employeeName || "Employee"},\n\nYour leave request for ${dateRange} has been ${params.decision}.\n\nReason: ${leaveData.reason || "N/A"}`;
 
                 await fetch(webhookUrl, {

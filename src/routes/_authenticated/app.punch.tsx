@@ -599,13 +599,21 @@ function PunchPage() {
       {/* Top Welcome Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Hello, {employee.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {employee.jobTitle} · {deptName}
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {(() => {
+              const hour = new Date().getHours();
+              const greeting =
+                hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+              const firstName = employee.name?.split(" ")[0] || employee.name;
+              return `${greeting}, ${firstName}`;
+            })()}
+          </h1>
+          <p className="text-sm font-medium text-muted-foreground mt-0.5">
+            {format(new Date(), "EEEE d MMMM")} — here's how the week is shaping up.
           </p>
         </div>
-        <div className="w-fit rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
-          Today: {format(new Date(), "dd/MM/yyyy")}
+        <div className="w-fit rounded-lg border bg-card/60 px-3.5 py-1.5 text-xs font-semibold text-muted-foreground shadow-xs">
+          {employee.jobTitle || "Team Member"} · {deptName || "General"}
         </div>
       </div>
 

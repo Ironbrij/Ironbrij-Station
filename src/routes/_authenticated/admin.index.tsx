@@ -312,12 +312,11 @@ function AdminHome() {
       {/* Top Header & Quick Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
           </h1>
-          <p className="text-sm text-muted-foreground font-medium mt-0.5">
-            Real-time department status and today's activity feed for{" "}
-            {format(new Date(), "EEEE, MMMM d, yyyy")}.
+          <p className="text-sm font-medium text-muted-foreground mt-0.5">
+            {format(new Date(), "EEEE d MMMM")} — real-time team status and today's activity.
           </p>
         </div>
 

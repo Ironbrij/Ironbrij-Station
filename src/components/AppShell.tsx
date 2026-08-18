@@ -130,11 +130,16 @@ export function AppShell({
                 "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg"
               }
               alt={company?.name || "ironbrij"}
-              className="h-8 w-8 shrink-0 rounded-lg border bg-background object-contain"
+              className="h-8 w-8 shrink-0 rounded-lg border bg-background object-contain shadow-xs"
             />
-            <span className="hidden max-w-[180px] truncate font-semibold tracking-tight text-foreground sm:inline">
-              {company?.name || "ironbrij"}
-            </span>
+            <div className="hidden flex-col sm:flex text-left">
+              <span className="max-w-[180px] truncate font-bold text-sm leading-tight tracking-tight text-foreground">
+                {company?.name || "ironbrij"}
+              </span>
+              <span className="text-[11px] font-medium text-muted-foreground leading-none mt-0.5">
+                Time tracking
+              </span>
+            </div>
           </Link>
 
           <div className="flex shrink-0 items-center gap-2.5">

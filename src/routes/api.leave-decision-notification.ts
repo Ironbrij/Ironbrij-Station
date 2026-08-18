@@ -34,7 +34,8 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
-        const masterKey = process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+        const masterKey =
+          process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
         const isMasterKey = Boolean(token && token === masterKey);
 
         const firebaseApiKey =
@@ -68,7 +69,9 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
             .map((email) => email.trim().toLowerCase())
             .filter(Boolean);
 
-          const isKnownAdmin = configuredAdmins.some((adm) => authenticatedEmail.includes(adm) || adm === authenticatedEmail);
+          const isKnownAdmin = configuredAdmins.some(
+            (adm) => authenticatedEmail.includes(adm) || adm === authenticatedEmail,
+          );
 
           if (!isKnownAdmin && identityPayload.users?.[0]?.localId) {
             // Also check Firestore admins collection
@@ -98,7 +101,10 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           !validText(body.reason, 2_000) ||
           (body.status !== "approved" && body.status !== "rejected")
         ) {
-          return Response.json({ ok: false, error: "Invalid leave decision data" }, { status: 400 });
+          return Response.json(
+            { ok: false, error: "Invalid leave decision data" },
+            { status: 400 },
+          );
         }
 
         const webhookUrl =
