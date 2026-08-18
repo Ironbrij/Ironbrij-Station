@@ -263,9 +263,9 @@ function NotificationsPage() {
       // Search query
       if (empSearchQuery.trim()) {
         const q = empSearchQuery.toLowerCase().trim();
-        const nameMatch = emp.name.toLowerCase().includes(q);
-        const emailMatch = emp.email.toLowerCase().includes(q);
-        const jobMatch = emp.jobTitle?.toLowerCase().includes(q);
+        const nameMatch = (emp.name || "").toLowerCase().includes(q);
+        const emailMatch = (emp.email || "").toLowerCase().includes(q);
+        const jobMatch = (emp.jobTitle || "").toLowerCase().includes(q);
         if (!nameMatch && !emailMatch && !jobMatch) return false;
       }
       return true;

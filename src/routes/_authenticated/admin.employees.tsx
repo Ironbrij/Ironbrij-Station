@@ -311,10 +311,11 @@ function EmployeesListPage() {
     if (filterDept && e.deptId !== filterDept) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      const matchName = e.name.toLowerCase().includes(q);
+      const matchName = (e.name || "").toLowerCase().includes(q);
       const matchEmail = (e.email || "").toLowerCase().includes(q);
       const matchTitle = (e.jobTitle || "").toLowerCase().includes(q);
-      return matchName || matchEmail || matchTitle;
+      const matchId = (e.id || "").toLowerCase().includes(q);
+      return matchName || matchEmail || matchTitle || matchId;
     }
     return true;
   });

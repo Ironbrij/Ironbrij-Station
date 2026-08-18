@@ -487,8 +487,8 @@ function AdminSodEodPage() {
                     if (employeeSearch) {
                       const query = employeeSearch.toLowerCase().trim();
                       return (
-                        emp.name.toLowerCase().includes(query) ||
-                        emp.email.toLowerCase().includes(query)
+                        (emp.name || "").toLowerCase().includes(query) ||
+                        (emp.email || "").toLowerCase().includes(query)
                       );
                     }
                     return true;

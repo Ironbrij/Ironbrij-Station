@@ -172,7 +172,10 @@ export function resolveMentionRecipients(
   for (const m of mentions) {
     if (m.type === "person") {
       const emp = employees.find(
-        (e) => e.id === m.id || e.authUid === m.id || e.name.toLowerCase() === m.name.toLowerCase(),
+        (e) =>
+          e.id === m.id ||
+          e.authUid === m.id ||
+          (e.name && m.name && e.name.toLowerCase() === m.name.toLowerCase()),
       );
       const email = (emp?.email || m.email || "").trim().toLowerCase();
       if (email && !seenEmails.has(email)) {

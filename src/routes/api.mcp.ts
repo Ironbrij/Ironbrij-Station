@@ -455,9 +455,15 @@ export const Route = createFileRoute("/api/mcp")({
                   const listData = await listRes.json();
                   const matchedDoc = (listData.documents || []).find((doc: any) => {
                     const fields = fromFirestoreFields(doc.fields);
-                    if (args.email && fields.email?.toLowerCase() === args.email.toLowerCase())
+                    if (
+                      args.email &&
+                      (fields.email || "").toLowerCase() === args.email.toLowerCase()
+                    )
                       return true;
-                    if (args.name && fields.name?.toLowerCase() === args.name.toLowerCase())
+                    if (
+                      args.name &&
+                      (fields.name || "").toLowerCase() === args.name.toLowerCase()
+                    )
                       return true;
                     return false;
                   });

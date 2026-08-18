@@ -620,7 +620,7 @@ export const Route = createFileRoute("/api/mcp-action")({
               const listData = await listRes.json();
               const matchedDoc = (listData.documents || []).find((doc: any) => {
                 const fields = fromFirestoreFields(doc.fields);
-                return fields.name?.toLowerCase() === params.name.toLowerCase();
+                return (fields.name || "").toLowerCase() === (params.name || "").toLowerCase();
               });
               if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
             }

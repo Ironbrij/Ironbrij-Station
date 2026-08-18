@@ -105,10 +105,10 @@ export const MentionTextarea: React.FC<MentionTextareaProps> = ({
     if (!q) return candidates;
 
     return candidates.filter((c) => {
-      const nameMatch = c.name.toLowerCase().includes(q);
-      const tagMatch = c.displayTag.toLowerCase().includes(q);
-      const subtitleMatch = c.subtitle?.toLowerCase().includes(q);
-      const deptMatch = c.deptName?.toLowerCase().includes(q);
+      const nameMatch = (c.name || "").toLowerCase().includes(q);
+      const tagMatch = (c.displayTag || "").toLowerCase().includes(q);
+      const subtitleMatch = (c.subtitle || "").toLowerCase().includes(q);
+      const deptMatch = (c.deptName || "").toLowerCase().includes(q);
       return nameMatch || tagMatch || subtitleMatch || deptMatch;
     });
   }, [isOpen, triggerIndex, query, candidates]);
