@@ -404,7 +404,7 @@ function PunchPage() {
             : { attendanceStatus: "in_progress" }),
       });
 
-      // If overtime was worked on punch-out, auto-create a pending OvertimeRequest for Admin
+      // 1. If overtime was worked on punch-out, auto-create a pending OvertimeRequest for Admin
       if (targetType === "out" && recordedOvertimeMinutes > 0) {
         try {
           const reason = isOffShiftDay
@@ -416,6 +416,7 @@ function PunchPage() {
             employeeName: employee.name,
             companyId: activeCompanyId,
             date: punchDate,
+            requestType: isOffShiftDay ? "off_shift_work" : "overtime",
             punchOutId: punchRef.id,
             punchInId: latestPunch?.id || "",
             overtimeMinutes: recordedOvertimeMinutes,
@@ -429,6 +430,43 @@ function PunchPage() {
           await setDoc(doc(db(), "punches", punchRef.id), { overtimeRequestId: otDoc.id }, { merge: true });
         } catch (otErr) {
           console.warn("Could not save overtime request:", otErr);
+        }
+      }
+
+      // 2. If punching in early before scheduled shift start on a work day:
+      let isEarlyPunchIn = false;
+      let earlyPunchMinutes = 0;
+      if (targetType === "in" && shiftWindow.start && !isOffShiftDayToday) {
+        earlyPunchMinutes = Math.floor(
+          (shiftWindow.start.getTime() - punchTime.getTime()) / 60_000,
+        );
+        if (earlyPunchMinutes >= 5) {
+          isEarlyPunchIn = true;
+          try {
+            const earlyReason = `Early clock-in: started work ${formatWorkMinutes(earlyPunchMinutes)} before scheduled shift at ${format(shiftWindow.start, "h:mm a")}`;
+            const earlyOtDoc = await addDoc(collection(db(), "overtimeRequests"), {
+              employeeId: employee.id,
+              employeeName: employee.name,
+              companyId: activeCompanyId,
+              date: punchDate,
+              requestType: "early_clock_in",
+              punchInId: punchRef.id,
+              overtimeMinutes: earlyPunchMinutes,
+              normalWorkMinutes: 0,
+              isOffShiftDay: false,
+              reason: earlyReason,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            });
+
+            await setDoc(
+              doc(db(), "punches", punchRef.id),
+              { overtimeRequestId: earlyOtDoc.id, earlyPunchMinutes },
+              { merge: true },
+            );
+          } catch (earlyErr) {
+            console.warn("Could not save early clock-in request:", earlyErr);
+          }
         }
       }
 
@@ -452,10 +490,19 @@ function PunchPage() {
           employee,
           company?.lateGraceMinutes ?? 5,
         );
-        if (isOffShiftDay) toast.success("Punched in on off-shift day! Time will count as overtime.");
-        else if (approvedLeaveToday) toast.success("Punched in on leave date!");
-        else if (lateness.isLate) toast.warning(`Punched in ${lateness.minutes}m late.`);
-        else toast.success("Punched in on time!");
+        if (isOffShiftDay) {
+          toast.success("Punched in on off-shift day! Time will count as overtime.");
+        } else if (approvedLeaveToday) {
+          toast.success("Punched in on leave date!");
+        } else if (isEarlyPunchIn) {
+          toast.success(
+            `Punched in early! Early clock-in request (${formatWorkMinutes(earlyPunchMinutes)}) submitted to Admin for approval.`,
+          );
+        } else if (lateness.isLate) {
+          toast.warning(`Punched in ${lateness.minutes}m late.`);
+        } else {
+          toast.success("Punched in on time!");
+        }
 
         // Auto-popup SOD Notepad after Punch In
         setShowNotepadModal("sod");

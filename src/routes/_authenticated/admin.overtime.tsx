@@ -330,7 +330,11 @@ function AdminOvertimePage() {
                         {req.date}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        {req.isOffShiftDay ? (
+                        {req.requestType === "early_clock_in" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-700 border border-amber-200">
+                            Early Clock-In
+                          </span>
+                        ) : req.isOffShiftDay || req.requestType === "off_shift_work" ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/10 text-purple-700 border border-purple-200">
                             Off-Day / Holiday
                           </span>

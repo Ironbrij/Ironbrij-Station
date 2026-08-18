@@ -191,12 +191,15 @@ export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";
 
 export type OvertimeStatus = "pending" | "approved" | "rejected";
 
+export type OvertimeRequestType = "overtime" | "off_shift_work" | "early_clock_in";
+
 export interface OvertimeRequest {
   id: string;
   employeeId: string;
   employeeName: string;
   companyId: string;
   date: string;
+  requestType?: OvertimeRequestType;
   punchOutId?: string;
   punchInId?: string;
   overtimeMinutes: number;
