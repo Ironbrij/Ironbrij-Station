@@ -44,6 +44,7 @@ export function getEmployeeTimezone(employee?: Pick<Employee, "timezone" | "coun
   if (isValidTimezone(employee?.timezone)) return employee!.timezone!;
   if (employee?.country === "AU") return "Australia/Sydney";
   if (employee?.country === "PH") return "Asia/Manila";
+  if (employee?.country === "NP") return "Asia/Kathmandu";
   return DEFAULT_LOCAL_TIMEZONE;
 }
 

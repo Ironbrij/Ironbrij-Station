@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   Building2,
+  Globe,
   X,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -81,6 +82,7 @@ function AdminHome() {
   const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">("country");
   const [expandedDeptMap, setExpandedDeptMap] = useState<Record<string, boolean>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(15);
@@ -238,6 +240,25 @@ function AdminHome() {
       };
     }
 
+    const getDisplayTimezone = (employee?: Employee) => {
+      if (timezoneMode === "PH") return { tz: "Asia/Manila", code: "PH", flag: "🇵🇭" };
+      if (timezoneMode === "NP") return { tz: "Asia/Kathmandu", code: "NP", flag: "🇳🇵" };
+      if (timezoneMode === "AU") return { tz: "Australia/Sydney", code: "AU", flag: "🇦🇺" };
+      if (timezoneMode === "viewer") {
+        const vTz =
+          typeof Intl !== "undefined"
+            ? Intl.DateTimeFormat().resolvedOptions().timeZone
+            : "Asia/Manila";
+        return { tz: vTz, code: "Local", flag: "💻" };
+      }
+      const empTz = getEmployeeTimezone(employee);
+      const countryCode =
+        employee?.country ||
+        (empTz.includes("Manila") ? "PH" : empTz.includes("Sydney") ? "AU" : "NP");
+      const flag = COUNTRY_TIMEZONES[countryCode as keyof typeof COUNTRY_TIMEZONES]?.flag || "🌐";
+      return { tz: empTz, code: countryCode, flag };
+    };
+
     const list = [
       ...(empTodayPunches.get(emp.id) || []),
       ...(emp.authUid ? empTodayPunches.get(emp.authUid) || [] : []),
@@ -250,16 +271,16 @@ function AdminHome() {
       company?.workingDays,
       getEmployeeHolidayDates(company, emp),
     );
-    const localTimezone = getEmployeeTimezone(emp);
+    const targetTz = getDisplayTimezone(emp);
     const latestDate = status.latest?.timestamp?.toDate();
-    const timeStr = latestDate ? formatInTimezone(latestDate, localTimezone) : "";
+    const timeStr = latestDate ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})` : "";
     const statusTimeStr =
-      latestDate && zonedDateKey(latestDate, localTimezone) !== employeeToday
-        ? formatInTimezone(latestDate, localTimezone, {
+      latestDate && zonedDateKey(latestDate, targetTz.tz) !== employeeToday
+        ? `${formatInTimezone(latestDate, targetTz.tz, {
             year: "numeric",
             month: "short",
             day: "numeric",
-          })
+          })} (${targetTz.code})`
         : timeStr;
 
     if (status.isPunchedIn) {
@@ -358,6 +379,21 @@ function AdminHome() {
                   {d.name}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={timezoneMode}
+              onChange={(e) => setTimezoneMode(e.target.value as any)}
+              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
+            >
+              <option value="country">🌍 Respective Country Time (PH / NP / AU)</option>
+              <option value="PH">🇵🇭 Philippines Time (PHT)</option>
+              <option value="NP">🇳🇵 Nepal Time (NPT)</option>
+              <option value="AU">🇦🇺 Australia Time (AEST)</option>
+              <option value="viewer">💻 My Browser Time</option>
             </select>
           </div>
 
@@ -697,12 +733,38 @@ function AdminHome() {
           {(!showHistory ? todayActivityFeed : historicalRecent).map((p) => {
             const emp = empById.get(p.employeeId);
             const countryData = COUNTRY_TIMEZONES[emp?.country ?? "NP"] || COUNTRY_TIMEZONES.NP;
+            const targetTz =
+              timezoneMode === "PH"
+                ? { tz: "Asia/Manila", code: "PH" }
+                : timezoneMode === "NP"
+                  ? { tz: "Asia/Kathmandu", code: "NP" }
+                  : timezoneMode === "AU"
+                    ? { tz: "Australia/Sydney", code: "AU" }
+                    : timezoneMode === "viewer"
+                      ? {
+                          tz:
+                            typeof Intl !== "undefined"
+                              ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                              : "Asia/Manila",
+                          code: "Local",
+                        }
+                      : {
+                          tz: getEmployeeTimezone(emp),
+                          code:
+                            emp?.country ||
+                            (getEmployeeTimezone(emp).includes("Manila")
+                              ? "PH"
+                              : getEmployeeTimezone(emp).includes("Sydney")
+                                ? "AU"
+                                : "NP"),
+                        };
+
             const timeFormatted = p.timestamp
-              ? formatInTimezone(p.timestamp.toDate(), getEmployeeTimezone(emp))
+              ? `${formatInTimezone(p.timestamp.toDate(), targetTz.tz)} (${targetTz.code})`
               : "—";
             const dateFormatted = p.timestamp
               ? new Intl.DateTimeFormat("en-US", {
-                  timeZone: getEmployeeTimezone(emp),
+                  timeZone: targetTz.tz,
                   month: "short",
                   day: "numeric",
                   year: "numeric",
