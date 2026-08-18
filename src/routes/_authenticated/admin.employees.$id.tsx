@@ -504,7 +504,7 @@ function EmployeeDetail() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">
-                  {employee.name}
+                  {employee.name?.trim() || employee.email?.trim() || "Unnamed Employee"}
                 </h1>
                 <span
                   className={`rounded-full px-2.5 py-1 text-xs font-bold ${

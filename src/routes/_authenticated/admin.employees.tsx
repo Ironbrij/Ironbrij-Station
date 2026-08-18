@@ -417,11 +417,17 @@ function EmployeesListPage() {
                       params={{ id: e.id }}
                       className="text-primary hover:underline font-bold block"
                     >
-                      {e.name}
+                      {e.name?.trim()
+                        ? e.name
+                        : e.email?.trim()
+                          ? e.email
+                          : `Unnamed Employee (${e.id.slice(0, 8)})`}
                     </Link>
-                    <div className="text-xs text-muted-foreground font-normal">{e.email}</div>
+                    <div className="text-xs text-muted-foreground font-normal">
+                      {e.email?.trim() || "No email assigned"}
+                    </div>
                   </td>
-                  <td className="p-3">{e.jobTitle}</td>
+                  <td className="p-3">{e.jobTitle?.trim() || "—"}</td>
                   <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
                   <td className="p-3 text-xs whitespace-nowrap">
                     <div className="font-mono font-semibold text-slate-700 dark:text-slate-300">

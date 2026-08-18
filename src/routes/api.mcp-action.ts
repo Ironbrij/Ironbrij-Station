@@ -336,13 +336,26 @@ export const Route = createFileRoute("/api/mcp-action")({
         try {
           // 1. ADD EMPLOYEE (with automatic invite token and email dispatch)
           if (action === "add_employee") {
+            const empName = (params.name || params.employeeName || "").trim();
+            const empEmail = (params.email || params.employeeEmail || "").trim().toLowerCase();
+
+            if (!empName || !empEmail) {
+              return Response.json(
+                {
+                  ok: false,
+                  error: "Missing required fields: Both 'name' and 'email' are required to create an employee.",
+                },
+                { status: 400 },
+              );
+            }
+
             const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const companyId = params.companyId || "default";
 
             const employeeData = {
-              name: params.name,
-              email: params.email,
+              name: empName,
+              email: empEmail,
               companyId,
               companyIds: [companyId],
               jobTitle: params.jobTitle || params.role || "Virtual Assistant",

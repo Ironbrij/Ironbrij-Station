@@ -353,10 +353,29 @@ export const Route = createFileRoute("/api/mcp")({
           try {
             // 1. ADD EMPLOYEE
             if (toolName === "add_employee") {
+              const empName = (args.name || "").trim();
+              const empEmail = (args.email || "").trim().toLowerCase();
+
+              if (!empName || !empEmail) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [
+                      {
+                        type: "text",
+                        text: "Error: Both 'name' and 'email' are strictly required to create an employee.",
+                      },
+                    ],
+                  },
+                });
+              }
+
               const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
               const employeeData = {
-                name: args.name,
-                email: args.email,
+                name: empName,
+                email: empEmail,
                 companyId: args.companyId || "default",
                 companyIds: [args.companyId || "default"],
                 jobTitle: args.jobTitle || "Virtual Assistant",
