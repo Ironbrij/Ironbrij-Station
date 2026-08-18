@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, setDoc, Timestamp } from "firebase/firestore";
 import {
   ArrowLeft,
   BriefcaseBusiness,
@@ -15,6 +15,7 @@ import {
   MapPin,
   TrendingUp,
   UserRound,
+  Wrench,
 } from "lucide-react";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -94,8 +95,13 @@ function EmployeeDetail() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [now, setNow] = useState(() => new Date());
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const { company, activeCompanyId } = useAuth();
+  const { company, activeCompanyId, user } = useAuth();
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
+
+  // Fix missing punch state
+  const [fixingRow, setFixingRow] = useState<DayRow | null>(null);
+  const [fixTime, setFixTime] = useState("");
+  const [fixBusy, setFixBusy] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -484,6 +490,103 @@ function EmployeeDetail() {
         ? "Punched in"
         : "Punched out";
 
+  async function handleFixMissingPunch() {
+    if (!fixingRow || !fixTime || !employee) return;
+    setFixBusy(true);
+    try {
+      // Parse the time input and combine with the row date
+      const [hours, minutes] = fixTime.split(":").map(Number);
+      const punchOutDate = new Date(`${fixingRow.date}T${fixTime}:00`);
+      if (Number.isNaN(punchOutDate.getTime())) {
+        toast.error("Invalid time entered.");
+        return;
+      }
+
+      const punchInPunch = fixingRow.firstIn;
+      const empCompanyId = punchInPunch?.companyId || activeCompanyId;
+      const requiredWorkMinutes = getRequiredWorkMinutes(employee, companies.find((c) => c.id === empCompanyId));
+
+      // Calculate session stats
+      const calculation = punchInPunch?.timestamp
+        ? calculateAttendanceSession({
+            employee,
+            company: companies.find((c) => c.id === empCompanyId),
+            punchIn: punchInPunch.timestamp.toDate(),
+            punchOut: punchOutDate,
+            requiredWorkMinutes,
+            isOffShiftDay: Boolean(punchInPunch.isOffShiftDay),
+          })
+        : null;
+
+      const punchRef = await addDoc(collection(db(), "punches"), {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        companyId: empCompanyId,
+        companyName: punchInPunch?.companyName || company?.name || "Company",
+        date: fixingRow.date,
+        attendanceDate: fixingRow.date,
+        type: "out" as const,
+        timestamp: Timestamp.fromDate(punchOutDate),
+        source: "app" as const,
+        isAuto: false,
+        isAdminFix: true,
+        adminFixedBy: user?.email || "admin",
+        adminFixedAt: new Date().toISOString(),
+        scheduledShiftStart: punchInPunch?.scheduledShiftStart || "",
+        scheduledShiftEnd: punchInPunch?.scheduledShiftEnd || "",
+        shiftTimezone: punchInPunch?.shiftTimezone || timezone,
+        requiredWorkMinutes,
+        isOffShiftDay: Boolean(punchInPunch?.isOffShiftDay),
+        ...(calculation
+          ? {
+              normalWorkMinutes: calculation.normalWorkMinutes,
+              overtimeMinutes: calculation.overtimeMinutes,
+              totalEligibleMinutes: calculation.totalEligibleMinutes,
+              attendanceStatus: calculation.status,
+            }
+          : { attendanceStatus: "complete" }),
+      });
+
+      // If there was overtime, create a pending overtime request
+      if (calculation && calculation.overtimeMinutes > 0) {
+        const isOffShift = Boolean(punchInPunch?.isOffShiftDay);
+        const reason = isOffShift
+          ? `Worked ${formatWorkMinutes(calculation.overtimeMinutes)} on off-shift day (admin fix)`
+          : `Worked ${formatWorkMinutes(calculation.overtimeMinutes)} past shift (admin fix)`;
+        await addDoc(collection(db(), "overtimeRequests"), {
+          employeeId: employee.id,
+          employeeName: employee.name,
+          companyId: empCompanyId,
+          date: fixingRow.date,
+          requestType: isOffShift ? "off_shift_work" : "overtime",
+          punchOutId: punchRef.id,
+          punchInId: punchInPunch?.id || "",
+          overtimeMinutes: calculation.overtimeMinutes,
+          normalWorkMinutes: calculation.normalWorkMinutes,
+          isOffShiftDay: isOffShift,
+          reason,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      toast.success(
+        `Missing punch-out fixed for ${fixingRow.date} at ${fixTime}. ${
+          calculation
+            ? `Normal: ${formatWorkMinutes(calculation.normalWorkMinutes)}, OT: ${formatWorkMinutes(calculation.overtimeMinutes)}`
+            : ""
+        }`,
+      );
+      setFixingRow(null);
+      setFixTime("");
+    } catch (err) {
+      console.error("Fix missing punch error:", err);
+      toast.error("Failed to fix punch: " + (err as Error).message);
+    } finally {
+      setFixBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <Link
@@ -783,19 +886,47 @@ function EmployeeDetail() {
                   <td className="p-3.5 font-semibold">{formatWorkMinutes(row.normalMinutes)}</td>
                   <td className="p-3.5 font-semibold">{formatWorkMinutes(row.overtimeMinutes)}</td>
                   <td className="p-3.5">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                        row.status === "Missing punch out"
-                          ? "bg-rose-500/10 text-rose-700"
-                          : row.minutesLate
-                            ? "bg-amber-500/10 text-amber-700"
-                            : row.isAutoPunchOut
-                              ? "bg-sky-500/10 text-sky-700"
-                              : "bg-emerald-500/10 text-emerald-700"
-                      }`}
-                    >
-                      {row.minutesLate ? `Late ${row.minutesLate} min` : row.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                          row.status === "Missing punch out"
+                            ? "bg-rose-500/10 text-rose-700"
+                            : row.minutesLate
+                              ? "bg-amber-500/10 text-amber-700"
+                              : row.isAutoPunchOut
+                                ? "bg-sky-500/10 text-sky-700"
+                                : "bg-emerald-500/10 text-emerald-700"
+                        }`}
+                      >
+                        {row.minutesLate ? `Late ${row.minutesLate} min` : row.status}
+                      </span>
+                      {row.status === "Missing punch out" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFixingRow(row);
+                            // Pre-fill with shift end time if available
+                            const shiftEnd = row.firstIn?.scheduledShiftEnd;
+                            if (shiftEnd) {
+                              try {
+                                const d = new Date(shiftEnd);
+                                setFixTime(
+                                  `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+                                );
+                              } catch {
+                                setFixTime("17:00");
+                              }
+                            } else {
+                              setFixTime("17:00");
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] font-bold text-primary hover:bg-primary/10 transition-colors"
+                          title="Fix this missing punch-out"
+                        >
+                          <Wrench className="h-3 w-3" /> Fix
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="p-3.5">
                     <div className="flex max-w-lg flex-wrap gap-1.5">
@@ -883,6 +1014,87 @@ function EmployeeDetail() {
           companies={companies}
           onClose={() => setEditingEmployee(null)}
         />
+      )}
+
+      {/* Fix Missing Punch-Out Modal */}
+      {fixingRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-2xl space-y-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-black text-foreground flex items-center gap-2">
+                  <Wrench className="h-5 w-5 text-primary" /> Fix Missing Punch-Out
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add the punch-out time for <strong>{employee?.name}</strong> on <strong>{fixingRow.date}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setFixingRow(null); setFixTime(""); }}
+                className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            {fixingRow.firstIn && (
+              <div className="rounded-lg border bg-secondary/30 p-3 text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="font-medium text-muted-foreground">Punched in at:</span>
+                  <span className="font-bold text-foreground">
+                    {formatInTimezone(fixingRow.firstIn.timestamp.toDate(), timezone)}
+                  </span>
+                </div>
+                {fixingRow.firstIn.scheduledShiftEnd && (
+                  <div className="flex justify-between">
+                    <span className="font-medium text-muted-foreground">Shift end:</span>
+                    <span className="font-bold text-foreground">
+                      {formatInTimezone(new Date(fixingRow.firstIn.scheduledShiftEnd), timezone)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-muted-foreground mb-1.5">
+                Punch-Out Time
+              </label>
+              <input
+                type="time"
+                value={fixTime}
+                onChange={(e) => setFixTime(e.target.value)}
+                className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Enter the actual time the employee stopped working on {fixingRow.date}.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => { setFixingRow(null); setFixTime(""); }}
+                className="rounded-lg border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleFixMissingPunch}
+                disabled={fixBusy || !fixTime}
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {fixBusy ? "Fixing…" : "Fix Punch-Out"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
