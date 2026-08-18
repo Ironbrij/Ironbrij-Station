@@ -16,6 +16,13 @@ import {
   RotateCcw,
   Zap,
   Lock,
+  MessageSquare,
+  Users,
+  CheckCircle2,
+  Calendar,
+  Clock,
+  FileText,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
@@ -44,15 +51,39 @@ function generateSecureToken(): string {
   return token;
 }
 
-function McpConnectPage() {
+const GPT_SYSTEM_INSTRUCTIONS = `You are the executive AI Admin Assistant for SavyTimes (https://station.savykids.com).
+You have full real-time access via MCP tools to manage attendance, employees, punches, leaves, overtime approvals, SOD/EOD daily reports, and notices.
+
+### 👥 TEAM PERSONALIZATION & COMMUNICATION RULES
+Always identify who is speaking with you and adapt your tone accordingly:
+- **Bibek (IT / AI Specialist)**: Speak normally, direct, technical, crisp, and helpful. No fluff.
+- **Rose (Accounts Department)**: Use warm, playful, and affectionate language. Use emojis and address as "darlings" or "dear".
+- **Ann (Account Admin)**: Respectful, polite, quiet, decent introvert tone. Professional and gentle.
+- **Louis (Owner / Founder of Ironbrij)**: Friendly, tech-forward, fun Australian humor and good vibes with high efficiency.
+- **MV & Andrea (IT Gurus)**: Cool, tech-savvy, sharp, witty, and developer-friendly.
+- **Janelle (Executive)**: High clarity, effortless summaries, proactive, making work friction-free and smooth.
+- **Other Team Members**: Friendly, professional, and clear.
+
+### 📊 DATA PRESENTATION & FORMATTING (STRICT RULES)
+1. **Always use Markdown Tables**:
+   - For Attendance: | Employee | Department | Status | Shift / Time | Details |
+   - For Punches: | Date | Time | Type | Employee | Source |
+   - For Leaves: | Employee | Dates | Reason | Status | Action |
+   - For Overtime: | Employee | Date | Duration | Reason | Status |
+2. **Be 100% Precise**: Never guess or invent employee IDs, shift times, or punch timestamps. Use tool outputs directly.
+3. **Smart Lookups**: You can look up employees by first name, full name, or email directly.
+4. **Confirmation**: Always ask for confirmation before destructive actions (deleting employees, rejecting leaves/overtime).
+5. **Proactive Insights**: When reporting attendance, highlight who is currently punched in, who is off-shift, and any missed punch-outs from previous days.`;
+
+export function McpConnectPage() {
   const { user } = useAuth();
   const [tokens, setTokens] = useState<AdminApiToken[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chatgpt" | "claude" | "console">("chatgpt");
+  const [activeTab, setActiveTab] = useState<"chatgpt" | "claude" | "instructions" | "cheatsheet" | "console">("chatgpt");
 
   // Console test state
-  const [selectedAction, setSelectedAction] = useState("list_employees");
-  const [testPayload, setTestPayload] = useState('{\n  "companyId": "default"\n}');
+  const [selectedAction, setSelectedAction] = useState("get_company_summary");
+  const [testPayload, setTestPayload] = useState('{}');
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -178,7 +209,7 @@ function McpConnectPage() {
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2.5">
             <Bot className="h-6 w-6 text-primary" /> AI & MCP Integration
@@ -190,14 +221,14 @@ function McpConnectPage() {
 
         <button
           onClick={handleGenerateToken}
-          className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 text-xs font-bold flex items-center gap-2 shadow-sm transition self-start sm:self-auto"
+          className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 text-xs font-bold flex items-center gap-2 shadow-xs transition self-start sm:self-auto"
         >
           <Sparkles className="h-4 w-4" /> Generate New Admin Key
         </button>
       </div>
 
       {/* Active Token Card */}
-      <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+      <div className="rounded-2xl border bg-card p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2 border-b pb-3">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-emerald-600" />
@@ -205,7 +236,7 @@ function McpConnectPage() {
               Admin Access Token & Authentication
             </h2>
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground font-medium">
             Authenticated Admin: <strong className="text-foreground">{user?.email}</strong>
           </span>
         </div>
@@ -246,9 +277,8 @@ function McpConnectPage() {
                 </button>
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              🔒 This key gives full admin access to manage employees, shifts, punches, and leaves.
-              Keep it secret and only share it with your personal AI assistant.
+            <p className="text-[11px] text-muted-foreground font-medium">
+              🔒 This key grants full admin access to manage employees, shifts, punches, and leaves. Keep it secret and only share it with your personal AI assistant.
             </p>
           </div>
         ) : (
@@ -258,7 +288,7 @@ function McpConnectPage() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">No Admin Key Generated Yet</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
                 Generate an admin key to connect SavyTimes to ChatGPT or Claude.
               </p>
             </div>
@@ -272,83 +302,98 @@ function McpConnectPage() {
         )}
       </div>
 
-      {/* Integration Guides Tabs */}
-      <div className="rounded-2xl border bg-card overflow-hidden shadow-sm">
+      {/* Integration Navigation Tabs */}
+      <div className="rounded-2xl border bg-card overflow-hidden shadow-xs">
         {/* Tab Headers */}
-        <div className="flex border-b bg-secondary/30 text-xs font-bold">
+        <div className="flex border-b bg-secondary/30 text-xs font-bold overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab("chatgpt")}
-            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition ${
+            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
               activeTab === "chatgpt"
-                ? "border-primary text-primary bg-background"
+                ? "border-primary text-primary bg-background font-black"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Bot className="h-4 w-4" /> Connect with ChatGPT (Custom GPT)
+            <Bot className="h-4 w-4" /> 1. Connect ChatGPT
+          </button>
+          <button
+            onClick={() => setActiveTab("instructions")}
+            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+              activeTab === "instructions"
+                ? "border-primary text-primary bg-background font-black"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Sparkles className="h-4 w-4" /> 2. Master System Instructions
+          </button>
+          <button
+            onClick={() => setActiveTab("cheatsheet")}
+            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
+              activeTab === "cheatsheet"
+                ? "border-primary text-primary bg-background font-black"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="h-4 w-4" /> 3. Command Cheatsheet
           </button>
           <button
             onClick={() => setActiveTab("claude")}
-            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition ${
+            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
               activeTab === "claude"
-                ? "border-primary text-primary bg-background"
+                ? "border-primary text-primary bg-background font-black"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Zap className="h-4 w-4" /> Connect with Claude Desktop / Claude Code
+            <Zap className="h-4 w-4" /> Claude MCP Desktop
           </button>
           <button
             onClick={() => setActiveTab("console")}
-            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition ${
+            className={`px-5 py-3.5 flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
               activeTab === "console"
-                ? "border-primary text-primary bg-background"
+                ? "border-primary text-primary bg-background font-black"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Terminal className="h-4 w-4" /> Live AI Action Console
+            <Terminal className="h-4 w-4" /> Live Action Console
           </button>
         </div>
 
-        {/* Tab 1: ChatGPT */}
+        {/* Tab 1: ChatGPT Setup */}
         {activeTab === "chatgpt" && (
           <div className="p-6 space-y-5 text-sm">
             <div>
               <h3 className="text-base font-bold text-foreground">
-                How to Connect SavyTimes into ChatGPT
+                How to Connect SavyTimes into ChatGPT (Custom GPT)
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                You can create a Custom GPT in ChatGPT that talks directly to your SavyTimes admin
-                account via OpenAPI Actions.
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                Set up your Custom GPT in under 2 minutes with full OpenAPI Action support.
               </p>
             </div>
 
             <div className="space-y-4">
-              {/* Step 1 */}
               <div className="p-4 rounded-xl border bg-background space-y-2">
                 <div className="font-bold text-xs text-primary uppercase tracking-wider">
                   Step 1: Open ChatGPT & Create a Custom GPT
                 </div>
-                <p className="text-xs text-foreground">
-                  Go to <strong>ChatGPT &gt; Explore GPTs &gt; Create a GPT &gt; Configure</strong>.
-                  Name it <em>&quot;SavyTimes Manager&quot;</em>.
+                <p className="text-xs text-foreground leading-relaxed">
+                  Go to <strong>ChatGPT &gt; Explore GPTs &gt; Create a GPT &gt; Configure</strong>.<br />
+                  Set Name: <strong>SavyTimes Admin Assistant</strong>.
                 </p>
               </div>
 
-              {/* Step 2 */}
               <div className="p-4 rounded-xl border bg-background space-y-2">
                 <div className="font-bold text-xs text-primary uppercase tracking-wider">
-                  Step 2: Add Actions & Import OpenAPI Schema
+                  Step 2: Add Actions & Import OpenAPI Schema URL
                 </div>
-                <p className="text-xs text-foreground">
-                  Scroll down to <strong>Actions</strong> and click{" "}
-                  <strong>Create new action</strong>. Click <strong>Import from URL</strong> and
-                  paste:
+                <p className="text-xs text-foreground leading-relaxed">
+                  Scroll down to <strong>Actions</strong> and click <strong>Create new action</strong>. Click <strong>Import from URL</strong> and paste:
                 </p>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
                     value={openApiUrl}
-                    className="w-full font-mono text-xs px-3 py-2 rounded-lg border bg-muted/30"
+                    className="w-full font-mono text-xs px-3 py-2 rounded-lg border bg-muted/30 font-semibold"
                   />
                   <button
                     onClick={() => copyToClipboard(openApiUrl, "OpenAPI URL copied!")}
@@ -359,21 +404,19 @@ function McpConnectPage() {
                 </div>
               </div>
 
-              {/* Step 3 */}
               <div className="p-4 rounded-xl border bg-background space-y-2">
                 <div className="font-bold text-xs text-primary uppercase tracking-wider">
                   Step 3: Set Authentication to Bearer
                 </div>
-                <p className="text-xs text-foreground">
-                  Under <strong>Authentication</strong>, select <strong>API Key</strong> &gt;{" "}
-                  <strong>Bearer</strong>, and paste your active Admin Token:
+                <p className="text-xs text-foreground leading-relaxed">
+                  Under <strong>Authentication</strong>, select <strong>API Key</strong> &gt; <strong>Bearer</strong>, and paste your active Admin Token:
                 </p>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
                     value={activeToken?.token || "Generate a key above first"}
-                    className="w-full font-mono text-xs px-3 py-2 rounded-lg border bg-muted/30"
+                    className="w-full font-mono text-xs px-3 py-2 rounded-lg border bg-muted/30 font-semibold"
                   />
                   <button
                     onClick={() => copyToClipboard(activeToken?.token || "", "Admin Token copied!")}
@@ -384,43 +427,178 @@ function McpConnectPage() {
                 </div>
               </div>
 
-              {/* Step 4 */}
-              <div className="p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-900 space-y-1">
-                <div className="font-bold text-xs text-emerald-700 uppercase tracking-wider flex items-center gap-1">
-                  <Check className="h-4 w-4" /> Ready to Chat!
+              <div className="p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/20 text-emerald-900 dark:text-emerald-300 space-y-1">
+                <div className="font-bold text-xs text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1">
+                  <Check className="h-4 w-4" /> Next Step: Add Instructions
                 </div>
-                <p className="text-xs">
-                  You can now ask ChatGPT:{" "}
-                  <em>&quot;Add a new V.A. named Sarah with 9-5 shift in Sydney&quot;</em> or{" "}
-                  <em>&quot;Fix Maria&apos;s missed punch out on Monday&quot;</em>.
+                <p className="text-xs leading-relaxed">
+                  Click the <strong>&quot;Master System Instructions&quot;</strong> tab above and paste the full prompt into your GPT's Instructions field!
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 2: Claude */}
+        {/* Tab 2: Master Instructions */}
+        {activeTab === "instructions" && (
+          <div className="p-6 space-y-5 text-sm">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="text-base font-bold text-foreground">
+                  Master GPT System Instructions
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                  Copy and paste this into ChatGPT's <strong>Instructions</strong> box for bulletproof accuracy and custom team personalities.
+                </p>
+              </div>
+
+              <button
+                onClick={() => copyToClipboard(GPT_SYSTEM_INSTRUCTIONS, "System instructions copied!")}
+                className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-primary/90 transition-all"
+              >
+                <Copy className="h-4 w-4" /> Copy Full Instructions
+              </button>
+            </div>
+
+            <div className="relative">
+              <pre className="p-4 rounded-xl bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[480px] overflow-y-auto border border-border/40">
+                {GPT_SYSTEM_INSTRUCTIONS}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Command Cheatsheet */}
+        {activeTab === "cheatsheet" && (
+          <div className="p-6 space-y-6 text-sm">
+            <div>
+              <h3 className="text-base font-bold text-foreground">
+                ChatGPT Live Commands & Examples
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                Click any prompt below to copy it directly and try it in your ChatGPT conversation.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Attendance Commands */}
+              <div className="p-4 rounded-xl border bg-card space-y-3">
+                <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
+                  <Users className="h-4 w-4 text-primary" /> 1. Live Attendance & Team Status
+                </div>
+                <div className="space-y-2">
+                  {[
+                    "Who is currently working right now?",
+                    "Show me today's live attendance in a clean markdown table",
+                    "Did anyone miss their punch-out yesterday?",
+                    "Give me a complete company summary overview",
+                  ].map((cmd) => (
+                    <button
+                      key={cmd}
+                      onClick={() => copyToClipboard(cmd, `Copied: "${cmd}"`)}
+                      className="w-full text-left p-2.5 rounded-lg border bg-muted/30 hover:bg-muted font-medium text-xs text-foreground flex items-center justify-between group transition"
+                    >
+                      <span>&quot;{cmd}&quot;</span>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Punch & Overtime Commands */}
+              <div className="p-4 rounded-xl border bg-card space-y-3">
+                <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
+                  <Clock className="h-4 w-4 text-emerald-600" /> 2. Punches & Overtime Approvals
+                </div>
+                <div className="space-y-2">
+                  {[
+                    "Show all pending overtime requests",
+                    "Approve Rose's overtime request",
+                    "Fix missed punch out for MV on Monday at 5:00 PM",
+                    "List all punches for Andrea this week",
+                  ].map((cmd) => (
+                    <button
+                      key={cmd}
+                      onClick={() => copyToClipboard(cmd, `Copied: "${cmd}"`)}
+                      className="w-full text-left p-2.5 rounded-lg border bg-muted/30 hover:bg-muted font-medium text-xs text-foreground flex items-center justify-between group transition"
+                    >
+                      <span>&quot;{cmd}&quot;</span>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Leaves & SOD/EOD Reports */}
+              <div className="p-4 rounded-xl border bg-card space-y-3">
+                <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
+                  <Calendar className="h-4 w-4 text-purple-600" /> 3. Leaves & SOD/EOD Reports
+                </div>
+                <div className="space-y-2">
+                  {[
+                    "List all pending leave requests",
+                    "Approve leave request for Ann as paid leave",
+                    "Show today's SOD reports submitted by the team",
+                    "Show today's EOD summary reports",
+                  ].map((cmd) => (
+                    <button
+                      key={cmd}
+                      onClick={() => copyToClipboard(cmd, `Copied: "${cmd}"`)}
+                      className="w-full text-left p-2.5 rounded-lg border bg-muted/30 hover:bg-muted font-medium text-xs text-foreground flex items-center justify-between group transition"
+                    >
+                      <span>&quot;{cmd}&quot;</span>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Employee Management */}
+              <div className="p-4 rounded-xl border bg-card space-y-3">
+                <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
+                  <Sparkles className="h-4 w-4 text-amber-600" /> 4. Employee Management
+                </div>
+                <div className="space-y-2">
+                  {[
+                    "List all active employees with their shift times",
+                    "Add new employee: Name: Sarah Smith, Email: sarah@ironbrij.com.au, Shift: 09:00 to 17:00, Timezone: Australia/Sydney",
+                    "Send an invite email to Rose",
+                    "Post a notice: Title: Team Meeting, Content: All-hands meeting on Friday at 3 PM",
+                  ].map((cmd) => (
+                    <button
+                      key={cmd}
+                      onClick={() => copyToClipboard(cmd, `Copied: "${cmd}"`)}
+                      className="w-full text-left p-2.5 rounded-lg border bg-muted/30 hover:bg-muted font-medium text-xs text-foreground flex items-center justify-between group transition"
+                    >
+                      <span>&quot;{cmd}&quot;</span>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Claude MCP */}
         {activeTab === "claude" && (
           <div className="p-6 space-y-5 text-sm">
             <div>
               <h3 className="text-base font-bold text-foreground">
                 How to Connect with Claude Desktop & Claude Code
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Add the SavyTimes MCP Server config to Claude to let Claude auto-add people and
-                manage the app.
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                Add the SavyTimes MCP Server config to Claude to let Claude auto-manage the workspace.
               </p>
             </div>
 
             <div className="space-y-4">
-              {/* Option 1: Claude Code CLI */}
               <div className="p-4 rounded-xl border bg-background space-y-2">
                 <div className="font-bold text-xs text-primary uppercase tracking-wider flex items-center gap-1.5">
                   <Terminal className="h-3.5 w-3.5" /> For Claude Code (1-Click Terminal Command)
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Run this command in your terminal on any computer to add SavyTimes MCP to Claude
-                  Code:
+                <p className="text-xs text-muted-foreground font-medium">
+                  Run this command in your terminal to add SavyTimes MCP to Claude Code:
                 </p>
                 <div className="relative">
                   <pre className="p-3 pr-24 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">
@@ -435,14 +613,12 @@ function McpConnectPage() {
                 </div>
               </div>
 
-              {/* Option 2: Claude Desktop */}
               <div className="p-4 rounded-xl border bg-background space-y-2">
                 <div className="font-bold text-xs text-primary uppercase tracking-wider">
                   For Claude Desktop (`claude_desktop_config.json`)
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Paste this Remote MCP config into `%APPDATA%\Claude\claude_desktop_config.json`
-                  (no local files needed):
+                <p className="text-xs text-muted-foreground font-medium">
+                  Paste this Remote MCP config into <code className="text-primary font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>:
                 </p>
                 <div className="relative">
                   <pre className="p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">
@@ -460,15 +636,15 @@ function McpConnectPage() {
           </div>
         )}
 
-        {/* Tab 3: Console Test */}
+        {/* Tab 5: Live Console Test */}
         {activeTab === "console" && (
           <div className="p-6 space-y-4 text-sm">
             <div>
               <h3 className="text-base font-bold text-foreground">
                 Live AI Action Testing Console
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Test any admin action directly with your current token to verify it works.
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                Test any admin action directly with your current token to verify responses.
               </p>
             </div>
 
@@ -487,21 +663,34 @@ function McpConnectPage() {
                       );
                     } else if (e.target.value === "add_or_fix_punch") {
                       setTestPayload(
-                        '{\n  "employeeId": "emp_123",\n  "type": "out",\n  "timestampISO": "' +
+                        '{\n  "name": "Rose",\n  "type": "out",\n  "timestampISO": "' +
                           new Date().toISOString() +
                           '"\n}',
                       );
+                    } else if (e.target.value === "list_overtime") {
+                      setTestPayload('{\n  "status": "pending"\n}');
+                    } else if (e.target.value === "list_daily_reports") {
+                      setTestPayload('{\n  "reportType": "sod"\n}');
                     } else {
-                      setTestPayload('{\n  "companyId": "default"\n}');
+                      setTestPayload('{}');
                     }
                   }}
                   className="w-full px-3 py-2 rounded-lg border bg-background text-sm font-semibold"
                 >
+                  <option value="get_company_summary">get_company_summary (Overview)</option>
+                  <option value="get_live_attendance">get_live_attendance (Real-time)</option>
                   <option value="list_employees">list_employees</option>
                   <option value="add_employee">add_employee (Auto-add person)</option>
-                  <option value="list_companies">list_companies</option>
-                  <option value="add_or_fix_punch">add_or_fix_punch</option>
+                  <option value="add_or_fix_punch">add_or_fix_punch (Fix missed clocks)</option>
+                  <option value="list_punches">list_punches</option>
+                  <option value="list_overtime">list_overtime (Pending/Approved)</option>
+                  <option value="decide_overtime">decide_overtime</option>
                   <option value="list_leaves">list_leaves</option>
+                  <option value="decide_leave">decide_leave</option>
+                  <option value="list_daily_reports">list_daily_reports (SOD / EOD)</option>
+                  <option value="list_companies">list_companies</option>
+                  <option value="list_departments">list_departments</option>
+                  <option value="list_notices">list_notices</option>
                 </select>
 
                 <label className="block text-xs font-bold text-foreground mt-3 mb-1">
@@ -517,7 +706,7 @@ function McpConnectPage() {
                 <button
                   onClick={handleRunConsoleTest}
                   disabled={isTesting}
-                  className="mt-3 w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                  className="mt-3 w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isTesting ? (
                     <>Executing Action…</>

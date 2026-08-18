@@ -93,6 +93,7 @@ function AdminHome() {
   } | null>(null);
 
   const [now, setNow] = useState(() => new Date());
+  const [pendingOvertimeCount, setPendingOvertimeCount] = useState(0);
   const { company } = useAuth();
 
   const handleBadgeClick = (emp: Employee, type: "sod" | "eod", e: React.MouseEvent) => {
@@ -158,6 +159,11 @@ function AdminHome() {
       }
     });
 
+    const un7 = onSnapshot(
+      query(collection(db(), "overtimeRequests"), where("status", "==", "pending")),
+      (s) => setPendingOvertimeCount(s.docs.length),
+    );
+
     return () => {
       un0();
       un1();
@@ -166,6 +172,7 @@ function AdminHome() {
       un4();
       un5();
       un6();
+      un7();
     };
   }, []);
 
@@ -370,6 +377,31 @@ function AdminHome() {
           </div>
         </div>
       </div>
+
+      {/* Pending Overtime Alert Banner */}
+      {pendingOvertimeCount > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="font-bold text-sm text-amber-950 dark:text-amber-100 block">
+                {pendingOvertimeCount} Pending Overtime Request{pendingOvertimeCount > 1 ? "s" : ""}
+              </span>
+              <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                Team members have logged overtime that requires admin review before payroll calculation.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/admin/overtime"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors whitespace-nowrap"
+          >
+            Review Overtime &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Department Cards Section */}
       <section className="space-y-4">

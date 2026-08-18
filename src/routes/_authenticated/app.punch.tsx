@@ -334,14 +334,21 @@ function PunchPage() {
       const punchTime = new Date();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
       const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
-      const shiftWindow = getLiveAttendanceStatus(
+      const schedule = getLiveAttendanceStatus(
         employee,
         companyPunches,
         punchTime,
         company?.lateGraceMinutes ?? 5,
         company?.workingDays,
         getEmployeeHolidayDates(company, employee),
-      ).shift;
+      );
+      const isOffShiftDayToday = !schedule.isScheduledDay || Boolean(holiday);
+      const isOffShiftDay =
+        targetType === "out"
+          ? Boolean(latestPunch?.isOffShiftDay || isOffShiftDayToday)
+          : isOffShiftDayToday;
+
+      const shiftWindow = schedule.shift;
       const calculation =
         punchType === "out" && latestPunch?.type === "in" && latestPunch.timestamp
           ? calculateAttendanceSession({
@@ -350,8 +357,10 @@ function PunchPage() {
               punchIn: latestPunch.timestamp.toDate(),
               punchOut: punchTime,
               requiredWorkMinutes,
+              isOffShiftDay,
             })
           : null;
+
       const extraOvertimeMinutes =
         punchType === "extra_out" && latestPunch?.type === "extra_in" && latestPunch.timestamp
           ? Math.max(
@@ -359,6 +368,10 @@ function PunchPage() {
               Math.floor((punchTime.getTime() - latestPunch.timestamp.toMillis()) / 60_000),
             )
           : null;
+
+      const recordedOvertimeMinutes =
+        calculation?.overtimeMinutes ?? extraOvertimeMinutes ?? 0;
+
       const punchRef = await addDoc(collection(db(), "punches"), {
         employeeId: employee.id,
         employeeName: employee.name,
@@ -373,6 +386,7 @@ function PunchPage() {
         scheduledShiftEnd: shiftWindow.end.toISOString(),
         shiftTimezone: shiftWindow.timezone,
         requiredWorkMinutes,
+        isOffShiftDay,
         ...(calculation
           ? {
               normalWorkMinutes: calculation.normalWorkMinutes,
@@ -390,6 +404,34 @@ function PunchPage() {
             : { attendanceStatus: "in_progress" }),
       });
 
+      // If overtime was worked on punch-out, auto-create a pending OvertimeRequest for Admin
+      if (targetType === "out" && recordedOvertimeMinutes > 0) {
+        try {
+          const reason = isOffShiftDay
+            ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
+            : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
+
+          const otDoc = await addDoc(collection(db(), "overtimeRequests"), {
+            employeeId: employee.id,
+            employeeName: employee.name,
+            companyId: activeCompanyId,
+            date: punchDate,
+            punchOutId: punchRef.id,
+            punchInId: latestPunch?.id || "",
+            overtimeMinutes: recordedOvertimeMinutes,
+            normalWorkMinutes: calculation?.normalWorkMinutes || 0,
+            isOffShiftDay,
+            reason,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+          });
+
+          await setDoc(doc(db(), "punches", punchRef.id), { overtimeRequestId: otDoc.id }, { merge: true });
+        } catch (otErr) {
+          console.warn("Could not save overtime request:", otErr);
+        }
+      }
+
       try {
         await publishPersonalAttendanceEvent({
           ownerUid: user.uid,
@@ -405,20 +447,12 @@ function PunchPage() {
 
       setQuote(randomQuote());
       if (targetType === "in") {
-        const schedule = getLiveAttendanceStatus(
-          employee,
-          companyPunches,
-          new Date(),
-          company?.lateGraceMinutes ?? 5,
-          company?.workingDays,
-          getEmployeeHolidayDates(company, employee),
-        );
         const lateness = computeEmployeeLateness(
           new Date(),
           employee,
           company?.lateGraceMinutes ?? 5,
         );
-        if (!schedule.isScheduledDay) toast.success("Punched in! Fill out your SOD report below.");
+        if (isOffShiftDay) toast.success("Punched in on off-shift day! Time will count as overtime.");
         else if (approvedLeaveToday) toast.success("Punched in on leave date!");
         else if (lateness.isLate) toast.warning(`Punched in ${lateness.minutes}m late.`);
         else toast.success("Punched in on time!");
@@ -426,7 +460,13 @@ function PunchPage() {
         // Auto-popup SOD Notepad after Punch In
         setShowNotepadModal("sod");
       } else {
-        toast.success("Punched out successfully!");
+        if (recordedOvertimeMinutes > 0) {
+          toast.success(
+            `Punched out! ${formatWorkMinutes(recordedOvertimeMinutes)} overtime submitted for admin approval.`,
+          );
+        } else {
+          toast.success("Punched out successfully!");
+        }
 
         // Auto-popup EOD Notepad after Punch Out
         setShowNotepadModal("eod");

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
 import {
   Download,
   FileText,
@@ -37,6 +37,7 @@ import {
   type Department,
   type Employee,
   type LeaveRequest,
+  type OvertimeRequest,
   type Punch,
 } from "@/lib/types";
 import { computeDay } from "@/lib/time";
@@ -144,6 +145,7 @@ function ReportsPage() {
   const [companyFilter, setCompanyFilter] = useState("all");
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [month, setMonth] = useState(currentMonth);
   const [from, setFrom] = useState(initialBounds.from);
   const [to, setTo] = useState(initialBounds.to);
@@ -218,6 +220,14 @@ function ReportsPage() {
       onSnapshot(collection(db(), "punches"), (snapshot) =>
         setPunches(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
+        ),
+      ),
+      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) =>
+        setOvertimeRequests(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<OvertimeRequest, "id">),
+          })),
         ),
       ),
     ];
@@ -439,9 +449,11 @@ function ReportsPage() {
         const regHours = sessionCalc ? sessionCalc.normalWorkMinutes / 60 : 0;
         const otHours = sessionCalc ? sessionCalc.overtimeMinutes / 60 : 0;
 
-        // Default: overtime automatically starts approved if admin created it or pre-approved
-        // Admin can toggle approve/reject in the interval drawer
-        const isOvertimeApproved = otHours > 0;
+        // Check if there is an overtime request record for this day
+        const otReq = overtimeRequests.find(
+          (r) => r.employeeId === employee.id && r.date === date,
+        );
+        const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
 
         totalRegularHours += regHours;
         if (otHours > 0) {
@@ -732,6 +744,17 @@ function ReportsPage() {
     handleUpdateDayInterval(employeeRowId, date, {
       isOvertimeApproved: nextApproved,
     });
+
+    const empId = selectedIntervalEmployee?.employeeId || employeeRowId;
+    const otReq = overtimeRequests.find((r) => r.employeeId === empId && r.date === date);
+    if (otReq) {
+      updateDoc(doc(db(), "overtimeRequests", otReq.id), {
+        status: nextApproved ? "approved" : "rejected",
+        decidedBy: user?.email || "Admin",
+        decidedAt: new Date().toISOString(),
+      }).catch((err) => console.warn("Could not sync overtime request status:", err));
+    }
+
     toast.success(
       nextApproved
         ? `Accepted overtime for ${date} (+${currentDay.rawOvertimeHours.toFixed(1)}h added to report)`
@@ -742,6 +765,19 @@ function ReportsPage() {
   // Approve ALL overtime sessions for an employee
   function handleApproveAllOvertime(employeeRowId: string) {
     setHasCustomEdits(true);
+    const empId = selectedIntervalEmployee?.employeeId || employeeRowId;
+
+    // Sync all matching overtimeRequests
+    overtimeRequests
+      .filter((r) => r.employeeId === empId && r.status !== "approved")
+      .forEach((req) => {
+        updateDoc(doc(db(), "overtimeRequests", req.id), {
+          status: "approved",
+          decidedBy: user?.email || "Admin",
+          decidedAt: new Date().toISOString(),
+        }).catch((err) => console.warn("Could not sync overtime request status:", err));
+      });
+
     setReportRows((prev) =>
       prev.map((row) => {
         if (row.id !== employeeRowId) return row;
@@ -775,7 +811,7 @@ function ReportsPage() {
         return updatedRow;
       }),
     );
-    toast.success("Approved all overtime intervals for this employee!");
+    toast.success("Approved all overtime sessions for this report.");
   }
 
   // Approve ALL overtime across the ENTIRE company report

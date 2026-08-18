@@ -16,6 +16,7 @@ function AdminLayout() {
     { to: "/admin", label: "Dashboard", exact: true },
     { to: "/admin/employees", label: "Employees" },
     { to: "/admin/users", label: "Users" },
+    { to: "/admin/overtime", label: "Overtime" },
     { to: "/admin/late", label: "Late Logs" },
     { to: "/admin/notices", label: "Notifications" },
     { to: "/admin/departments", label: "Departments" },

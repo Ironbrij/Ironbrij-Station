@@ -32,6 +32,7 @@ import { Route as AuthenticatedAdminLateRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAdminLeavesRouteImport } from './routes/_authenticated/admin.leaves'
 import { Route as AuthenticatedAdminMcpConnectRouteImport } from './routes/_authenticated/admin.mcp-connect'
 import { Route as AuthenticatedAdminNoticesRouteImport } from './routes/_authenticated/admin.notices'
+import { Route as AuthenticatedAdminOvertimeRouteImport } from './routes/_authenticated/admin.overtime'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin.reports'
 import { Route as AuthenticatedAdminSodEodRouteImport } from './routes/_authenticated/admin.sod-eod'
 import { Route as AuthenticatedAdminSupportRouteImport } from './routes/_authenticated/admin.support'
@@ -166,6 +167,12 @@ const AuthenticatedAdminNoticesRoute =
     path: '/notices',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminOvertimeRoute =
+  AuthenticatedAdminOvertimeRouteImport.update({
+    id: '/overtime',
+    path: '/overtime',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminReportsRoute =
   AuthenticatedAdminReportsRouteImport.update({
     id: '/reports',
@@ -249,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
+  '/admin/overtime': typeof AuthenticatedAdminOvertimeRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
@@ -283,6 +291,7 @@ export interface FileRoutesByTo {
   '/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/admin/notices': typeof AuthenticatedAdminNoticesRoute
+  '/admin/overtime': typeof AuthenticatedAdminOvertimeRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/admin/support': typeof AuthenticatedAdminSupportRoute
@@ -320,6 +329,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/leaves': typeof AuthenticatedAdminLeavesRoute
   '/_authenticated/admin/mcp-connect': typeof AuthenticatedAdminMcpConnectRoute
   '/_authenticated/admin/notices': typeof AuthenticatedAdminNoticesRoute
+  '/_authenticated/admin/overtime': typeof AuthenticatedAdminOvertimeRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/sod-eod': typeof AuthenticatedAdminSodEodRoute
   '/_authenticated/admin/support': typeof AuthenticatedAdminSupportRoute
@@ -357,6 +367,7 @@ export interface FileRouteTypes {
     | '/admin/leaves'
     | '/admin/mcp-connect'
     | '/admin/notices'
+    | '/admin/overtime'
     | '/admin/reports'
     | '/admin/sod-eod'
     | '/admin/support'
@@ -391,6 +402,7 @@ export interface FileRouteTypes {
     | '/admin/leaves'
     | '/admin/mcp-connect'
     | '/admin/notices'
+    | '/admin/overtime'
     | '/admin/reports'
     | '/admin/sod-eod'
     | '/admin/support'
@@ -427,6 +439,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/leaves'
     | '/_authenticated/admin/mcp-connect'
     | '/_authenticated/admin/notices'
+    | '/_authenticated/admin/overtime'
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/sod-eod'
     | '/_authenticated/admin/support'
@@ -620,6 +633,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminNoticesRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/overtime': {
+      id: '/_authenticated/admin/overtime'
+      path: '/overtime'
+      fullPath: '/admin/overtime'
+      preLoaderRoute: typeof AuthenticatedAdminOvertimeRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/reports': {
       id: '/_authenticated/admin/reports'
       path: '/reports'
@@ -722,6 +742,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminLeavesRoute: typeof AuthenticatedAdminLeavesRoute
   AuthenticatedAdminMcpConnectRoute: typeof AuthenticatedAdminMcpConnectRoute
   AuthenticatedAdminNoticesRoute: typeof AuthenticatedAdminNoticesRoute
+  AuthenticatedAdminOvertimeRoute: typeof AuthenticatedAdminOvertimeRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
   AuthenticatedAdminSodEodRoute: typeof AuthenticatedAdminSodEodRoute
   AuthenticatedAdminSupportRoute: typeof AuthenticatedAdminSupportRoute
@@ -738,6 +759,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminLeavesRoute: AuthenticatedAdminLeavesRoute,
   AuthenticatedAdminMcpConnectRoute: AuthenticatedAdminMcpConnectRoute,
   AuthenticatedAdminNoticesRoute: AuthenticatedAdminNoticesRoute,
+  AuthenticatedAdminOvertimeRoute: AuthenticatedAdminOvertimeRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
   AuthenticatedAdminSodEodRoute: AuthenticatedAdminSodEodRoute,
   AuthenticatedAdminSupportRoute: AuthenticatedAdminSupportRoute,

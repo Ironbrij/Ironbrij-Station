@@ -110,8 +110,22 @@ test("only time beyond the grace boundary becomes overtime", () => {
     punchOut: at("17:21"),
   });
   assert.equal(result.normalWorkMinutes, 480);
-  assert.equal(result.overtimeMinutes, 1);
+  assert.equal(result.overtimeMinutes, 21);
   assert.equal(result.attendanceDate, "2026-08-10");
+});
+
+test("working on off-shift day or holiday counts all time as overtime", () => {
+  const result = calculateAttendanceSession({
+    employee: employee(),
+    company,
+    punchIn: at("10:00"),
+    punchOut: at("14:00"),
+    isOffShiftDay: true,
+  });
+  assert.equal(result.normalWorkMinutes, 0);
+  assert.equal(result.overtimeMinutes, 240);
+  assert.equal(result.totalEligibleMinutes, 240);
+  assert.equal(result.status, "complete");
 });
 
 test("an open session after shift end is missing punch-out without a fake end", () => {
@@ -124,7 +138,7 @@ test("an open session after shift end is missing punch-out without a fake end", 
   });
   assert.equal(result.status, "missing_punch_out");
   assert.equal(result.missingPunchOut, true);
-  assert.equal(result.overtimeMinutes, 0);
+  assert.equal(result.overtimeMinutes, 60);
 });
 
 test("reminder opens exactly twenty minutes before shift end", () => {

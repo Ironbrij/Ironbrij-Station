@@ -177,7 +177,93 @@ const MCP_TOOLS = [
       required: ["leaveId", "decision"],
     },
   },
+  {
+    name: "get_company_summary",
+    description:
+      "Get a complete high-level company summary: active team count, currently punched in count, pending leaves count, and pending overtime count.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "list_overtime",
+    description: "List overtime requests with optional status filtering (pending, approved, rejected, all).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["pending", "approved", "rejected", "all"] },
+        employeeId: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "decide_overtime",
+    description: "Approve or reject an employee overtime request.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        requestId: { type: "string", description: "Overtime request document ID" },
+        decision: { type: "string", enum: ["approved", "rejected"] },
+      },
+      required: ["requestId", "decision"],
+    },
+  },
+  {
+    name: "list_daily_reports",
+    description: "List SOD and EOD daily work reports submitted by team members.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "YYYY-MM-DD date" },
+        reportType: { type: "string", enum: ["sod", "eod"] },
+        employeeId: { type: "string" },
+      },
+    },
+  },
 ];
+
+async function resolveEmployee(
+  identifier: string,
+  baseUrl: string,
+  apiKey: string,
+): Promise<{ id: string; name?: string; email?: string; [key: string]: any } | null> {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+
+  try {
+    const directRes = await fetch(
+      `${baseUrl}/employees/${encodeURIComponent(clean)}?key=${encodeURIComponent(apiKey)}`,
+    );
+    if (directRes.ok) {
+      const doc = await directRes.json();
+      return { id: clean, ...fromFirestoreFields(doc.fields) };
+    }
+  } catch {}
+
+  try {
+    const listRes = await fetch(
+      `${baseUrl}/employees?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+    );
+    if (listRes.ok) {
+      const data = await listRes.json();
+      const list = (data.documents || []).map((doc: any) => ({
+        id: doc.name.split("/").pop(),
+        ...fromFirestoreFields(doc.fields),
+      }));
+
+      const byEmail = list.find((e: any) => e.email?.toLowerCase() === clean.toLowerCase());
+      if (byEmail) return byEmail;
+
+      const byExactName = list.find((e: any) => e.name?.toLowerCase() === clean.toLowerCase());
+      if (byExactName) return byExactName;
+
+      const byPartial = list.find((e: any) =>
+        e.name?.toLowerCase().includes(clean.toLowerCase()),
+      );
+      if (byPartial) return byPartial;
+    }
+  } catch {}
+
+  return null;
+}
 
 async function validateAdminAuth(request: Request): Promise<boolean> {
   const auth = request.headers.get("authorization") || "";
@@ -537,6 +623,156 @@ export const Route = createFileRoute("/api/mcp")({
                 id,
                 result: {
                   content: [{ type: "text", text: JSON.stringify(liveList, null, 2) }],
+                },
+              });
+            }
+
+            // 6. LIST OVERTIME
+            if (toolName === "list_overtime") {
+              const res = await fetch(`${baseUrl}/overtimeRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const data = await res.json();
+              const list = (data.documents || []).map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              }));
+              let filtered = list;
+              if (args.status && args.status !== "all") filtered = filtered.filter((r: any) => r.status === args.status);
+              if (args.employeeId) filtered = filtered.filter((r: any) => r.employeeId === args.employeeId);
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
+                },
+              });
+            }
+
+            // 7. DECIDE OVERTIME
+            if (toolName === "decide_overtime") {
+              const fieldsToUpdate = {
+                status: args.decision,
+                decidedBy: "Admin via Remote Claude MCP",
+                decidedAt: new Date().toISOString(),
+              };
+              const updateMask = Object.keys(fieldsToUpdate)
+                .map((k) => `updateMask.fieldPaths=${k}`)
+                .join("&");
+              const res = await fetch(
+                `${baseUrl}/overtimeRequests/${args.requestId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+                },
+              );
+              if (!res.ok) throw new Error("Failed to decide overtime");
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Overtime request ${args.requestId} marked as ${args.decision}.` }],
+                },
+              });
+            }
+
+            // 8. GET COMPANY SUMMARY
+            if (toolName === "get_company_summary") {
+              const [empRes, punchRes, leaveRes, otRes] = await Promise.all([
+                fetch(`${baseUrl}/employees?pageSize=200&key=${encodeURIComponent(apiKey)}`),
+                fetch(`${baseUrl}/punches?pageSize=200&key=${encodeURIComponent(apiKey)}`),
+                fetch(`${baseUrl}/leaveRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+                fetch(`${baseUrl}/overtimeRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+              ]);
+
+              const [empData, punchData, leaveData, otData] = await Promise.all([
+                empRes.json(),
+                punchRes.json(),
+                leaveRes.json(),
+                otRes.json(),
+              ]);
+
+              const employees = (empData.documents || []).map((d: any) => ({
+                id: d.name.split("/").pop(),
+                ...fromFirestoreFields(d.fields),
+              }));
+
+              const punches = (punchData.documents || []).map((d: any) => ({
+                id: d.name.split("/").pop(),
+                ...fromFirestoreFields(d.fields),
+              }));
+
+              const leaves = (leaveData.documents || []).map((d: any) => ({
+                id: d.name.split("/").pop(),
+                ...fromFirestoreFields(d.fields),
+              }));
+
+              const overtimeRequests = (otData.documents || []).map((d: any) => ({
+                id: d.name.split("/").pop(),
+                ...fromFirestoreFields(d.fields),
+              }));
+
+              const activeEmployees = employees.filter((e: any) => e.status !== "inactive");
+              const pendingLeaves = leaves.filter((l: any) => l.status === "pending");
+              const pendingOvertime = overtimeRequests.filter((o: any) => o.status === "pending");
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(
+                        {
+                          totalEmployees: employees.length,
+                          activeEmployeesCount: activeEmployees.length,
+                          pendingLeavesCount: pendingLeaves.length,
+                          pendingOvertimeCount: pendingOvertime.length,
+                          totalRecordedPunches: punches.length,
+                          pendingLeaves: pendingLeaves.slice(0, 10),
+                          pendingOvertime: pendingOvertime.slice(0, 10),
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
+                },
+              });
+            }
+
+            // 9. LIST DAILY REPORTS
+            if (toolName === "list_daily_reports") {
+              const res = await fetch(`${baseUrl}/dailyReports?pageSize=200&key=${encodeURIComponent(apiKey)}`);
+              const data = await res.json();
+              const list = (data.documents || []).map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              }));
+
+              let filtered = list;
+              if (args.date) filtered = filtered.filter((r: any) => r.reportDate === args.date);
+              if (args.reportType) filtered = filtered.filter((r: any) => r.reportType === args.reportType);
+
+              const empIdentifier = args.employeeId || args.name;
+              if (empIdentifier) {
+                const matchedEmp = await resolveEmployee(empIdentifier, baseUrl, apiKey);
+                if (matchedEmp) {
+                  filtered = filtered.filter(
+                    (r: any) =>
+                      r.employeeId === matchedEmp.id ||
+                      r.userId === matchedEmp.id ||
+                      r.userId === matchedEmp.authUid ||
+                      r.userEmail?.toLowerCase() === matchedEmp.email?.toLowerCase(),
+                  );
+                }
+              }
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
                 },
               });
             }

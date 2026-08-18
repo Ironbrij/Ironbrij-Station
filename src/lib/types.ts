@@ -183,9 +183,31 @@ export interface Punch {
   isExcused?: boolean;
   excusedBy?: string;
   excusedAt?: string;
+  isOffShiftDay?: boolean;
+  overtimeRequestId?: string;
 }
 
 export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";
+
+export type OvertimeStatus = "pending" | "approved" | "rejected";
+
+export interface OvertimeRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  companyId: string;
+  date: string;
+  punchOutId?: string;
+  punchInId?: string;
+  overtimeMinutes: number;
+  normalWorkMinutes?: number;
+  isOffShiftDay: boolean;
+  reason: string;
+  status: OvertimeStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  createdAt: string;
+}
 
 export interface LeaveRequest {
   id: string;

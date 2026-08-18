@@ -115,6 +115,57 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
   return { ok: false };
 }
 
+// Helper: Resolve employee by ID, Email, or Partial Name
+async function resolveEmployee(
+  identifier: string,
+  baseUrl: string,
+  apiKey: string,
+): Promise<{ id: string; name?: string; email?: string; [key: string]: any } | null> {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+
+  // 1. Direct ID lookup
+  try {
+    const directRes = await fetch(
+      `${baseUrl}/employees/${encodeURIComponent(clean)}?key=${encodeURIComponent(apiKey)}`,
+    );
+    if (directRes.ok) {
+      const doc = await directRes.json();
+      return { id: clean, ...fromFirestoreFields(doc.fields) };
+    }
+  } catch {}
+
+  // 2. Fetch employee list and match by email or name
+  try {
+    const listRes = await fetch(
+      `${baseUrl}/employees?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+    );
+    if (listRes.ok) {
+      const data = await listRes.json();
+      const list = (data.documents || []).map((doc: any) => ({
+        id: doc.name.split("/").pop(),
+        ...fromFirestoreFields(doc.fields),
+      }));
+
+      // Exact email
+      const byEmail = list.find((e: any) => e.email?.toLowerCase() === clean.toLowerCase());
+      if (byEmail) return byEmail;
+
+      // Exact name
+      const byExactName = list.find((e: any) => e.name?.toLowerCase() === clean.toLowerCase());
+      if (byExactName) return byExactName;
+
+      // Partial name (e.g. "Rose" matches "Rose Miller" or "bibek" matches "Bibek")
+      const byPartial = list.find((e: any) =>
+        e.name?.toLowerCase().includes(clean.toLowerCase()),
+      );
+      if (byPartial) return byPartial;
+    }
+  } catch {}
+
+  return null;
+}
+
 // OpenAPI 3.1.0 schema for ChatGPT Custom GPT Actions
 function getOpenApiSchema(appUrl: string) {
   return {
@@ -123,7 +174,7 @@ function getOpenApiSchema(appUrl: string) {
       title: "SavyTimes Admin API",
       description:
         "Full admin API for SavyTimes (https://station.savykids.com). Manage employees, create companies, send invites, fix punch-outs, approve leaves, manage departments, and post notices.",
-      version: "1.2.0",
+      version: "1.3.0",
     },
     servers: [{ url: appUrl }],
     paths: {
@@ -169,6 +220,8 @@ function getOpenApiSchema(appUrl: string) {
             action: {
               type: "string",
               enum: [
+                "get_company_summary",
+                "get_live_attendance",
                 "list_employees",
                 "add_employee",
                 "send_employee_invite",
@@ -181,9 +234,11 @@ function getOpenApiSchema(appUrl: string) {
                 "list_departments",
                 "add_or_fix_punch",
                 "list_punches",
-                "get_live_attendance",
                 "list_leaves",
                 "decide_leave",
+                "list_overtime",
+                "decide_overtime",
+                "list_daily_reports",
                 "create_notice",
                 "list_notices",
               ],
@@ -192,7 +247,7 @@ function getOpenApiSchema(appUrl: string) {
             params: {
               type: "object",
               description:
-                "Parameters for the action. Examples:\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId }\n• update_employee: { id or email, name, role, department, status, shiftStartTime, shiftEndTime }\n• create_company: { name, code, timezone, defaultShiftHours, clientEmail, ownerName, logoUrl }\n• update_company: { id or name, timezone, defaultShiftHours, clientEmail }\n• create_department: { name, code, companyId, description }\n• add_or_fix_punch: { employeeId, type: 'in'|'out', timestampISO }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• create_notice: { title, content, priority, companyId }",
+                "Parameters for the action. Examples:\n• get_company_summary: {}\n• get_live_attendance: {}\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId or name }\n• update_employee: { id or email or name, role, department, status, shiftStartTime, shiftEndTime }\n• add_or_fix_punch: { employeeId or name, type: 'in'|'out', timestampISO, date }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• list_overtime: { status: 'pending'|'approved'|'rejected'|'all', employeeId or name }\n• decide_overtime: { requestId, decision: 'approved'|'rejected' }\n• list_daily_reports: { date, reportType: 'sod'|'eod', employeeId or name }\n• create_notice: { title, content, priority, companyId }",
             },
           },
         },
@@ -802,14 +857,24 @@ export const Route = createFileRoute("/api/mcp-action")({
           // 5. ADD OR FIX PUNCH
           if (action === "add_or_fix_punch") {
             const docId = `punch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            let empId = params.employeeId || "";
+            let empName = params.employeeName || params.name || "";
+
+            const targetEmp = await resolveEmployee(empId || empName, baseUrl, apiKey);
+            if (targetEmp) {
+              empId = targetEmp.id;
+              empName = targetEmp.name || empName;
+            }
+
+            const timestampISO = params.timestampISO || new Date().toISOString();
             const punchData = {
-              employeeId: params.employeeId,
-              employeeName: params.employeeName || "",
-              companyId: params.companyId || "default",
-              type: params.type,
-              source: params.source || "app",
+              employeeId: empId,
+              employeeName: empName,
+              companyId: params.companyId || targetEmp?.companyId || "default",
+              type: params.type || "out",
+              source: "admin",
               timestamp: {
-                seconds: Math.floor(new Date(params.timestampISO).getTime() / 1000),
+                seconds: Math.floor(new Date(timestampISO).getTime() / 1000),
                 nanoseconds: 0,
               },
             };
@@ -824,7 +889,11 @@ export const Route = createFileRoute("/api/mcp-action")({
             if (!res.ok) throw new Error("Failed to add punch");
             return Response.json({
               ok: true,
-              result: { message: `Punch saved with ID ${docId}`, punch: punchData },
+              result: {
+                message: `Punch ${params.type || "out"} successfully logged for ${empName || empId} at ${timestampISO}`,
+                punchId: docId,
+                punch: punchData,
+              },
             });
           }
 
@@ -1107,6 +1176,160 @@ export const Route = createFileRoute("/api/mcp-action")({
               result: {
                 message: `Leave request ${params.leaveId} marked as ${params.decision} and notification dispatched.`,
               },
+            });
+          }
+
+          // 10. LIST OVERTIME REQUESTS
+          if (action === "list_overtime") {
+            const res = await fetch(
+              `${baseUrl}/overtimeRequests?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+            );
+            const data = await res.json();
+            const list = (data.documents || []).map((doc: any) => ({
+              id: doc.name.split("/").pop(),
+              ...fromFirestoreFields(doc.fields),
+            }));
+
+            let filtered = list;
+            if (params.status && params.status !== "all") {
+              filtered = filtered.filter((r: any) => r.status === params.status);
+            }
+            if (params.employeeId) {
+              filtered = filtered.filter((r: any) => r.employeeId === params.employeeId);
+            }
+            if (params.date) {
+              filtered = filtered.filter((r: any) => r.date === params.date);
+            }
+
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, overtimeRequests: filtered },
+            });
+          }
+
+          // 11. DECIDE OVERTIME
+          if (action === "decide_overtime") {
+            if (!params.requestId || !params.decision) {
+              return Response.json(
+                { ok: false, error: "Missing requestId or decision ('approved' | 'rejected')" },
+                { status: 400 },
+              );
+            }
+
+            const fieldsToUpdate = {
+              status: params.decision,
+              decidedBy: authResult.adminEmail || "Admin via MCP",
+              decidedAt: new Date().toISOString(),
+            };
+
+            const updateMask = Object.keys(fieldsToUpdate)
+              .map((k) => `updateMask.fieldPaths=${k}`)
+              .join("&");
+
+            const patchUrl = `${baseUrl}/overtimeRequests/${params.requestId}?${updateMask}&key=${encodeURIComponent(apiKey)}`;
+            const res = await fetch(patchUrl, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+            });
+
+            if (!res.ok) throw new Error("Failed to update overtime decision");
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Overtime request ${params.requestId} marked as ${params.decision}.`,
+              },
+            });
+          }
+
+          // 0. GET COMPANY SUMMARY (Instant workspace overview for ChatGPT)
+          if (action === "get_company_summary") {
+            const [empRes, punchRes, leaveRes, otRes] = await Promise.all([
+              fetch(`${baseUrl}/employees?pageSize=200&key=${encodeURIComponent(apiKey)}`),
+              fetch(`${baseUrl}/punches?pageSize=200&key=${encodeURIComponent(apiKey)}`),
+              fetch(`${baseUrl}/leaveRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+              fetch(`${baseUrl}/overtimeRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`),
+            ]);
+
+            const [empData, punchData, leaveData, otData] = await Promise.all([
+              empRes.json(),
+              punchRes.json(),
+              leaveRes.json(),
+              otRes.json(),
+            ]);
+
+            const employees = (empData.documents || []).map((d: any) => ({
+              id: d.name.split("/").pop(),
+              ...fromFirestoreFields(d.fields),
+            }));
+
+            const punches = (punchData.documents || []).map((d: any) => ({
+              id: d.name.split("/").pop(),
+              ...fromFirestoreFields(d.fields),
+            }));
+
+            const leaves = (leaveData.documents || []).map((d: any) => ({
+              id: d.name.split("/").pop(),
+              ...fromFirestoreFields(d.fields),
+            }));
+
+            const overtimeRequests = (otData.documents || []).map((d: any) => ({
+              id: d.name.split("/").pop(),
+              ...fromFirestoreFields(d.fields),
+            }));
+
+            const activeEmployees = employees.filter((e: any) => e.status !== "inactive");
+            const pendingLeaves = leaves.filter((l: any) => l.status === "pending");
+            const pendingOvertime = overtimeRequests.filter((o: any) => o.status === "pending");
+
+            return Response.json({
+              ok: true,
+              result: {
+                totalEmployees: employees.length,
+                activeEmployeesCount: activeEmployees.length,
+                pendingLeavesCount: pendingLeaves.length,
+                pendingOvertimeCount: pendingOvertime.length,
+                totalRecordedPunches: punches.length,
+                pendingLeaves: pendingLeaves.slice(0, 10),
+                pendingOvertime: pendingOvertime.slice(0, 10),
+              },
+            });
+          }
+
+          // 12. LIST DAILY REPORTS (SOD / EOD Reports)
+          if (action === "list_daily_reports") {
+            const res = await fetch(
+              `${baseUrl}/dailyReports?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+            );
+            const data = await res.json();
+            const list = (data.documents || []).map((doc: any) => ({
+              id: doc.name.split("/").pop(),
+              ...fromFirestoreFields(doc.fields),
+            }));
+
+            let filtered = list;
+            if (params.date) filtered = filtered.filter((r: any) => r.reportDate === params.date);
+            if (params.reportType)
+              filtered = filtered.filter((r: any) => r.reportType === params.reportType);
+
+            const empIdentifier = params.employeeId || params.employeeName || params.name;
+            if (empIdentifier) {
+              const matchedEmp = await resolveEmployee(empIdentifier, baseUrl, apiKey);
+              if (matchedEmp) {
+                filtered = filtered.filter(
+                  (r: any) =>
+                    r.employeeId === matchedEmp.id ||
+                    r.userId === matchedEmp.id ||
+                    r.userId === matchedEmp.authUid ||
+                    r.userEmail?.toLowerCase() === matchedEmp.email?.toLowerCase(),
+                );
+              }
+            }
+
+            return Response.json({
+              ok: true,
+              result: { count: filtered.length, reports: filtered },
             });
           }
 
