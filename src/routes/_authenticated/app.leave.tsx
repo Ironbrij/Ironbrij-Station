@@ -17,6 +17,7 @@ import type { LeaveRequest } from "@/lib/types";
 import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { format } from "date-fns";
+import { toDate, toMillis } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/app/leave")({
   head: () => ({
@@ -388,8 +389,8 @@ function LeavePage() {
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                     <span>
                       Submitted{" "}
-                      {leave.createdAt?.toDate
-                        ? format(leave.createdAt.toDate(), "MMM d, yyyy · h:mm a")
+                      {toDate(leave.createdAt)
+                        ? format(toDate(leave.createdAt)!, "MMM d, yyyy · h:mm a")
                         : "just now"}
                     </span>
                     {leave.decidedAt && (

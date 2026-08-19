@@ -10,7 +10,7 @@ import {
   type LeaveRequest,
   type Punch,
 } from "@/lib/types";
-import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
+import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatEmployeeShiftSummary,
@@ -236,14 +236,16 @@ function DepartmentsPage() {
         if (!p.timestamp) return false;
         const matchesEmp = p.employeeId === emp.id || (emp.authUid && p.employeeId === emp.authUid);
         if (!matchesEmp) return false;
-        const d = p.timestamp.toDate();
+        const d = toDate(p.timestamp) ?? new Date();
         return d >= start && d <= end;
       });
 
       const empDays = new Map<string, Punch[]>();
       for (const p of empPunches) {
         if (!p.timestamp) continue;
-        const dateStr = zonedDateKey(p.timestamp.toDate(), getShiftTimezone(emp));
+        const punchedAt = toDate(p.timestamp);
+        if (!punchedAt) continue;
+        const dateStr = zonedDateKey(punchedAt, getShiftTimezone(emp));
         if (!empDays.has(dateStr)) empDays.set(dateStr, []);
         empDays.get(dateStr)!.push(p);
       }
@@ -261,7 +263,7 @@ function DepartmentsPage() {
 
       for (const [dateStr, list] of empDays.entries()) {
         const sorted = [...list].sort(
-          (a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0),
+          (a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0),
         );
         const firstIn = sorted.find((p) => p.type === "in" || p.type === "extra_in");
         const lastOut = [...sorted]
@@ -269,7 +271,7 @@ function DepartmentsPage() {
           .find((p) => p.type === "out" || p.type === "extra_out");
 
         const sampleDate = firstIn?.timestamp
-          ? firstIn.timestamp.toDate()
+          ? toDate(firstIn.timestamp) ?? new Date()
           : new Date(dateStr + "T00:00:00");
         const dayCalc = computeDay(sorted, { employee: emp, company });
 
@@ -282,7 +284,7 @@ function DepartmentsPage() {
             : "On Time";
         if (firstIn && !holiday && !approvedLeave) {
           const lateness = computeEmployeeLateness(
-            firstIn.timestamp.toDate(),
+            toDate(firstIn.timestamp) ?? new Date(),
             emp,
             company?.lateGraceMinutes ?? 5,
           );
@@ -295,10 +297,10 @@ function DepartmentsPage() {
 
         const employeeTimezone = getEmployeeTimezone(emp);
         const clockInStr = firstIn
-          ? formatInTimezone(firstIn.timestamp.toDate(), employeeTimezone)
+          ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), employeeTimezone)
           : "N/A";
         const clockOutStr = lastOut
-          ? formatInTimezone(lastOut.timestamp.toDate(), employeeTimezone)
+          ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), employeeTimezone)
           : firstIn
             ? "Punched In"
             : "N/A";
@@ -380,12 +382,14 @@ function DepartmentsPage() {
         const belongsToEmployee =
           punch.employeeId === employee.id ||
           Boolean(employee.authUid && punch.employeeId === employee.authUid);
-        const punchedAt = punch.timestamp.toDate();
+        const punchedAt = toDate(punch.timestamp) ?? new Date();
         return belongsToEmployee && punchedAt >= start && punchedAt <= end;
       });
       const days = new Map<string, Punch[]>();
       for (const punch of employeePunches) {
-        const dateKey = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) continue;
+        const dateKey = zonedDateKey(punchedAt, shiftTimezone);
         days.set(dateKey, [...(days.get(dateKey) || []), punch]);
       }
       const startKey = zonedDateKey(start, shiftTimezone);
@@ -399,7 +403,7 @@ function DepartmentsPage() {
 
       for (const [dateKey, dayPunches] of days) {
         const sorted = [...dayPunches].sort(
-          (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
+          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
         );
         const firstIn = sorted.find((punch) => punch.type === "in" || punch.type === "extra_in");
         const lastOut = [...sorted]
@@ -411,7 +415,7 @@ function DepartmentsPage() {
         const lateness =
           firstIn && !holiday && !approvedLeave
             ? computeEmployeeLateness(
-                firstIn.timestamp.toDate(),
+                toDate(firstIn.timestamp) ?? new Date(),
                 employee,
                 company?.lateGraceMinutes ?? 5,
               )
@@ -420,9 +424,9 @@ function DepartmentsPage() {
           Department: department,
           Employee: employee.name,
           Date: dateKey,
-          ClockIn: firstIn ? formatInTimezone(firstIn.timestamp.toDate(), employeeTimezone) : "",
+          ClockIn: firstIn ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), employeeTimezone) : "",
           ClockOut: lastOut
-            ? formatInTimezone(lastOut.timestamp.toDate(), employeeTimezone)
+            ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), employeeTimezone)
             : firstIn
               ? "Still punched in"
               : "",

@@ -22,7 +22,7 @@ import {
   type Punch,
   type ShiftInterval,
 } from "@/lib/types";
-import { COUNTRY_TIMEZONES } from "@/lib/time";
+import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import { getStateOptions, normalizeState } from "@/lib/states";
 import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
@@ -242,7 +242,7 @@ function EmployeesListPage() {
   function getPunchStatus(empId: string): "in" | "out" {
     const userPunches = punches.filter((p) => p.employeeId === empId && p.timestamp);
     if (userPunches.length === 0) return "out";
-    userPunches.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+    userPunches.sort((a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0));
     return userPunches[userPunches.length - 1].type === "in" ? "in" : "out";
   }
 

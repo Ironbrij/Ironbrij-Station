@@ -40,7 +40,7 @@ import {
   type OvertimeRequest,
   type Punch,
 } from "@/lib/types";
-import { computeDay } from "@/lib/time";
+import { computeDay, toDate, toMillis } from "@/lib/time";
 import { calculateAttendanceSession } from "@/lib/attendance-calculation";
 import {
   computeEmployeeLateness,
@@ -287,7 +287,9 @@ function ReportsPage() {
         if (!ids.has(punch.employeeId) || !punch.timestamp) continue;
         if (companyFilter !== "all" && getPunchCompanyId(punch, rawEmployee) !== companyFilter)
           continue;
-        const date = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) continue;
+        const date = zonedDateKey(punchedAt, shiftTimezone);
         if (date < from || date > to) continue;
         if (!groups.has(date)) groups.set(date, []);
         groups.get(date)!.push(punch);
@@ -300,7 +302,7 @@ function ReportsPage() {
       }
       for (const [date, dayPunches] of groups) {
         const sorted = [...dayPunches].sort(
-          (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
+          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
         );
         const firstIn = sorted.find((punch) => punch.type === "in");
         const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
@@ -309,7 +311,7 @@ function ReportsPage() {
         const holiday = getEmployeeHoliday(reportCompany, employee, date);
         const late = firstIn
           ? computeEmployeeLateness(
-              firstIn.timestamp.toDate(),
+              toDate(firstIn.timestamp) ?? new Date(),
               employee,
               getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
             )
@@ -387,7 +389,9 @@ function ReportsPage() {
         if (!ids.has(punch.employeeId) || !punch.timestamp) continue;
         if (companyFilter !== "all" && getPunchCompanyId(punch, rawEmployee) !== companyFilter)
           continue;
-        const date = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) continue;
+        const date = zonedDateKey(punchedAt, shiftTimezone);
         if (date < from || date > to) continue;
         if (!dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
         dayPunchGroups.get(date)!.push(punch);
@@ -414,7 +418,7 @@ function ReportsPage() {
       for (const date of sortedDates) {
         const dayPunches = dayPunchGroups.get(date) || [];
         const sorted = [...dayPunches].sort(
-          (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
+          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
         );
 
         const firstIn = sorted.find((punch) => punch.type === "in");
@@ -424,8 +428,8 @@ function ReportsPage() {
           ? calculateAttendanceSession({
               employee,
               company: reportCompany,
-              punchIn: firstIn.timestamp.toDate(),
-              punchOut: lastOut ? lastOut.timestamp.toDate() : null,
+              punchIn: toDate(firstIn.timestamp) ?? new Date(),
+              punchOut: lastOut ? toDate(lastOut.timestamp) ?? new Date() : null,
               requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
             })
           : null;
@@ -435,7 +439,7 @@ function ReportsPage() {
 
         const lateness = firstIn
           ? computeEmployeeLateness(
-              firstIn.timestamp.toDate(),
+              toDate(firstIn.timestamp) ?? new Date(),
               employee,
               getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
             )
@@ -471,7 +475,7 @@ function ReportsPage() {
             : "09:00–17:00";
 
         const punchInTimeStr = firstIn
-          ? formatInTimezone(firstIn.timestamp.toDate(), shiftTimezone, {
+          ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), shiftTimezone, {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
@@ -479,7 +483,7 @@ function ReportsPage() {
           : undefined;
 
         const punchOutTimeStr = lastOut
-          ? formatInTimezone(lastOut.timestamp.toDate(), shiftTimezone, {
+          ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), shiftTimezone, {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
@@ -1648,12 +1652,12 @@ function ReportsPage() {
                     <td className="p-3">{row.department}</td>
                     <td className="p-3 font-mono text-xs">
                       {row.firstIn
-                        ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone)
+                        ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone)
                         : "—"}
                     </td>
                     <td className="p-3 font-mono text-xs">
                       {row.lastOut
-                        ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone)
+                        ? formatInTimezone(toDate(row.lastOut.timestamp) ?? new Date(), timezone)
                         : row.firstIn
                           ? "Still in"
                           : "—"}

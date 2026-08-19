@@ -23,6 +23,7 @@ import {
   requiredReportTypes,
 } from "@/lib/daily-reports";
 import { getEmployeeTimezone } from "@/lib/attendance";
+import { toDate } from "@/lib/time";
 import type {
   DailyReport,
   DailyReportAnswer,
@@ -608,8 +609,9 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
 }
 
 function formatSubmissionTime(report: DailyReport) {
-  if (!report.submittedAt?.toDate) return "Processing...";
-  return report.submittedAt.toDate().toLocaleString([], {
+  const submittedAt = toDate(report.submittedAt);
+  if (!submittedAt) return "Processing...";
+  return submittedAt.toLocaleString([], {
     timeZone: report.timezone,
     dateStyle: "medium",
     timeStyle: "short",

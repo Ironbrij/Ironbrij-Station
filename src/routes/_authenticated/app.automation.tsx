@@ -26,6 +26,7 @@ import {
 } from "@/lib/mentions";
 import type { PersonalAutomationProfile } from "@/lib/personal-automation";
 import type { Department, Employee, MentionItem, Punch } from "@/lib/types";
+import { toDate, toMillis } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/app/automation")({
   head: () => ({
@@ -405,7 +406,7 @@ function HelpFeedbackAutomationPage() {
         );
         punches = punchesSnapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+          .sort((a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0));
       } catch (err) {
         console.warn("Could not fetch punches for personal API:", err);
       }
@@ -445,7 +446,7 @@ function HelpFeedbackAutomationPage() {
         punchId: latestPunch?.id || "",
         punchType: latestPunch?.type || "",
         date: latestPunch?.date || "",
-        occurredAt: latestPunch?.timestamp?.toDate().toISOString() || now,
+        occurredAt: toDate(latestPunch?.timestamp)?.toISOString() || now,
         createdAt: now,
         updatedAt: now,
       };

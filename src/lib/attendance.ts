@@ -6,6 +6,7 @@ import {
   type LeaveRequest,
   type Punch,
 } from "./types.ts";
+import { toDate, toMillis } from "./time.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -332,7 +333,7 @@ export function computeRegularWorkedMsForDay(
   const dayEnd = zonedDateTimeToDate(addCalendarDays(dateKey, 1), "00:00", timezone).getTime();
   const sorted = [...punches]
     .filter((punch) => punch.timestamp)
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   let openIn: number | null = null;
   let workedMs = 0;
 
@@ -341,7 +342,8 @@ export function computeRegularWorkedMsForDay(
   }
 
   for (const punch of sorted) {
-    const timestamp = punch.timestamp.toMillis();
+    const timestamp = toMillis(punch.timestamp);
+    if (!timestamp) continue;
     if (punch.type === "in") {
       openIn = timestamp;
     } else if (punch.type === "out" && openIn !== null) {
@@ -463,9 +465,9 @@ export function getFirstRegularPunchInForShift(
       (punch) =>
         punch.type === "in" &&
         punch.timestamp &&
-        zonedDateKey(punch.timestamp.toDate(), shiftTimezone) === targetDate,
+        zonedDateKey(toDate(punch.timestamp) ?? new Date(0), shiftTimezone) === targetDate,
     )
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis())[0];
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
 }
 
 export function getEffectiveEmployeeWorkingDays(
@@ -491,7 +493,7 @@ export function getLiveAttendanceStatus(
 ) {
   const sorted = [...punches]
     .filter((punch) => punch.timestamp)
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   const latest = sorted.at(-1);
   const isPunchedIn = latest?.type === "in" || latest?.type === "extra_in";
   const firstIn = getFirstRegularPunchInForShift(employee, sorted, now);
@@ -504,7 +506,7 @@ export function getLiveAttendanceStatus(
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   const lateness =
     firstIn && isScheduledDay
-      ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, effectiveGraceMinutes)
+      ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? now, employee, effectiveGraceMinutes)
       : null;
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
@@ -513,7 +515,9 @@ export function getLiveAttendanceStatus(
   const minutesEarly =
     isEarly && firstIn && lateness
       ? Math.floor(
-          Math.abs((firstIn.timestamp.toDate().getTime() - lateness.scheduledAt.getTime()) / 1000) /
+          Math.abs(
+            ((toDate(firstIn.timestamp)?.getTime() ?? 0) - lateness.scheduledAt.getTime()) / 1000,
+          ) /
             60,
         )
       : 0;

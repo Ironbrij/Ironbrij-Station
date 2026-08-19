@@ -24,6 +24,7 @@ import {
 } from "@/lib/daily-reports";
 import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
+import { toDate } from "@/lib/time";
 import type {
   Company,
   DailyReport,
@@ -791,8 +792,9 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
 }
 
 function formatTimestamp(value: DailyReport["submittedAt"]) {
-  if (!value?.toDate) return "Processing...";
-  return value.toDate().toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const date = toDate(value);
+  if (!date) return "Processing...";
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 function ReportHistoryModal({

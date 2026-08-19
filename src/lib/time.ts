@@ -35,17 +35,62 @@ export function formatDurationHMS(ms: number): string {
   return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+export function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Timestamp) return value.toDate();
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === "object") {
+    const timestamp = value as {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      nanoseconds?: number;
+      _seconds?: number;
+      _nanoseconds?: number;
+    };
+
+    if (typeof timestamp.toDate === "function") {
+      const date = timestamp.toDate();
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    if (typeof timestamp.toMillis === "function") {
+      const date = new Date(timestamp.toMillis());
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    const seconds = timestamp.seconds ?? timestamp._seconds;
+    const nanoseconds = timestamp.nanoseconds ?? timestamp._nanoseconds ?? 0;
+    if (typeof seconds === "number") {
+      return new Date(seconds * 1000 + Math.floor(nanoseconds / 1_000_000));
+    }
+  }
+
+  return null;
+}
+
+export function toMillis(value: unknown): number {
+  return toDate(value)?.getTime() ?? 0;
+}
+
 export function computeDay(
   punches: Punch[],
   context?: { employee: Employee; company?: Company | null; now?: Date },
 ): DayHours {
-  const sorted = [...punches].sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+  const sorted = [...punches].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   let regularMs = 0;
   let overtimeMs = 0;
   let openIn: number | null = null;
   let openExtraIn: number | null = null;
   for (const punch of sorted) {
-    const timestamp = punch.timestamp.toMillis();
+    const timestamp = toMillis(punch.timestamp);
+    if (!timestamp) continue;
     if (punch.type === "in") openIn = timestamp;
     else if (punch.type === "out" && openIn !== null) {
       if (context) {
@@ -85,12 +130,12 @@ export function computeDay(
 }
 
 export function ymd(value: Date | Timestamp): string {
-  const date = value instanceof Timestamp ? value.toDate() : value;
+  const date = toDate(value) ?? new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function formatLocalTime(value: Date | Timestamp, timezone?: string): string {
-  const date = value instanceof Timestamp ? value.toDate() : value;
+  const date = toDate(value) ?? new Date();
   return new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     hour: "numeric",
@@ -105,7 +150,7 @@ export function computeLateness(
   shiftStartTime = "09:00",
   country: CountryCode = "NP",
 ) {
-  const date = punchTimestamp instanceof Timestamp ? punchTimestamp.toDate() : punchTimestamp;
+  const date = toDate(punchTimestamp) ?? new Date();
   const timezone = COUNTRY_TIMEZONES[country].timezone;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,

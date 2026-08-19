@@ -24,7 +24,7 @@ import { MentionTextarea } from "@/components/MentionTextarea";
 import { sendMentionNotification } from "@/lib/mention-notifications";
 import { companyEmailBranding } from "@/lib/email-branding";
 import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
-import { formatDurationHMS } from "@/lib/time";
+import { formatDurationHMS, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
   computeRegularWorkedMsForDay,
@@ -180,9 +180,7 @@ function PunchPage() {
       q,
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }));
-        const sorted = list.sort(
-          (a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0),
-        );
+        const sorted = list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
         setAllPunches(sorted);
       },
       (err) => {
@@ -239,7 +237,7 @@ function PunchPage() {
   const lastIn = useMemo(() => {
     if (!isPunchedIn) return null;
     const latest = companyPunches[companyPunches.length - 1];
-    return latest?.timestamp?.toDate() ?? null;
+    return toDate(latest?.timestamp);
   }, [companyPunches, isPunchedIn]);
 
   const attendanceStatus = useMemo(
@@ -294,14 +292,14 @@ function PunchPage() {
     if (
       !latestRegularIn?.timestamp ||
       (latestRegularOut?.timestamp &&
-        latestRegularOut.timestamp.toMillis() > latestRegularIn.timestamp.toMillis())
+        toMillis(latestRegularOut.timestamp) > toMillis(latestRegularIn.timestamp))
     ) {
       return null;
     }
     return calculateAttendanceSession({
       employee,
       company,
-      punchIn: latestRegularIn.timestamp.toDate(),
+      punchIn: toDate(latestRegularIn.timestamp) ?? new Date(now),
       now: new Date(now),
       requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
     });
@@ -354,7 +352,7 @@ function PunchPage() {
           ? calculateAttendanceSession({
               employee,
               company,
-              punchIn: latestPunch.timestamp.toDate(),
+              punchIn: toDate(latestPunch.timestamp) ?? punchTime,
               punchOut: punchTime,
               requiredWorkMinutes,
               isOffShiftDay,
@@ -365,7 +363,7 @@ function PunchPage() {
         punchType === "extra_out" && latestPunch?.type === "extra_in" && latestPunch.timestamp
           ? Math.max(
               0,
-              Math.floor((punchTime.getTime() - latestPunch.timestamp.toMillis()) / 60_000),
+              Math.floor((punchTime.getTime() - toMillis(latestPunch.timestamp)) / 60_000),
             )
           : null;
 
@@ -855,7 +853,7 @@ function PunchPage() {
               </thead>
               <tbody className="divide-y divide-border/60">
                 {recentPunchesList.map((p, idx) => {
-                  const dateObj = p.timestamp ? p.timestamp.toDate() : new Date();
+                  const dateObj = toDate(p.timestamp) ?? new Date();
                   const isPunchIn = p.type === "in" || p.type === "extra_in";
                   const timeStr = formatInTimezone(dateObj, getEmployeeTimezone(employee));
                   const dateStr = format(dateObj, "dd/MM/yyyy");

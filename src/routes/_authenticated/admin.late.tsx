@@ -24,6 +24,7 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { toDate, toMillis } from "@/lib/time";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/late")({
@@ -131,9 +132,11 @@ function LateArrivalsPage() {
 
       for (const punch of list) {
         if (punch.type !== "in" || !punch.timestamp) continue;
-        const dateKey = zonedDateKey(punch.timestamp.toDate(), shiftTimezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) continue;
+        const dateKey = zonedDateKey(punchedAt, shiftTimezone);
         const current = firstByShiftDate.get(dateKey);
-        if (!current || punch.timestamp.toMillis() < current.timestamp.toMillis())
+        if (!current || toMillis(punch.timestamp) < toMillis(current.timestamp))
           firstByShiftDate.set(dateKey, punch);
       }
 
@@ -145,9 +148,11 @@ function LateArrivalsPage() {
         if (approvedLeave) continue;
         if (getEmployeeHoliday(company, employee, dateKey)) continue;
 
-        const late = computeEmployeeLateness(punch.timestamp.toDate(), employee, graceMinutes);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) continue;
+        const late = computeEmployeeLateness(punchedAt, employee, graceMinutes);
         const differenceSeconds = Math.floor(
-          (punch.timestamp.toDate().getTime() - late.scheduledAt.getTime()) / 1000,
+          (punchedAt.getTime() - late.scheduledAt.getTime()) / 1000,
         );
         const isEarly = differenceSeconds < 0;
         const minutesEarly = isEarly ? Math.floor(Math.abs(differenceSeconds) / 60) : 0;
@@ -157,7 +162,7 @@ function LateArrivalsPage() {
           employee,
           dateKey,
           scheduledAt: late.scheduledAt,
-          punchedAt: punch.timestamp.toDate(),
+          punchedAt,
           minutesLate: late.minutes,
           minutesEarly,
           isEarly,

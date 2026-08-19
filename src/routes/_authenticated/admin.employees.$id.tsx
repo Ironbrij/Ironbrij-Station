@@ -22,7 +22,7 @@ import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import type { Company, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
-import { computeDay, COUNTRY_TIMEZONES } from "@/lib/time";
+import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -178,7 +178,7 @@ function EmployeeDetail() {
           punch.timestamp &&
           getPunchCompanyId(punch, rawEmployee) === activeCompanyId,
       )
-      .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+      .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   }, [activeCompanyId, allPunches, employee, rawEmployee]);
 
   const companyLeaves = useMemo(() => {
@@ -197,7 +197,9 @@ function EmployeeDetail() {
     const today = zonedDateKey(now, timezone);
 
     for (const punch of punches) {
-      const date = zonedDateKey(punch.timestamp.toDate(), timezone);
+      const punchedAt = toDate(punch.timestamp);
+      if (!punchedAt) continue;
+      const date = zonedDateKey(punchedAt, timezone);
       if (date > today) continue;
       if (!groups.has(date)) groups.set(date, []);
       groups.get(date)!.push(punch);
@@ -212,7 +214,7 @@ function EmployeeDetail() {
     const output: DayRow[] = [];
     for (const [date, dayPunches] of groups) {
       const sorted = [...dayPunches].sort(
-        (a, b) => a.timestamp.toMillis() - b.timestamp.toMillis(),
+        (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
       );
       const firstIn = sorted.find((punch) => punch.type === "in");
       const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
@@ -220,15 +222,15 @@ function EmployeeDetail() {
       const approvedLeave = getEmployeeApprovedLeaveForDate(employee, companyLeaves, date);
       const holiday = getEmployeeHoliday(company, employee, date);
       const lateness = firstIn
-        ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, graceMinutes)
+        ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? new Date(), employee, graceMinutes)
         : null;
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const attendanceCalculation = firstIn
         ? calculateAttendanceSession({
             employee,
             company,
-            punchIn: firstIn.timestamp.toDate(),
-            punchOut: lastOut?.timestamp?.toDate() || null,
+            punchIn: toDate(firstIn.timestamp) ?? new Date(),
+            punchOut: toDate(lastOut?.timestamp) || null,
             now,
             requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
           })
@@ -346,8 +348,8 @@ function EmployeeDetail() {
   const totalLateMinutes = lateRows.reduce((sum, row) => sum + row.minutesLate, 0);
   const averageLateMinutes = lateRows.length ? totalLateMinutes / lateRows.length : 0;
   const lateRate = attendanceDays ? (lateRows.length / attendanceDays) * 100 : 0;
-  const firstActivity = punches.at(0)?.timestamp.toDate();
-  const lastActivity = punches.at(-1)?.timestamp.toDate();
+  const firstActivity = toDate(punches.at(0)?.timestamp) ?? new Date();
+  const lastActivity = toDate(punches.at(-1)?.timestamp);
 
   function exportRows() {
     if (!employee) return [];
@@ -359,14 +361,14 @@ function EmployeeDetail() {
       EmployeeTimezone: timezone,
       ShiftTimezone: getShiftTimezone(employee),
       PunchIn: row.firstIn
-        ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone, {
+        ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone, {
             year: "numeric",
             month: "2-digit",
             day: "2-digit",
           })
         : "",
       PunchOut: row.lastOut
-        ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone, {
+        ? formatInTimezone(toDate(row.lastOut.timestamp) ?? new Date(), timezone, {
             year: "numeric",
             month: "2-digit",
             day: "2-digit",
@@ -381,7 +383,7 @@ function EmployeeDetail() {
       AllEvents: row.punches
         .map(
           (punch) =>
-            `${formatPunchType(punch.type)} ${formatInTimezone(punch.timestamp.toDate(), timezone)}`,
+            `${formatPunchType(punch.type)} ${formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}`,
         )
         .join(" | "),
     }));
@@ -433,12 +435,12 @@ function EmployeeDetail() {
       }
       pdf.text(row.date, 14, y);
       pdf.text(
-        row.firstIn ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone) : "—",
+        row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—",
         48,
         y,
       );
       pdf.text(
-        row.lastOut ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone) : "—",
+        row.lastOut ? formatInTimezone(toDate(row.lastOut.timestamp) ?? new Date(), timezone) : "—",
         80,
         y,
       );
@@ -511,7 +513,7 @@ function EmployeeDetail() {
         ? calculateAttendanceSession({
             employee,
             company: companies.find((c) => c.id === empCompanyId),
-            punchIn: punchInPunch.timestamp.toDate(),
+            punchIn: toDate(punchInPunch.timestamp) ?? new Date(),
             punchOut: punchOutDate,
             requiredWorkMinutes,
             isOffShiftDay: Boolean(punchInPunch.isOffShiftDay),
@@ -768,7 +770,7 @@ function EmployeeDetail() {
                     {row.scheduledAt ? formatInTimezone(row.scheduledAt, timezone) : "—"}
                   </td>
                   <td className="p-3.5 font-mono text-xs">
-                    {row.firstIn ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone) : "—"}
+                    {row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—"}
                   </td>
                   <td className="p-3.5 font-black text-amber-700">{row.minutesLate} min</td>
                   <td className="p-3.5">
@@ -871,11 +873,11 @@ function EmployeeDetail() {
                 <tr key={row.date} className="align-top hover:bg-secondary/30">
                   <td className="p-3.5 font-mono text-xs">{row.date}</td>
                   <td className="p-3.5 font-mono text-xs">
-                    {row.firstIn ? formatInTimezone(row.firstIn.timestamp.toDate(), timezone) : "—"}
+                    {row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—"}
                   </td>
                   <td className="p-3.5 font-mono text-xs">
                     {row.lastOut
-                      ? formatInTimezone(row.lastOut.timestamp.toDate(), timezone)
+                      ? formatInTimezone(toDate(row.lastOut.timestamp) ?? new Date(), timezone)
                       : row.firstIn
                         ? row.status === "Missing punch out"
                           ? "Missing"
@@ -941,7 +943,7 @@ function EmployeeDetail() {
                             <LogIn className="h-3 w-3 rotate-180 text-slate-500" />
                           )}
                           {formatPunchType(punch.type)}{" "}
-                          {formatInTimezone(punch.timestamp.toDate(), timezone)}
+                          {formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}
                           {punch.isAuto ? " · auto" : ""}
                         </span>
                       ))}
@@ -1047,7 +1049,7 @@ function EmployeeDetail() {
                 <div className="flex justify-between">
                   <span className="font-medium text-muted-foreground">Punched in at:</span>
                   <span className="font-bold text-foreground">
-                    {formatInTimezone(fixingRow.firstIn.timestamp.toDate(), timezone)}
+                    {formatInTimezone(toDate(fixingRow.firstIn.timestamp) ?? new Date(), timezone)}
                   </span>
                 </div>
                 {fixingRow.firstIn.scheduledShiftEnd && (

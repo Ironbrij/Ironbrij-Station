@@ -14,6 +14,7 @@ import { calculateAttendanceSession, isPunchOutReminderDue } from "./attendance-
 import { getPunchCompanyId } from "./company-context";
 import { companyEmailBranding } from "./email-branding";
 import type { Company, Employee, Punch } from "./types";
+import { toDate, toMillis } from "./time";
 
 const REMINDER_CHECK_INTERVAL_MS = 60_000;
 
@@ -44,10 +45,12 @@ export function usePunchOutReminder({
         .reverse()
         .find((punch) => punch.type === "in" || punch.type === "out");
       if (latestRegularPunch?.type !== "in" || !latestRegularPunch.timestamp) return;
+      const punchIn = toDate(latestRegularPunch.timestamp);
+      if (!punchIn) return;
       if (
         !isPunchOutReminderDue({
           employee,
-          punchIn: latestRegularPunch.timestamp.toDate(),
+          punchIn,
           reminderMinutes: company.punchOutReminderMinutes ?? 20,
         })
       ) {
@@ -61,7 +64,7 @@ export function usePunchOutReminder({
         const calculation = calculateAttendanceSession({
           employee,
           company,
-          punchIn: latestRegularPunch.timestamp.toDate(),
+          punchIn,
         });
         const claimed = await runTransaction(db(), async (transaction) => {
           const existing = await transaction.get(reminderRef);
@@ -119,7 +122,7 @@ export function usePunchOutReminder({
       punchesRef.current = snapshot.docs
         .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
         .filter((punch) => punch.timestamp)
-        .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+        .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
       void checkReminder();
     });
     const interval = window.setInterval(() => void checkReminder(), REMINDER_CHECK_INTERVAL_MS);

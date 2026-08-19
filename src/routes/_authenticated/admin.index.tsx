@@ -19,7 +19,7 @@ import {
 } from "@/lib/daily-reports";
 import { StatusDot } from "@/components/StatusDot";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
-import { COUNTRY_TIMEZONES } from "@/lib/time";
+import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   formatInTimezone,
   formatEmployeeShiftSummary,
@@ -207,7 +207,7 @@ function AdminHome() {
     }
     // Sort each employee's list by time
     for (const list of map.values()) {
-      list.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+      list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
     }
     return map;
   }, [todayPunches]);
@@ -272,7 +272,7 @@ function AdminHome() {
       getEmployeeHolidayDates(company, emp),
     );
     const targetTz = getDisplayTimezone(emp);
-    const latestDate = status.latest?.timestamp?.toDate();
+    const latestDate = toDate(status.latest?.timestamp);
     const timeStr = latestDate ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})` : "";
     const statusTimeStr =
       latestDate && zonedDateKey(latestDate, targetTz.tz) !== employeeToday
@@ -330,9 +330,11 @@ function AdminHome() {
         if (!punch.timestamp) return false;
         const employee = empById.get(punch.employeeId);
         const timezone = getShiftTimezone(employee);
-        return zonedDateKey(punch.timestamp.toDate(), timezone) === zonedDateKey(now, timezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) return false;
+        return zonedDateKey(punchedAt, timezone) === zonedDateKey(now, timezone);
       })
-      .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+      .sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp));
   }, [todayPunches, empById, now]);
 
   return (
@@ -760,7 +762,7 @@ function AdminHome() {
                         };
 
             const timeFormatted = p.timestamp
-              ? `${formatInTimezone(p.timestamp.toDate(), targetTz.tz)} (${targetTz.code})`
+              ? `${formatInTimezone(toDate(p.timestamp) ?? new Date(), targetTz.tz)} (${targetTz.code})`
               : "—";
             const dateFormatted = p.timestamp
               ? new Intl.DateTimeFormat("en-US", {
@@ -768,7 +770,7 @@ function AdminHome() {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
-                }).format(p.timestamp.toDate())
+                }).format(toDate(p.timestamp) ?? new Date())
               : "";
             const isPunchIn = p.type === "in" || p.type === "extra_in";
 
@@ -861,8 +863,8 @@ function AdminHome() {
                   <div>
                     <dt className="text-xs text-muted-foreground font-medium">Submitted At</dt>
                     <dd className="font-bold text-foreground">
-                      {viewingReport.report.submittedAt?.toDate
-                        ? viewingReport.report.submittedAt.toDate().toLocaleString([], {
+                      {toDate(viewingReport.report.submittedAt)
+                        ? toDate(viewingReport.report.submittedAt)!.toLocaleString([], {
                             dateStyle: "medium",
                             timeStyle: "short",
                           })

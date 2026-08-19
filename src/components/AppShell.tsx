@@ -8,6 +8,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { COMPANY_ID, type Punch } from "@/lib/types";
 import { getPunchCompanyId } from "@/lib/company-context";
+import { toMillis } from "@/lib/time";
 
 interface NavItem {
   to: string;
@@ -52,7 +53,7 @@ export function AppShell({
         snapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
           .filter((punch) => punch.timestamp)
-          .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis()),
+          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
       );
     });
   }, [employee]);
