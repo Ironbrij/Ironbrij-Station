@@ -66,3 +66,16 @@ receives no recipient address. Keep the existing Gmail credential connected afte
   ]
 }
 ```
+
+---
+
+## 3. Punch-out Reminder Email (`punch-out-reminder.workflow.json`)
+
+1. Import `punch-out-reminder.workflow.json` into n8n.
+2. Connect the Gmail credential on **Send Punch Out Reminder**.
+3. Activate the workflow.
+4. Set `N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL` to its production webhook URL.
+
+The app claims one `attendanceReminders` document per open attendance session before calling this
+workflow. That idempotency record prevents the once-per-minute check from sending the same reminder
+twice.

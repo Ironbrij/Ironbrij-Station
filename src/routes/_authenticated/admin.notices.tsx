@@ -249,6 +249,7 @@ function NotificationsPage() {
   // Filtered employee candidates for specific employee picker
   const filteredEmployeeAudience = useMemo(() => {
     return employees.filter((emp) => {
+      if (emp.status !== "active" || emp.inviteStatus !== "accepted") return false;
       // Company filter
       if (empFilterCompanyId !== "all") {
         const empCompIds = [emp.companyId, ...(emp.companyIds || [])].filter(Boolean);
@@ -262,14 +263,21 @@ function NotificationsPage() {
       // Search query
       if (empSearchQuery.trim()) {
         const q = empSearchQuery.toLowerCase().trim();
-        const nameMatch = emp.name.toLowerCase().includes(q);
-        const emailMatch = emp.email.toLowerCase().includes(q);
-        const jobMatch = emp.jobTitle?.toLowerCase().includes(q);
+        const nameMatch = (emp.name || "").toLowerCase().includes(q);
+        const emailMatch = (emp.email || "").toLowerCase().includes(q);
+        const jobMatch = (emp.jobTitle || "").toLowerCase().includes(q);
         if (!nameMatch && !emailMatch && !jobMatch) return false;
       }
       return true;
     });
   }, [employees, empFilterCompanyId, empFilterDeptId, empSearchQuery]);
+
+  const employeeFilterDepartments = useMemo(() => {
+    if (empFilterCompanyId === "all") return departments;
+    return departments.filter(
+      (department) => (department.companyId || COMPANY_ID) === empFilterCompanyId,
+    );
+  }, [departments, empFilterCompanyId]);
 
   function recipientLabel(notice: CompanyNotice) {
     if (!notice.targetType || notice.targetType === "all") return "Everyone";
@@ -461,7 +469,7 @@ function NotificationsPage() {
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {deptMap.get(employee.deptId) || "No department"}
+                    {deptMap.get(employee.deptId || "") || "No department"}
                   </div>
                 </div>
                 <div className="text-left sm:text-right">
@@ -538,6 +546,9 @@ function NotificationsPage() {
                   setSelectedStateCodes([]);
                   setSelectedEmployeeIds([]);
                   setSelectedCompanyIds([]);
+                  setEmpSearchQuery("");
+                  setEmpFilterCompanyId("all");
+                  setEmpFilterDeptId("all");
                 }}
                 className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
               >
@@ -545,7 +556,7 @@ function NotificationsPage() {
                 <option value="companies">Specific Companies</option>
                 <option value="dept">Specific Department</option>
                 <option value="states">One or more states</option>
-                <option value="employee font-semibold">Specific Employees</option>
+                <option value="employee">Specific people</option>
               </select>
             </label>
           </div>
@@ -721,6 +732,11 @@ function NotificationsPage() {
                 </div>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                Filter by company or department, then tick the individual people who should receive
+                this announcement.
+              </p>
+
               {/* Employee Filters: Search, Company, Dept */}
               <div className="space-y-2 border-b pb-3">
                 <div className="relative">
@@ -737,7 +753,10 @@ function NotificationsPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={empFilterCompanyId}
-                    onChange={(e) => setEmpFilterCompanyId(e.target.value)}
+                    onChange={(e) => {
+                      setEmpFilterCompanyId(e.target.value);
+                      setEmpFilterDeptId("all");
+                    }}
                     className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
                   >
                     <option value="all">All Companies</option>
@@ -754,7 +773,7 @@ function NotificationsPage() {
                     className="rounded-lg border bg-background px-2 py-1.5 text-xs font-semibold text-foreground"
                   >
                     <option value="all">All Departments</option>
-                    {departments.map((d) => (
+                    {employeeFilterDepartments.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name}
                       </option>

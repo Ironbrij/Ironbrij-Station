@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import {
   collection,
@@ -13,12 +21,16 @@ import {
 import { auth, db, firebaseConfigured } from "./firebase";
 import { COMPANY_ID, type Company, type Employee } from "./types";
 import { resolveProfilePhoto } from "./profile-photo";
+import { getEmployeeCompanyIds, getEmployeeForCompany } from "./company-context";
 
 interface AuthState {
   user: User | null;
   isAdmin: boolean;
   employee: Employee | null;
   company: Company | null;
+  companies: Company[];
+  activeCompanyId: string;
+  setActiveCompanyId: (companyId: string) => void;
   loading: boolean;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -30,7 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
-  const [company, setCompany] = useState<Company | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [activeCompanyId, setActiveCompanyIdState] = useState(COMPANY_ID);
   const [loading, setLoading] = useState(true);
 
   async function hydrate(u: User) {
@@ -174,21 +187,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
-  const employeeCompanyId = employee?.companyId || employee?.companyIds?.[0] || COMPANY_ID;
   useEffect(() => {
-    if (!firebaseConfigured) return;
-    return onSnapshot(doc(db(), "companies", employeeCompanyId), (snapshot) => {
-      setCompany(
-        snapshot.exists() ? { id: snapshot.id, ...(snapshot.data() as Omit<Company, "id">) } : null,
-      );
-    });
-  }, [employeeCompanyId]);
+    if (!firebaseConfigured || (!employee && !isAdmin)) {
+      setCompanies([]);
+      return;
+    }
+
+    if (isAdmin) {
+      return onSnapshot(collection(db(), "companies"), (snapshot) => {
+        setCompanies(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<Company, "id">),
+          })),
+        );
+      });
+    }
+
+    let active = true;
+    const companyIds = getEmployeeCompanyIds(employee);
+    Promise.all(companyIds.map((companyId) => getDoc(doc(db(), "companies", companyId))))
+      .then((snapshots) => {
+        if (!active) return;
+        setCompanies(
+          snapshots
+            .filter((snapshot) => snapshot.exists())
+            .map((snapshot) => ({
+              id: snapshot.id,
+              ...(snapshot.data() as Omit<Company, "id">),
+            })),
+        );
+      })
+      .catch((error) => console.error("Company context hydration failed:", error));
+    return () => {
+      active = false;
+    };
+  }, [employee, isAdmin]);
+
+  const availableCompanyIds = useMemo(() => {
+    if (isAdmin && companies.length > 0) {
+      return companies.map((item) => item.id || COMPANY_ID);
+    }
+    return getEmployeeCompanyIds(employee);
+  }, [companies, employee, isAdmin]);
+
+  useEffect(() => {
+    if (!user || availableCompanyIds.length === 0) return;
+    const storageKey = `active_company_id:${user.uid}`;
+    const saved = typeof window === "undefined" ? null : window.localStorage.getItem(storageKey);
+    const preferred =
+      saved && availableCompanyIds.includes(saved)
+        ? saved
+        : employee?.companyId && availableCompanyIds.includes(employee.companyId)
+          ? employee.companyId
+          : availableCompanyIds[0];
+    setActiveCompanyIdState(preferred);
+  }, [availableCompanyIds, employee?.companyId, user]);
+
+  const setActiveCompanyId = useCallback(
+    (companyId: string) => {
+      if (!availableCompanyIds.includes(companyId)) return;
+      setActiveCompanyIdState(companyId);
+      if (user && typeof window !== "undefined") {
+        window.localStorage.setItem(`active_company_id:${user.uid}`, companyId);
+      }
+    },
+    [availableCompanyIds, user],
+  );
+
+  const company = useMemo(
+    () => companies.find((item) => (item.id || COMPANY_ID) === activeCompanyId) || null,
+    [activeCompanyId, companies],
+  );
+  const scopedEmployee = useMemo(
+    () => (employee ? getEmployeeForCompany(employee, activeCompanyId) : null),
+    [activeCompanyId, employee],
+  );
 
   const value: AuthState = {
     user,
     isAdmin,
-    employee,
+    employee: scopedEmployee,
     company,
+    companies,
+    activeCompanyId,
+    setActiveCompanyId,
     loading,
     logout: async () => {
       if (firebaseConfigured) await signOut(auth());

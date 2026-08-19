@@ -2,7 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { COMPANY_ID, type CountryCode, type Department, type Employee } from "@/lib/types";
+import {
+  COMPANY_ID,
+  type Company,
+  type CountryCode,
+  type Department,
+  type Employee,
+} from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
 import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
@@ -12,6 +18,7 @@ import { ShieldCheck, UserCheck } from "lucide-react";
 import { getStateOptions, normalizeState } from "@/lib/states";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
+import { calculateShiftEndTime, calculateShiftMinutes } from "@/lib/company-context";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
@@ -295,6 +302,47 @@ function UsersPage() {
   );
 }
 
+function ShiftHoursInput({
+  hours,
+  onChangeHours,
+}: {
+  hours: number;
+  onChangeHours: (newHours: number) => void;
+}) {
+  const [text, setText] = useState<string>(() => String(hours));
+
+  useEffect(() => {
+    setText(String(hours));
+  }, [hours]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const val = e.target.value;
+        setText(val);
+        const parsed = parseFloat(val);
+        if (!isNaN(parsed) && parsed > 0) {
+          onChangeHours(parsed);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(text);
+        if (isNaN(parsed) || parsed <= 0) {
+          setText(String(hours));
+        } else {
+          setText(String(parsed));
+        }
+      }}
+      className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-semibold outline-none focus:ring-2 focus:ring-primary/20"
+      placeholder="e.g. 8"
+    />
+  );
+}
+
 function MakeEmployeeModal({
   user,
   departments,
@@ -436,12 +484,49 @@ function MakeEmployeeModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold uppercase text-muted-foreground">
+                Shift Hours
+              </label>
+              <ShiftHoursInput
+                hours={calculateShiftMinutes(shiftStartTime, shiftEndTime) / 60}
+                onChangeHours={(hours) => {
+                  const newEnd = calculateShiftEndTime(shiftStartTime, hours);
+                  setShiftEndTime(newEnd);
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted-foreground">
+                Shift Timezone
+              </label>
+              <select
+                value={shiftTimezone}
+                onChange={(e) => setShiftTimezone(e.target.value)}
+                className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {ATTENDANCE_TIMEZONES.map((zone) => (
+                  <option key={zone.value} value={zone.value}>
+                    {zone.short}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted-foreground">
                 Shift Start
               </label>
               <input
                 type="time"
                 value={shiftStartTime}
-                onChange={(e) => setShiftStartTime(e.target.value)}
+                onChange={(e) => {
+                  const newStart = e.target.value;
+                  setShiftStartTime(newStart);
+                  if (newStart) {
+                    const currentHours = calculateShiftMinutes(shiftStartTime, shiftEndTime) / 60;
+                    setShiftEndTime(calculateShiftEndTime(newStart, currentHours));
+                  }
+                }}
                 className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>

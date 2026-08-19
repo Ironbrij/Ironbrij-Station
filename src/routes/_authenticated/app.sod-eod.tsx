@@ -23,6 +23,7 @@ import {
   requiredReportTypes,
 } from "@/lib/daily-reports";
 import { getEmployeeTimezone } from "@/lib/attendance";
+import { toDate } from "@/lib/time";
 import type {
   DailyReport,
   DailyReportAnswer,
@@ -33,11 +34,13 @@ import type {
   ReportQuestion,
   ReportingSettings,
 } from "@/lib/types";
+import { COMPANY_ID } from "@/lib/types";
 import { MentionTextarea } from "@/components/MentionTextarea";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { sendMentionNotification } from "@/lib/mention-notifications";
 import { companyEmailBranding } from "@/lib/email-branding";
 import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mentions";
+import { getEmployeeCompanyIds } from "@/lib/company-context";
 
 export const Route = createFileRoute("/_authenticated/app/sod-eod")({
   head: () => ({ meta: [{ title: "SOD & EOD Reports - SavyTimes" }] }),
@@ -45,7 +48,7 @@ export const Route = createFileRoute("/_authenticated/app/sod-eod")({
 });
 
 function EmployeeSodEodPage() {
-  const { user, employee, company } = useAuth();
+  const { user, employee, company, activeCompanyId } = useAuth();
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(employee);
   const [questions, setQuestions] = useState<ReportQuestion[] | null>(null);
   const [settings, setSettings] = useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
@@ -157,10 +160,16 @@ function EmployeeSodEodPage() {
       reportQuery,
       (snapshot) =>
         setReports(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<DailyReport, "id">),
-          })),
+          snapshot.docs
+            .map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<DailyReport, "id">),
+            }))
+            .filter(
+              (report) =>
+                (report.companyId || employee?.companyIds?.[0] || employee?.companyId) ===
+                activeCompanyId,
+            ),
         ),
       (error) => {
         console.error("Daily reports could not be loaded:", error);
@@ -168,24 +177,28 @@ function EmployeeSodEodPage() {
       },
     );
     const unsubEmployees = onSnapshot(
-      collection(db(), "employees"),
+      query(collection(db(), "employees"), where("companyIds", "array-contains", activeCompanyId)),
       (snapshot) =>
         setEmployees(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Employee, "id">),
-          })),
+          snapshot.docs
+            .map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<Employee, "id">),
+            }))
+            .filter((item) => getEmployeeCompanyIds(item).includes(activeCompanyId)),
         ),
       (error) => console.error("Mention employees could not be loaded:", error),
     );
     const unsubDepartments = onSnapshot(
-      collection(db(), "departments"),
+      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
       (snapshot) =>
         setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
+          snapshot.docs
+            .map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<Department, "id">),
+            }))
+            .filter((item) => (item.companyId || COMPANY_ID) === activeCompanyId),
         ),
       (error) => console.error("Mention departments could not be loaded:", error),
     );
@@ -198,7 +211,7 @@ function EmployeeSodEodPage() {
       unsubEmployees();
       unsubDepartments();
     };
-  }, [defaultQuestions, employee, user]);
+  }, [activeCompanyId, defaultQuestions, employee, user]);
 
   const activeEmp = currentEmployee || fallbackEmployee;
 
@@ -254,7 +267,7 @@ function EmployeeSodEodPage() {
 
     const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
 
-    const reportId = reportDocumentId(user.uid, reportDate, type);
+    const reportId = reportDocumentId(user.uid, reportDate, type, activeCompanyId);
     const reportRef = doc(db(), "dailyReports", reportId);
     setSubmitting(type);
     try {
@@ -263,6 +276,7 @@ function EmployeeSodEodPage() {
         sanitizeFirestoreObject({
           userId: user.uid,
           employeeId: activeEmp.id,
+          companyId: activeCompanyId,
           userName: activeEmp.name || "",
           userEmail: activeEmp.email || "",
           reportType: type,
@@ -595,8 +609,9 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
 }
 
 function formatSubmissionTime(report: DailyReport) {
-  if (!report.submittedAt?.toDate) return "Processing...";
-  return report.submittedAt.toDate().toLocaleString([], {
+  const submittedAt = toDate(report.submittedAt);
+  if (!submittedAt) return "Processing...";
+  return submittedAt.toLocaleString([], {
     timeZone: report.timezone,
     dateStyle: "medium",
     timeStyle: "short",

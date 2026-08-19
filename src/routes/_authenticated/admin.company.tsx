@@ -50,6 +50,8 @@ function CompanyPage() {
     holidayAssignments: [],
     workingDays: [1, 2, 3, 4, 5],
     lateGraceMinutes: 5,
+    punchOutGraceMinutes: 20,
+    punchOutReminderMinutes: 20,
     logoUrl: DEFAULT_LOGO,
     isMain: true,
   });
@@ -94,6 +96,8 @@ function CompanyPage() {
           holidays: [],
           workingDays: [1, 2, 3, 4, 5],
           lateGraceMinutes: 5,
+          punchOutGraceMinutes: 20,
+          punchOutReminderMinutes: 20,
           logoUrl: DEFAULT_LOGO,
           isMain: true,
           createdAt: new Date().toISOString(),
@@ -114,6 +118,8 @@ function CompanyPage() {
           holidayAssignments: mainComp.holidayAssignments ?? [],
           workingDays: mainComp.workingDays ?? [1, 2, 3, 4, 5],
           lateGraceMinutes: Math.max(5, mainComp.lateGraceMinutes ?? 5),
+          punchOutGraceMinutes: Math.max(0, mainComp.punchOutGraceMinutes ?? 20),
+          punchOutReminderMinutes: Math.max(0, mainComp.punchOutReminderMinutes ?? 20),
           logoUrl: mainComp.logoUrl || DEFAULT_LOGO,
           isMain: true,
         });
@@ -155,6 +161,8 @@ function CompanyPage() {
         holidayAssignments: updatedCompany.holidayAssignments ?? [],
         workingDays: updatedCompany.workingDays,
         lateGraceMinutes: Math.max(5, updatedCompany.lateGraceMinutes ?? 5),
+        punchOutGraceMinutes: Math.max(0, updatedCompany.punchOutGraceMinutes ?? 20),
+        punchOutReminderMinutes: Math.max(0, updatedCompany.punchOutReminderMinutes ?? 20),
         logoUrl: updatedCompany.logoUrl?.trim() || DEFAULT_LOGO,
       };
       await setDoc(doc(db(), "companies", COMPANY_ID), payload, { merge: true });
@@ -426,7 +434,10 @@ function CompanyPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowAddCompanyModal(true)}
+          onClick={() => {
+            setEditingCompany(null);
+            setShowAddCompanyModal(true);
+          }}
           className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 hover:text-primary-foreground"
         >
           <Building2 className="h-4 w-4" /> + Create New Company
@@ -473,14 +484,18 @@ function CompanyPage() {
                       {compEmps} Employees · {compDepts} Departments
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-                      Shift: {c.defaultShiftHours || 8}h · Grace: {c.lateGraceMinutes || 5}m
+                      Shift: {c.defaultShiftHours || 8}h · Late grace: {c.lateGraceMinutes || 5}m ·
+                      Punch-out grace: {c.punchOutGraceMinutes ?? 20}m
                     </div>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setEditingCompany(c)}
+                  onClick={() => {
+                    setEditingCompany(c);
+                    setShowAddCompanyModal(true);
+                  }}
                   className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors shrink-0"
                 >
                   Edit
@@ -944,7 +959,7 @@ function CompanyPage() {
         </button>
       </div>
 
-      {showAddCompanyModal && (
+      {(showAddCompanyModal || editingCompany !== null) && (
         <CompanyModal
           companyToEdit={editingCompany}
           onClose={() => {
@@ -1036,6 +1051,12 @@ function CompanyModal({
   const [logoUrl, setLogoUrl] = useState(companyToEdit?.logoUrl ?? DEFAULT_LOGO);
   const [defaultShiftHours, setDefaultShiftHours] = useState(companyToEdit?.defaultShiftHours ?? 8);
   const [lateGraceMinutes, setLateGraceMinutes] = useState(companyToEdit?.lateGraceMinutes ?? 5);
+  const [punchOutGraceMinutes, setPunchOutGraceMinutes] = useState(
+    companyToEdit?.punchOutGraceMinutes ?? 20,
+  );
+  const [punchOutReminderMinutes, setPunchOutReminderMinutes] = useState(
+    companyToEdit?.punchOutReminderMinutes ?? 20,
+  );
   const [busy, setBusy] = useState(false);
 
   async function handleSaveCompany(e: React.FormEvent) {
@@ -1053,6 +1074,8 @@ function CompanyModal({
           logoUrl: logoUrl.trim() || DEFAULT_LOGO,
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
+          punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
+          punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
         });
         toast.success(`Updated ${name}`);
       } else {
@@ -1063,6 +1086,8 @@ function CompanyModal({
           logoUrl: logoUrl.trim() || DEFAULT_LOGO,
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
+          punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
+          punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: [0, 1, 2, 3, 4, 5],
           holidays: [],
           isMain: false,
@@ -1150,6 +1175,29 @@ function CompanyModal({
               type="number"
               value={lateGraceMinutes}
               onChange={(e) => setLateGraceMinutes(Number(e.target.value))}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium">Punch-out Grace (Minutes)</label>
+            <input
+              type="number"
+              min={0}
+              value={punchOutGraceMinutes}
+              onChange={(event) => setPunchOutGraceMinutes(Number(event.target.value))}
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Reminder Before End (Minutes)</label>
+            <input
+              type="number"
+              min={0}
+              value={punchOutReminderMinutes}
+              onChange={(event) => setPunchOutReminderMinutes(Number(event.target.value))}
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
             />
           </div>

@@ -28,6 +28,9 @@ export interface Company {
   holidayAssignments?: CompanyHoliday[];
   workingDays: number[]; // 0=Sun..6=Sat
   lateGraceMinutes?: number;
+  punchOutGraceMinutes?: number;
+  punchOutReminderMinutes?: number;
+  timezone?: string;
   isMain?: boolean;
   createdAt?: string;
 }
@@ -44,6 +47,11 @@ export type InviteStatus = "pending" | "accepted";
 
 export type CountryCode = "NP" | "AU" | "PH";
 
+export interface ShiftInterval {
+  startTime: string; // e.g. "04:00"
+  endTime: string; // e.g. "07:00"
+}
+
 export type ReportingRequirement = "sod_only" | "eod_only" | "sod_eod" | "none";
 export type DailyReportType = "sod" | "eod";
 export type DailyReportStatus = "submitted";
@@ -52,6 +60,7 @@ export interface Employee {
   id: string;
   companyId?: string;
   companyIds?: string[]; // Multi-company membership (can belong to 1 or more companies)
+  companyMemberships?: Record<string, CompanyMembership>;
   deptId?: string;
   name: string;
   email: string;
@@ -61,6 +70,8 @@ export interface Employee {
   photoUrl?: string;
   photoURL?: string; // Legacy/Firebase-style Google profile photo field
   inviteStatus: InviteStatus;
+  isMultipleShift?: boolean;
+  shifts?: ShiftInterval[];
   shiftStartTime?: string; // e.g. "09:00"
   shiftEndTime?: string; // e.g. "17:00"
   country?: CountryCode; // "NP" = Nepal, "AU" = Australia, "PH" = Philippines
@@ -70,6 +81,24 @@ export interface Employee {
   createdAt?: string; // ISO timestamp for when the employee profile was created
   reportingRequirement?: ReportingRequirement;
   workingDays?: number[]; // Custom per-employee working days 0=Sun..6=Sat
+  requiredWorkMinutes?: number; // Legacy/default requirement; company membership overrides this
+}
+
+export interface CompanyMembership {
+  companyId: string;
+  role?: "employee" | "manager" | "admin";
+  status?: "active" | "inactive";
+  requiredWorkMinutes?: number;
+  shiftId?: string;
+  isMultipleShift?: boolean;
+  shifts?: ShiftInterval[];
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  shiftTimezone?: string;
+  workingDays?: number[];
+  departmentId?: string;
+  joinedAt?: string;
+  updatedAt?: string;
 }
 
 export interface ReportQuestion {
@@ -115,6 +144,7 @@ export interface DailyReport {
   id: string;
   userId: string;
   employeeId?: string;
+  companyId?: string;
   userName: string;
   userEmail: string;
   reportDate: string;
@@ -130,17 +160,65 @@ export interface DailyReport {
 export interface Punch {
   id: string;
   employeeId: string;
+  employeeName?: string;
+  date?: string;
   type: PunchType;
   timestamp: Timestamp;
   source: "app" | "auto";
+  companyId?: string;
+  companyName?: string;
+  shiftId?: string;
+  attendanceDate?: string;
+  scheduledShiftStart?: string;
+  scheduledShiftEnd?: string;
+  shiftTimezone?: string;
+  requiredWorkMinutes?: number;
+  normalWorkMinutes?: number;
+  overtimeMinutes?: number;
+  totalEligibleMinutes?: number;
+  attendanceStatus?: AttendanceStatus;
   isEarly?: boolean;
   isAuto?: boolean;
   autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout";
+  isExcused?: boolean;
+  excusedBy?: string;
+  excusedAt?: string;
+  isOffShiftDay?: boolean;
+  overtimeRequestId?: string;
+}
+
+export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";
+
+export type OvertimeStatus = "pending" | "approved" | "rejected";
+
+export type OvertimeRequestType = "overtime" | "off_shift_work" | "early_clock_in";
+
+export interface OvertimeRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  companyId: string;
+  date: string;
+  requestType?: OvertimeRequestType;
+  punchOutId?: string;
+  punchInId?: string;
+  overtimeMinutes: number;
+  normalWorkMinutes?: number;
+  isOffShiftDay: boolean;
+  reason: string;
+  status: OvertimeStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  createdAt: string;
 }
 
 export interface LeaveRequest {
   id: string;
   employeeId: string;
+  companyId?: string; // Optional only for historical requests
+  leaveCategory?: "annual" | "sick" | "personal" | "other";
+  paymentStatus?: "paid" | "unpaid";
+  remarks?: string;
   leaveType?: "full_day" | "half_day" | "timed_break";
   halfDayPeriod?: "first_half" | "second_half";
   startTime?: string; // HH:mm in the employee shift timezone
@@ -154,6 +232,19 @@ export interface LeaveRequest {
   decidedBy?: string;
   decisionSource?: "admin" | "automatic";
   decisionReason?: string;
+}
+
+export interface PunchOutReminder {
+  id: string;
+  employeeId: string;
+  companyId: string;
+  punchInId: string;
+  attendanceDate: string;
+  shiftEndAt: string;
+  status: "pending" | "sent" | "failed";
+  createdAt: string;
+  sentAt?: string;
+  error?: string;
 }
 
 export interface DailySummary {

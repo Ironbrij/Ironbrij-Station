@@ -2,13 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type {
-  DailyReport,
-  Department,
-  Employee,
-  LeaveRequest,
-  Punch,
-  ReportingSettings,
+import {
+  COMPANY_ID,
+  type Company,
+  type DailyReport,
+  type Department,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+  type ReportingSettings,
 } from "@/lib/types";
 import {
   DEFAULT_REPORTING_SETTINGS,
@@ -17,7 +19,7 @@ import {
 } from "@/lib/daily-reports";
 import { StatusDot } from "@/components/StatusDot";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
-import { COUNTRY_TIMEZONES } from "@/lib/time";
+import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   formatInTimezone,
   formatEmployeeShiftSummary,
@@ -41,6 +43,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   Building2,
+  Globe,
   X,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -79,6 +82,7 @@ function AdminHome() {
   const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">("country");
   const [expandedDeptMap, setExpandedDeptMap] = useState<Record<string, boolean>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(15);
@@ -91,6 +95,7 @@ function AdminHome() {
   } | null>(null);
 
   const [now, setNow] = useState(() => new Date());
+  const [pendingOvertimeCount, setPendingOvertimeCount] = useState(0);
   const { company } = useAuth();
 
   const handleBadgeClick = (emp: Employee, type: "sod" | "eod", e: React.MouseEvent) => {
@@ -156,6 +161,11 @@ function AdminHome() {
       }
     });
 
+    const un7 = onSnapshot(
+      query(collection(db(), "overtimeRequests"), where("status", "==", "pending")),
+      (s) => setPendingOvertimeCount(s.docs.length),
+    );
+
     return () => {
       un0();
       un1();
@@ -164,6 +174,7 @@ function AdminHome() {
       un4();
       un5();
       un6();
+      un7();
     };
   }, []);
 
@@ -196,7 +207,7 @@ function AdminHome() {
     }
     // Sort each employee's list by time
     for (const list of map.values()) {
-      list.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+      list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
     }
     return map;
   }, [todayPunches]);
@@ -229,6 +240,25 @@ function AdminHome() {
       };
     }
 
+    const getDisplayTimezone = (employee?: Employee) => {
+      if (timezoneMode === "PH") return { tz: "Asia/Manila", code: "PH", flag: "🇵🇭" };
+      if (timezoneMode === "NP") return { tz: "Asia/Kathmandu", code: "NP", flag: "🇳🇵" };
+      if (timezoneMode === "AU") return { tz: "Australia/Sydney", code: "AU", flag: "🇦🇺" };
+      if (timezoneMode === "viewer") {
+        const vTz =
+          typeof Intl !== "undefined"
+            ? Intl.DateTimeFormat().resolvedOptions().timeZone
+            : "Asia/Manila";
+        return { tz: vTz, code: "Local", flag: "💻" };
+      }
+      const empTz = getEmployeeTimezone(employee);
+      const countryCode =
+        employee?.country ||
+        (empTz.includes("Manila") ? "PH" : empTz.includes("Sydney") ? "AU" : "NP");
+      const flag = COUNTRY_TIMEZONES[countryCode as keyof typeof COUNTRY_TIMEZONES]?.flag || "🌐";
+      return { tz: empTz, code: countryCode, flag };
+    };
+
     const list = [
       ...(empTodayPunches.get(emp.id) || []),
       ...(emp.authUid ? empTodayPunches.get(emp.authUid) || [] : []),
@@ -241,16 +271,16 @@ function AdminHome() {
       company?.workingDays,
       getEmployeeHolidayDates(company, emp),
     );
-    const localTimezone = getEmployeeTimezone(emp);
-    const latestDate = status.latest?.timestamp?.toDate();
-    const timeStr = latestDate ? formatInTimezone(latestDate, localTimezone) : "";
+    const targetTz = getDisplayTimezone(emp);
+    const latestDate = toDate(status.latest?.timestamp);
+    const timeStr = latestDate ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})` : "";
     const statusTimeStr =
-      latestDate && zonedDateKey(latestDate, localTimezone) !== employeeToday
-        ? formatInTimezone(latestDate, localTimezone, {
+      latestDate && zonedDateKey(latestDate, targetTz.tz) !== employeeToday
+        ? `${formatInTimezone(latestDate, targetTz.tz, {
             year: "numeric",
             month: "short",
             day: "numeric",
-          })
+          })} (${targetTz.code})`
         : timeStr;
 
     if (status.isPunchedIn) {
@@ -300,9 +330,11 @@ function AdminHome() {
         if (!punch.timestamp) return false;
         const employee = empById.get(punch.employeeId);
         const timezone = getShiftTimezone(employee);
-        return zonedDateKey(punch.timestamp.toDate(), timezone) === zonedDateKey(now, timezone);
+        const punchedAt = toDate(punch.timestamp);
+        if (!punchedAt) return false;
+        return zonedDateKey(punchedAt, timezone) === zonedDateKey(now, timezone);
       })
-      .sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+      .sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp));
   }, [todayPunches, empById, now]);
 
   return (
@@ -310,12 +342,11 @@ function AdminHome() {
       {/* Top Header & Quick Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
           </h1>
-          <p className="text-sm text-muted-foreground font-medium mt-0.5">
-            Real-time department status and today's activity feed for{" "}
-            {format(new Date(), "EEEE, MMMM d, yyyy")}.
+          <p className="text-sm font-medium text-muted-foreground mt-0.5">
+            {format(new Date(), "EEEE d MMMM")} — real-time team status and today's activity.
           </p>
         </div>
 
@@ -354,6 +385,21 @@ function AdminHome() {
           </div>
 
           <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={timezoneMode}
+              onChange={(e) => setTimezoneMode(e.target.value as any)}
+              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
+            >
+              <option value="country">🌍 Respective Country Time (PH / NP / AU)</option>
+              <option value="PH">🇵🇭 Philippines Time (PHT)</option>
+              <option value="NP">🇳🇵 Nepal Time (NPT)</option>
+              <option value="AU">🇦🇺 Australia Time (AEST)</option>
+              <option value="viewer">💻 My Browser Time</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -369,6 +415,31 @@ function AdminHome() {
           </div>
         </div>
       </div>
+
+      {/* Pending Overtime Alert Banner */}
+      {pendingOvertimeCount > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="font-bold text-sm text-amber-950 dark:text-amber-100 block">
+                {pendingOvertimeCount} Pending Overtime Request{pendingOvertimeCount > 1 ? "s" : ""}
+              </span>
+              <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                Team members have logged overtime that requires admin review before payroll calculation.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/admin/overtime"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors whitespace-nowrap"
+          >
+            Review Overtime &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Department Cards Section */}
       <section className="space-y-4">
@@ -664,16 +735,42 @@ function AdminHome() {
           {(!showHistory ? todayActivityFeed : historicalRecent).map((p) => {
             const emp = empById.get(p.employeeId);
             const countryData = COUNTRY_TIMEZONES[emp?.country ?? "NP"] || COUNTRY_TIMEZONES.NP;
+            const targetTz =
+              timezoneMode === "PH"
+                ? { tz: "Asia/Manila", code: "PH" }
+                : timezoneMode === "NP"
+                  ? { tz: "Asia/Kathmandu", code: "NP" }
+                  : timezoneMode === "AU"
+                    ? { tz: "Australia/Sydney", code: "AU" }
+                    : timezoneMode === "viewer"
+                      ? {
+                          tz:
+                            typeof Intl !== "undefined"
+                              ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                              : "Asia/Manila",
+                          code: "Local",
+                        }
+                      : {
+                          tz: getEmployeeTimezone(emp),
+                          code:
+                            emp?.country ||
+                            (getEmployeeTimezone(emp).includes("Manila")
+                              ? "PH"
+                              : getEmployeeTimezone(emp).includes("Sydney")
+                                ? "AU"
+                                : "NP"),
+                        };
+
             const timeFormatted = p.timestamp
-              ? formatInTimezone(p.timestamp.toDate(), getEmployeeTimezone(emp))
+              ? `${formatInTimezone(toDate(p.timestamp) ?? new Date(), targetTz.tz)} (${targetTz.code})`
               : "—";
             const dateFormatted = p.timestamp
               ? new Intl.DateTimeFormat("en-US", {
-                  timeZone: getEmployeeTimezone(emp),
+                  timeZone: targetTz.tz,
                   month: "short",
                   day: "numeric",
                   year: "numeric",
-                }).format(p.timestamp.toDate())
+                }).format(toDate(p.timestamp) ?? new Date())
               : "";
             const isPunchIn = p.type === "in" || p.type === "extra_in";
 
@@ -766,8 +863,8 @@ function AdminHome() {
                   <div>
                     <dt className="text-xs text-muted-foreground font-medium">Submitted At</dt>
                     <dd className="font-bold text-foreground">
-                      {viewingReport.report.submittedAt?.toDate
-                        ? viewingReport.report.submittedAt.toDate().toLocaleString([], {
+                      {toDate(viewingReport.report.submittedAt)
+                        ? toDate(viewingReport.report.submittedAt)!.toLocaleString([], {
                             dateStyle: "medium",
                             timeStyle: "short",
                           })

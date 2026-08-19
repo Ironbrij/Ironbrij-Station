@@ -1,9 +1,14 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { ArrowLeftRight, Headphones, LogOut } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { COMPANY_ID, type Punch } from "@/lib/types";
+import { getPunchCompanyId } from "@/lib/company-context";
+import { toMillis } from "@/lib/time";
 
 interface NavItem {
   to: string;
@@ -20,10 +25,97 @@ export function AppShell({
   nav: NavItem[];
   children?: ReactNode;
 }) {
-  const { logout, employee, user, isAdmin, company } = useAuth();
+  const {
+    logout,
+    employee,
+    user,
+    isAdmin,
+    company,
+    companies,
+    activeCompanyId,
+    setActiveCompanyId,
+  } = useAuth();
   const navigate = useNavigate();
+  const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
+  const [pendingCompanyId, setPendingCompanyId] = useState(activeCompanyId);
   const unreadLateCount = useAdminLateNotificationCount({ enabled: isAdmin, company });
   useAutoRejectExpiredLeaves(isAdmin);
+
+  useEffect(() => {
+    setPendingCompanyId(activeCompanyId);
+  }, [activeCompanyId]);
+
+  useEffect(() => {
+    if (!employee) return;
+    const punchesQuery = query(collection(db(), "punches"), where("employeeId", "==", employee.id));
+    return onSnapshot(punchesQuery, (snapshot) => {
+      setEmployeePunches(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
+          .filter((punch) => punch.timestamp)
+          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
+      );
+    });
+  }, [employee]);
+
+  const activeAttendanceCompanyIds = useMemo(() => {
+    const latestByCompany = new Map<string, Punch>();
+    employeePunches.forEach((punch) => {
+      if (punch.type === "in" || punch.type === "out") {
+        latestByCompany.set(getPunchCompanyId(punch, employee), punch);
+      }
+    });
+    return [...latestByCompany.entries()]
+      .filter(([, punch]) => punch.type === "in")
+      .map(([companyId]) => companyId);
+  }, [employee, employeePunches]);
+
+  function switchCompany() {
+    const companyId = pendingCompanyId;
+    if (companyId === activeCompanyId) return;
+    const otherActiveCompanyId = activeAttendanceCompanyIds.find((id) => id !== companyId);
+    if (otherActiveCompanyId) {
+      const activeName =
+        companies.find((item) => (item.id || COMPANY_ID) === otherActiveCompanyId)?.name ||
+        "another company";
+      const shouldContinue = window.confirm(
+        `You are still punched in to ${activeName}. Switching company will not move or close that attendance session. Continue?`,
+      );
+      if (!shouldContinue) return;
+    }
+    setActiveCompanyId(companyId);
+  }
+
+  const companySwitcher =
+    companies.length > 1 ? (
+      <div className="flex shrink-0 items-center gap-2 rounded-md border bg-muted/30 p-1.5">
+        <label className="flex items-center gap-2">
+          <span className="hidden text-xs font-medium text-muted-foreground xl:inline">
+            Company
+          </span>
+          <select
+            value={pendingCompanyId}
+            onChange={(event) => setPendingCompanyId(event.target.value)}
+            className="max-w-36 rounded-md border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground sm:max-w-48"
+            aria-label="Choose company"
+          >
+            {companies.map((item) => (
+              <option key={item.id || item.name} value={item.id || COMPANY_ID}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={switchCompany}
+          disabled={pendingCompanyId === activeCompanyId}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-muted disabled:text-muted-foreground"
+        >
+          Switch
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">
@@ -39,11 +131,16 @@ export function AppShell({
                 "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg"
               }
               alt={company?.name || "ironbrij"}
-              className="h-8 w-8 shrink-0 rounded-lg border bg-background object-contain"
+              className="h-8 w-8 shrink-0 rounded-lg border bg-background object-contain shadow-xs"
             />
-            <span className="hidden max-w-[180px] truncate font-semibold tracking-tight text-foreground sm:inline">
-              {company?.name || "ironbrij"}
-            </span>
+            <div className="hidden flex-col sm:flex text-left">
+              <span className="max-w-[180px] truncate font-bold text-sm leading-tight tracking-tight text-foreground">
+                {company?.name || "ironbrij"}
+              </span>
+              <span className="text-[11px] font-medium text-muted-foreground leading-none mt-0.5">
+                Time tracking
+              </span>
+            </div>
           </Link>
 
           <div className="flex shrink-0 items-center gap-2.5">
@@ -78,6 +175,11 @@ export function AppShell({
               <div className="text-[10px] font-medium text-muted-foreground">
                 {isAdmin ? "Admin / Owner" : employee?.jobTitle || "Employee"}
               </div>
+              {activeAttendanceCompanyIds.some((id) => id !== activeCompanyId) && (
+                <div className="text-[10px] font-semibold text-amber-700">
+                  Active shift elsewhere
+                </div>
+              )}
             </div>
 
             <button
@@ -96,6 +198,8 @@ export function AppShell({
 
         <div className="hidden border-t bg-background md:block">
           <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
+            {companySwitcher}
+            {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 bg-border" />}
             {nav.map((item) => (
               <Link
                 key={item.to}
@@ -122,6 +226,8 @@ export function AppShell({
         </div>
 
         <div className="flex gap-1 overflow-x-auto border-t bg-background px-4 py-2 md:hidden scrollbar-none">
+          {companySwitcher}
+          {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 self-center bg-border" />}
           {nav.map((item) => (
             <Link
               key={item.to}

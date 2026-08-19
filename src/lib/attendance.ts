@@ -1,4 +1,12 @@
-import { COMPANY_ID, type Company, type CompanyHoliday, type Employee, type LeaveRequest, type Punch } from "./types";
+import {
+  COMPANY_ID,
+  type Company,
+  type CompanyHoliday,
+  type Employee,
+  type LeaveRequest,
+  type Punch,
+} from "./types.ts";
+import { toDate, toMillis } from "./time.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -37,6 +45,7 @@ export function getEmployeeTimezone(employee?: Pick<Employee, "timezone" | "coun
   if (isValidTimezone(employee?.timezone)) return employee!.timezone!;
   if (employee?.country === "AU") return "Australia/Sydney";
   if (employee?.country === "PH") return "Asia/Manila";
+  if (employee?.country === "NP") return "Asia/Kathmandu";
   return DEFAULT_LOCAL_TIMEZONE;
 }
 
@@ -156,10 +165,9 @@ export function isHolidayAssignedToEmployee(
 ): boolean {
   // If companyIds are specified on the holiday, the employee must belong to at least one target company first
   if (Array.isArray(holiday.companyIds) && holiday.companyIds.length > 0) {
-    const empCompanyIds = [
-      employee.companyId,
-      ...(employee.companyIds || []),
-    ].filter(Boolean) as string[];
+    const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
+      Boolean,
+    ) as string[];
 
     const matchesCompany = empCompanyIds.some(
       (cId) =>
@@ -183,7 +191,10 @@ export function isHolidayAssignedToEmployee(
 
 export function getEmployeeHoliday(
   company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
-  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds"> | null | undefined,
+  employee:
+    | Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">
+    | null
+    | undefined,
   dateKey: string,
 ): CompanyHoliday | null {
   if (!company || !employee) return null;
@@ -310,14 +321,6 @@ export function getShiftCompletion(employee: Employee, punchedInAt: Date) {
   return { shift, shiftDurationMs, punchOutAt };
 }
 
-export function getShiftTimeout(employee: Employee, punchedInAt: Date, now = new Date()) {
-  const completion = getShiftCompletion(employee, punchedInAt);
-
-  if (now.getTime() < completion.punchOutAt.getTime()) return null;
-
-  return completion;
-}
-
 export function computeRegularWorkedMsForDay(
   employee: Employee,
   punches: Punch[],
@@ -330,7 +333,7 @@ export function computeRegularWorkedMsForDay(
   const dayEnd = zonedDateTimeToDate(addCalendarDays(dateKey, 1), "00:00", timezone).getTime();
   const sorted = [...punches]
     .filter((punch) => punch.timestamp)
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   let openIn: number | null = null;
   let workedMs = 0;
 
@@ -339,7 +342,8 @@ export function computeRegularWorkedMsForDay(
   }
 
   for (const punch of sorted) {
-    const timestamp = punch.timestamp.toMillis();
+    const timestamp = toMillis(punch.timestamp);
+    if (!timestamp) continue;
     if (punch.type === "in") {
       openIn = timestamp;
     } else if (punch.type === "out" && openIn !== null) {
@@ -413,9 +417,10 @@ export function formatEmployeeShiftSummary(employee: Employee, instant = new Dat
     shiftLabel: `${shiftText} ${shiftCode}`,
     localLabel: localConv ? `${localConv.start}–${localConv.end} ${localCode}` : "",
     localStart: localConv?.start || employee.shiftStartTime || "09:00",
-    fullSummary: isCrossTimezone && localConv
-      ? `${shiftText} ${shiftCode} (${localConv.start}–${localConv.end} ${localCode})`
-      : `${shiftText} ${shiftCode}`,
+    fullSummary:
+      isCrossTimezone && localConv
+        ? `${shiftText} ${shiftCode} (${localConv.start}–${localConv.end} ${localCode})`
+        : `${shiftText} ${shiftCode}`,
   };
 }
 
@@ -460,9 +465,9 @@ export function getFirstRegularPunchInForShift(
       (punch) =>
         punch.type === "in" &&
         punch.timestamp &&
-        zonedDateKey(punch.timestamp.toDate(), shiftTimezone) === targetDate,
+        zonedDateKey(toDate(punch.timestamp) ?? new Date(0), shiftTimezone) === targetDate,
     )
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis())[0];
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
 }
 
 export function getEffectiveEmployeeWorkingDays(
@@ -488,7 +493,7 @@ export function getLiveAttendanceStatus(
 ) {
   const sorted = [...punches]
     .filter((punch) => punch.timestamp)
-    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   const latest = sorted.at(-1);
   const isPunchedIn = latest?.type === "in" || latest?.type === "extra_in";
   const firstIn = getFirstRegularPunchInForShift(employee, sorted, now);
@@ -501,15 +506,21 @@ export function getLiveAttendanceStatus(
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   const lateness =
     firstIn && isScheduledDay
-      ? computeEmployeeLateness(firstIn.timestamp.toDate(), employee, effectiveGraceMinutes)
+      ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? now, employee, effectiveGraceMinutes)
       : null;
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
     isScheduledDay && !firstIn && missingMinutes > effectiveGraceMinutes && now <= shift.end;
   const isEarly = Boolean(lateness?.isEarly);
-  const minutesEarly = isEarly && firstIn && lateness
-    ? Math.floor(Math.abs((firstIn.timestamp.toDate().getTime() - lateness.scheduledAt.getTime()) / 1000) / 60)
-    : 0;
+  const minutesEarly =
+    isEarly && firstIn && lateness
+      ? Math.floor(
+          Math.abs(
+            ((toDate(firstIn.timestamp)?.getTime() ?? 0) - lateness.scheduledAt.getTime()) / 1000,
+          ) /
+            60,
+        )
+      : 0;
 
   return {
     latest,

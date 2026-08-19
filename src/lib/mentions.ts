@@ -24,7 +24,10 @@ export function sanitizeFirestoreObject<T>(obj: T): T {
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     if (value !== undefined) {
       result[key] =
-        typeof value === "object" && value !== null && !(value instanceof Date) && typeof (value as { toMillis?: unknown }).toMillis !== "function"
+        typeof value === "object" &&
+        value !== null &&
+        !(value instanceof Date) &&
+        typeof (value as { toMillis?: unknown }).toMillis !== "function"
           ? sanitizeFirestoreObject(value)
           : value;
     }
@@ -34,7 +37,10 @@ export function sanitizeFirestoreObject<T>(obj: T): T {
 
 export function getUserCompanyIds(employee: Employee | null): Set<string> {
   const set = new Set<string>();
-  if (employee?.companyId) set.add(employee.companyId);
+  if (employee?.companyId) {
+    set.add(employee.companyId);
+    return set;
+  }
   if (Array.isArray(employee?.companyIds)) {
     employee.companyIds.forEach((id) => {
       if (id) set.add(id);
@@ -46,14 +52,10 @@ export function getUserCompanyIds(employee: Employee | null): Set<string> {
   return set;
 }
 
-export function isEmployeeInCompany(
-  targetEmp: Employee,
-  userCompanyIds: Set<string>,
-): boolean {
-  const empCompanyIds = [
-    targetEmp.companyId,
-    ...(targetEmp.companyIds || []),
-  ].filter(Boolean) as string[];
+export function isEmployeeInCompany(targetEmp: Employee, userCompanyIds: Set<string>): boolean {
+  const empCompanyIds = [targetEmp.companyId, ...(targetEmp.companyIds || [])].filter(
+    Boolean,
+  ) as string[];
 
   if (empCompanyIds.length === 0) {
     empCompanyIds.push(COMPANY_ID);
@@ -62,10 +64,7 @@ export function isEmployeeInCompany(
   return empCompanyIds.some((cId) => userCompanyIds.has(cId));
 }
 
-export function isDepartmentInCompany(
-  dept: Department,
-  userCompanyIds: Set<string>,
-): boolean {
+export function isDepartmentInCompany(dept: Department, userCompanyIds: Set<string>): boolean {
   const deptCompanyId = dept.companyId || COMPANY_ID;
   return userCompanyIds.has(deptCompanyId);
 }
@@ -83,9 +82,7 @@ export function buildMentionCandidates(
     (e) => e.status !== "inactive" && isEmployeeInCompany(e, userCompanyIds),
   );
 
-  const scopedDepartments = departments.filter((d) =>
-    isDepartmentInCompany(d, userCompanyIds),
-  );
+  const scopedDepartments = departments.filter((d) => isDepartmentInCompany(d, userCompanyIds));
 
   const peopleCandidates: MentionCandidate[] = scopedEmployees.map((emp) => {
     const deptName = emp.deptId ? deptMap.get(emp.deptId) || "" : "";
@@ -164,13 +161,21 @@ export function resolveMentionRecipients(
   employees: Employee[],
   _authorEmail?: string,
 ): Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> {
-  const recipients: Array<{ email: string; name: string; targetName: string; targetType: "person" | "department" }> = [];
+  const recipients: Array<{
+    email: string;
+    name: string;
+    targetName: string;
+    targetType: "person" | "department";
+  }> = [];
   const seenEmails = new Set<string>();
 
   for (const m of mentions) {
     if (m.type === "person") {
       const emp = employees.find(
-        (e) => e.id === m.id || e.authUid === m.id || e.name.toLowerCase() === m.name.toLowerCase(),
+        (e) =>
+          e.id === m.id ||
+          e.authUid === m.id ||
+          (e.name && m.name && e.name.toLowerCase() === m.name.toLowerCase()),
       );
       const email = (emp?.email || m.email || "").trim().toLowerCase();
       if (email && !seenEmails.has(email)) {
@@ -184,9 +189,7 @@ export function resolveMentionRecipients(
       }
     } else if (m.type === "department") {
       const deptId = m.deptId || m.id;
-      const deptEmployees = employees.filter(
-        (e) => e.status !== "inactive" && e.deptId === deptId,
-      );
+      const deptEmployees = employees.filter((e) => e.status !== "inactive" && e.deptId === deptId);
       for (const emp of deptEmployees) {
         const email = emp.email?.trim().toLowerCase();
         if (email && !seenEmails.has(email)) {

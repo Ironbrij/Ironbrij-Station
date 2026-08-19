@@ -24,6 +24,7 @@ import {
 } from "@/lib/daily-reports";
 import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
+import { toDate } from "@/lib/time";
 import type {
   Company,
   DailyReport,
@@ -196,8 +197,8 @@ function AdminSodEodPage() {
 
   async function saveSettings() {
     if (
-      !/^\d{2}:\d{2}$/.test(settings.sodDeadline) ||
-      !/^\d{2}:\d{2}$/.test(settings.eodDeadline)
+      !/^\d{2}:\d{2}$/.test(settings.sodDeadline || "") ||
+      !/^\d{2}:\d{2}$/.test(settings.eodDeadline || "")
     ) {
       toast.error("Enter valid SOD and EOD deadlines.");
       return;
@@ -487,8 +488,8 @@ function AdminSodEodPage() {
                     if (employeeSearch) {
                       const query = employeeSearch.toLowerCase().trim();
                       return (
-                        emp.name.toLowerCase().includes(query) ||
-                        emp.email.toLowerCase().includes(query)
+                        (emp.name || "").toLowerCase().includes(query) ||
+                        (emp.email || "").toLowerCase().includes(query)
                       );
                     }
                     return true;
@@ -791,8 +792,9 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
 }
 
 function formatTimestamp(value: DailyReport["submittedAt"]) {
-  if (!value?.toDate) return "Processing...";
-  return value.toDate().toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const date = toDate(value);
+  if (!date) return "Processing...";
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 function ReportHistoryModal({

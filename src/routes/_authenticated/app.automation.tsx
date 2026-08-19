@@ -19,7 +19,6 @@ import { db } from "@/lib/firebase";
 import { sendMentionNotification, type MentionRecipient } from "@/lib/mention-notifications";
 import { companyEmailBranding } from "@/lib/email-branding";
 import {
-  getUserCompanyIds,
   isDepartmentInCompany,
   isEmployeeInCompany,
   resolveMentionRecipients,
@@ -27,6 +26,7 @@ import {
 } from "@/lib/mentions";
 import type { PersonalAutomationProfile } from "@/lib/personal-automation";
 import type { Department, Employee, MentionItem, Punch } from "@/lib/types";
+import { toDate, toMillis } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/app/automation")({
   head: () => ({
@@ -65,7 +65,7 @@ function isItDepartmentName(name: string) {
 }
 
 function HelpFeedbackAutomationPage() {
-  const { user, employee, company } = useAuth();
+  const { user, employee, company, activeCompanyId } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [adminContacts, setAdminContacts] = useState<
@@ -94,16 +94,25 @@ function HelpFeedbackAutomationPage() {
 
   // Subscribe to employees & departments for mention resolution
   useEffect(() => {
-    const unsubEmp = onSnapshot(collection(db(), "employees"), (snapshot) => {
-      setEmployees(
-        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
-      );
-    });
-    const unsubDept = onSnapshot(collection(db(), "departments"), (snapshot) => {
-      setDepartments(
-        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Department, "id">) })),
-      );
-    });
+    const unsubEmp = onSnapshot(
+      query(collection(db(), "employees"), where("companyIds", "array-contains", activeCompanyId)),
+      (snapshot) => {
+        setEmployees(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
+        );
+      },
+    );
+    const unsubDept = onSnapshot(
+      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
+      (snapshot) => {
+        setDepartments(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<Department, "id">),
+          })),
+        );
+      },
+    );
     const unsubAdmins = onSnapshot(collection(db(), "admins"), (snapshot) => {
       setAdminContacts(
         snapshot.docs.map((item) => {
@@ -121,7 +130,7 @@ function HelpFeedbackAutomationPage() {
       unsubDept();
       unsubAdmins();
     };
-  }, []);
+  }, [activeCompanyId]);
 
   // Subscribe to personal automation API profile
   useEffect(() => {
@@ -178,7 +187,7 @@ function HelpFeedbackAutomationPage() {
 
     // 2. Silently route every Help/Feedback submission to the user's company IT team.
     // This only changes email recipients; it does not add a visible @IT tag to the message.
-    const userCompanyIds = getUserCompanyIds(employee);
+    const userCompanyIds = new Set([activeCompanyId]);
     const itDepartments = departments.filter(
       (department) =>
         isDepartmentInCompany(department, userCompanyIds) && isItDepartmentName(department.name),
@@ -397,7 +406,7 @@ function HelpFeedbackAutomationPage() {
         );
         punches = punchesSnapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+          .sort((a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0));
       } catch (err) {
         console.warn("Could not fetch punches for personal API:", err);
       }
@@ -437,7 +446,7 @@ function HelpFeedbackAutomationPage() {
         punchId: latestPunch?.id || "",
         punchType: latestPunch?.type || "",
         date: latestPunch?.date || "",
-        occurredAt: latestPunch?.timestamp?.toDate().toISOString() || now,
+        occurredAt: toDate(latestPunch?.timestamp)?.toISOString() || now,
         createdAt: now,
         updatedAt: now,
       };

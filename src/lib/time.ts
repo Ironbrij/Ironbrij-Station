@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase/firestore";
-import type { CountryCode, Punch } from "./types";
+import type { Company, CountryCode, Employee, Punch } from "./types";
+import { calculateAttendanceSession } from "./attendance-calculation";
 
 export interface DayHours {
   regularHours: number;
@@ -34,23 +35,92 @@ export function formatDurationHMS(ms: number): string {
   return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-export function computeDay(punches: Punch[]): DayHours {
-  const sorted = [...punches].sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+export function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value instanceof Timestamp) return value.toDate();
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === "object") {
+    const timestamp = value as {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      nanoseconds?: number;
+      _seconds?: number;
+      _nanoseconds?: number;
+    };
+
+    if (typeof timestamp.toDate === "function") {
+      const date = timestamp.toDate();
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    if (typeof timestamp.toMillis === "function") {
+      const date = new Date(timestamp.toMillis());
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    const seconds = timestamp.seconds ?? timestamp._seconds;
+    const nanoseconds = timestamp.nanoseconds ?? timestamp._nanoseconds ?? 0;
+    if (typeof seconds === "number") {
+      return new Date(seconds * 1000 + Math.floor(nanoseconds / 1_000_000));
+    }
+  }
+
+  return null;
+}
+
+export function toMillis(value: unknown): number {
+  return toDate(value)?.getTime() ?? 0;
+}
+
+export function computeDay(
+  punches: Punch[],
+  context?: { employee: Employee; company?: Company | null; now?: Date },
+): DayHours {
+  const sorted = [...punches].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   let regularMs = 0;
   let overtimeMs = 0;
   let openIn: number | null = null;
   let openExtraIn: number | null = null;
   for (const punch of sorted) {
-    const timestamp = punch.timestamp.toMillis();
+    const timestamp = toMillis(punch.timestamp);
+    if (!timestamp) continue;
     if (punch.type === "in") openIn = timestamp;
     else if (punch.type === "out" && openIn !== null) {
-      regularMs += timestamp - openIn;
+      if (context) {
+        const result = calculateAttendanceSession({
+          employee: context.employee,
+          company: context.company,
+          punchIn: new Date(openIn),
+          punchOut: new Date(timestamp),
+          now: context.now,
+        });
+        regularMs += result.normalWorkMinutes * 60_000;
+        overtimeMs += result.overtimeMinutes * 60_000;
+      } else {
+        regularMs += timestamp - openIn;
+      }
       openIn = null;
     } else if (punch.type === "extra_in") openExtraIn = timestamp;
     else if (punch.type === "extra_out" && openExtraIn !== null) {
       overtimeMs += timestamp - openExtraIn;
       openExtraIn = null;
     }
+  }
+  if (openIn !== null && context) {
+    const result = calculateAttendanceSession({
+      employee: context.employee,
+      company: context.company,
+      punchIn: new Date(openIn),
+      now: context.now,
+    });
+    regularMs += result.normalWorkMinutes * 60_000;
   }
   return {
     regularHours: Math.max(0, regularMs / 3600000),
@@ -60,12 +130,12 @@ export function computeDay(punches: Punch[]): DayHours {
 }
 
 export function ymd(value: Date | Timestamp): string {
-  const date = value instanceof Timestamp ? value.toDate() : value;
+  const date = toDate(value) ?? new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function formatLocalTime(value: Date | Timestamp, timezone?: string): string {
-  const date = value instanceof Timestamp ? value.toDate() : value;
+  const date = toDate(value) ?? new Date();
   return new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     hour: "numeric",
@@ -80,7 +150,7 @@ export function computeLateness(
   shiftStartTime = "09:00",
   country: CountryCode = "NP",
 ) {
-  const date = punchTimestamp instanceof Timestamp ? punchTimestamp.toDate() : punchTimestamp;
+  const date = toDate(punchTimestamp) ?? new Date();
   const timezone = COUNTRY_TIMEZONES[country].timezone;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,

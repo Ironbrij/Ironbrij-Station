@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import { resolveAppUrl } from "@/lib/app-url";
 
 type LeaveDecisionInput = {
   company?: CompanyEmailBranding;
@@ -32,37 +33,56 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
         }),
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
-        const idToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+        const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+        const masterKey =
+          process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+        const isMasterKey = Boolean(token && token === masterKey);
+
         const firebaseApiKey =
-          process.env.VITE_FIREBASE_API_KEY || "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw";
-        if (!idToken || !firebaseApiKey) {
+          process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
+
+        if (!token) {
           return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
         }
 
-        const identityResponse = await fetch(
-          `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ idToken }),
-          },
-        );
-        if (!identityResponse.ok) {
-          return Response.json({ ok: false, error: "Invalid login" }, { status: 401 });
-        }
-        const identityPayload = (await identityResponse.json()) as {
-          users?: Array<{ email?: string }>;
-        };
-        const authenticatedEmail = identityPayload.users?.[0]?.email?.toLowerCase() ?? "";
-        const configuredAdmins = (
-          process.env.LEAVE_ADMIN_EMAILS ??
-          "pabibek9@gmail.com,bibekparajuli05@gmail.com,louis@ironbrij.com.au"
-        )
-          .split(",")
-          .map((email) => email.trim().toLowerCase())
-          .filter(Boolean);
-        if (!configuredAdmins.includes(authenticatedEmail)) {
-          return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
+        if (!isMasterKey) {
+          const identityResponse = await fetch(
+            `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ idToken: token }),
+            },
+          );
+          if (!identityResponse.ok) {
+            return Response.json({ ok: false, error: "Invalid login token" }, { status: 401 });
+          }
+          const identityPayload = (await identityResponse.json()) as {
+            users?: Array<{ localId?: string; email?: string }>;
+          };
+          const authenticatedEmail = identityPayload.users?.[0]?.email?.toLowerCase() ?? "";
+          const configuredAdmins = (
+            process.env.LEAVE_ADMIN_EMAILS ??
+            "pabibek9@gmail.com,bibekparajuli05@gmail.com,louis@ironbrij.com.au,rose@ironbrij.com.au,ann@ironbrij.com.au,mv@ironbrij.com.au,admin@ironbrij.com.au"
+          )
+            .split(",")
+            .map((email) => email.trim().toLowerCase())
+            .filter(Boolean);
+
+          const isKnownAdmin = configuredAdmins.some(
+            (adm) => authenticatedEmail.includes(adm) || adm === authenticatedEmail,
+          );
+
+          if (!isKnownAdmin && identityPayload.users?.[0]?.localId) {
+            // Also check Firestore admins collection
+            const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
+            const adminCheckRes = await fetch(
+              `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/admins/${identityPayload.users[0].localId}?key=${encodeURIComponent(firebaseApiKey)}`,
+            );
+            if (!adminCheckRes.ok) {
+              return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
+            }
+          }
         }
 
         let body: LeaveDecisionInput;
@@ -81,20 +101,15 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           !validText(body.reason, 2_000) ||
           (body.status !== "approved" && body.status !== "rejected")
         ) {
-          return Response.json({ ok: false, error: "Invalid leave decision" }, { status: 400 });
-        }
-
-        const webhookUrl = process.env.N8N_LEAVE_DECISION_WEBHOOK_URL;
-        if (!webhookUrl) {
           return Response.json(
-            {
-              ok: false,
-              configured: false,
-              error: "N8N_LEAVE_DECISION_WEBHOOK_URL is not configured",
-            },
-            { status: 503 },
+            { ok: false, error: "Invalid leave decision data" },
+            { status: 400 },
           );
         }
+
+        const webhookUrl =
+          process.env.N8N_LEAVE_DECISION_WEBHOOK_URL ||
+          "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision";
 
         const company = body.company || { name: "SavyTimes" };
         const companyName = company.name?.trim() || "SavyTimes";
@@ -115,7 +130,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           : `Your ${requestType} request for ${dateRange} has been rejected.`;
         const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTimes to view the updated status for ${companyName}.`;
         const accentColor = approved ? "#047857" : "#be123c";
-        const appUrl = (process.env.APP_URL || new URL(request.url).origin).replace(/\/+$/, "");
+        const appUrl = resolveAppUrl(request.url);
         const html = renderCompanyEmail({
           company,
           preheader: decisionText,

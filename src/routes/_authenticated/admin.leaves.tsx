@@ -135,7 +135,8 @@ function LeaveRequestsPage() {
         if (statusFilter !== "all" && leave.status !== statusFilter) return false;
         if (filterCompany !== "all") {
           const matchCompany =
-            employee?.companyId === filterCompany ||
+            leave.companyId === filterCompany ||
+            (!leave.companyId && employee?.companyId === filterCompany) ||
             employee?.companyIds?.includes(filterCompany) ||
             (!employee?.companyId && filterCompany === COMPANY_ID);
           if (!matchCompany) return false;
@@ -170,7 +171,11 @@ function LeaveRequestsPage() {
   const hasFilters =
     Boolean(search || dateFrom || dateTo) || statusFilter !== "pending" || periodFilter !== "all";
 
-  async function setStatus(id: string, status: "approved" | "rejected") {
+  async function setStatus(
+    id: string,
+    status: "approved" | "rejected",
+    paymentStatus?: "paid" | "unpaid",
+  ) {
     const leave = leaves?.find((item) => item.id === id);
     if (!leave || leave.status !== "pending" || busyId) return;
     setBusyId(id);
@@ -183,6 +188,7 @@ function LeaveRequestsPage() {
         decidedAt: new Date().toISOString(),
         decidedBy: user?.email || "Admin",
         decisionSource: "admin",
+        ...(status === "approved" && paymentStatus ? { paymentStatus } : {}),
       });
 
       if (employee) {
@@ -234,6 +240,9 @@ function LeaveRequestsPage() {
             dateFrom: leave.dateFrom,
             dateTo: leave.dateTo,
             leaveType: leave.leaveType || "full_day",
+            leaveCategory: leave.leaveCategory,
+            paymentStatus: paymentStatus || leave.paymentStatus,
+            remarks: leave.remarks || leave.reason,
             halfDayPeriod: leave.halfDayPeriod,
             startTime: leave.startTime,
             endTime: leave.endTime,
@@ -469,6 +478,14 @@ function LeaveRequestsPage() {
                     <dt className="text-xs text-muted-foreground">Type</dt>
                     <dd className="mt-0.5 font-medium text-foreground">{leaveTypeLabel(leave)}</dd>
                     <dd className="text-xs text-muted-foreground">{leaveTimeDetail(leave)}</dd>
+                    <dd className="mt-1 text-xs font-semibold text-foreground">
+                      {(leave.leaveCategory || "other").replace("_", " ")} ·{" "}
+                      {leave.paymentStatus === "unpaid"
+                        ? "Unpaid"
+                        : leave.paymentStatus === "paid"
+                          ? "Paid"
+                          : "Not classified"}
+                    </dd>
                   </div>
                   <div className="sm:col-span-2 lg:col-span-1">
                     <dt className="text-xs text-muted-foreground">Reason</dt>
@@ -502,10 +519,18 @@ function LeaveRequestsPage() {
                       <button
                         type="button"
                         disabled={Boolean(busyId)}
-                        onClick={() => setStatus(leave.id, "approved")}
+                        onClick={() => setStatus(leave.id, "approved", "unpaid")}
+                        className="rounded-md border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        Approve unpaid
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(busyId)}
+                        onClick={() => setStatus(leave.id, "approved", "paid")}
                         className="rounded-md border border-foreground bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-80 disabled:opacity-50"
                       >
-                        {isBusy ? "Saving…" : "Approve"}
+                        {isBusy ? "Saving…" : "Approve paid"}
                       </button>
                     </div>
                   ) : leave.status === "approved" ? (
