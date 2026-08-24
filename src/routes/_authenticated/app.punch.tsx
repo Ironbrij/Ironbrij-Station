@@ -83,7 +83,7 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 });
 
 function PunchPage() {
-  const { user, employee, company, activeCompanyId } = useAuth();
+  const { user, employee, company, activeCompanyId, isAdmin } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);

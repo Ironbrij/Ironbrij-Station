@@ -226,10 +226,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => companies.find((item) => (item.id || COMPANY_ID) === activeCompanyId) || null,
     [activeCompanyId, companies],
   );
-  const scopedEmployee = useMemo(
-    () => (employee ? getEmployeeForCompany(employee, activeCompanyId) : null),
-    [activeCompanyId, employee],
-  );
+  const scopedEmployee = useMemo(() => {
+    if (employee) return getEmployeeForCompany(employee, activeCompanyId);
+    if (isAdmin && user) {
+      const userEmail = user.email ? user.email.toLowerCase().trim() : "";
+      return {
+        id: user.uid,
+        authUid: user.uid,
+        name: user.displayName || (userEmail ? userEmail.split("@")[0] : "Admin"),
+        email: userEmail,
+        status: "active",
+        inviteStatus: "accepted",
+        timezone: "Asia/Manila",
+        shiftTimezone: "Australia/Sydney",
+        shiftStartTime: "09:00",
+        shiftEndTime: "17:00",
+        workingDays: [0, 1, 2, 3, 4, 5, 6],
+        jobTitle: "Administrator",
+        reportingRequirement: "sod_eod",
+      } as Employee;
+    }
+    return null;
+  }, [activeCompanyId, employee, isAdmin, user]);
 
   const value: AuthState = {
     user,
