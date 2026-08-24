@@ -633,6 +633,34 @@ function PunchPage() {
   }
 
   if (!employee) {
+    if (isAdmin) {
+      return (
+        <div className="max-w-lg mx-auto py-16 px-4">
+          <div className="rounded-2xl border bg-card p-8 text-center shadow-lift space-y-6">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <span className="text-3xl">🛡️</span>
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-bold text-primary">Admin Account</h1>
+              <p className="mt-2 text-sm text-muted-foreground font-medium">
+                You are logged in as an Administrator (<strong>{user?.email}</strong>). You do not have an assigned employee shift profile.
+              </p>
+            </div>
+
+            <div>
+              <Link
+                to="/admin"
+                className="btn-lift inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-md"
+              >
+                Go to Admin Dashboard &rarr;
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-lg mx-auto py-16 px-4">
         <div className="rounded-2xl border bg-card p-8 text-center shadow-lift space-y-6">
