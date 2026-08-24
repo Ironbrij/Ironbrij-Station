@@ -698,6 +698,53 @@ function EmployeeDetail() {
           />
           <DetailRow label="Employee ID" value={employee.id} />
         </div>
+
+        {/* Company-specific shift & working days breakdown */}
+        {employee.companyMemberships && Object.keys(employee.companyMemberships).length > 0 && (
+          <div className="mt-4 border-t pt-4 space-y-2">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              Company-Specific Shifts & Working Days
+            </h3>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {Object.entries(employee.companyMemberships).map(([cId, m]) => {
+                const comp = companies.find((c) => (c.id || COMPANY_ID) === cId);
+                const compName = comp?.name || (cId === COMPANY_ID ? "Main Company" : cId);
+                const isMulti = Boolean(m.isMultipleShift);
+                const shiftText = formatShiftRange(
+                  m.shiftStartTime,
+                  m.shiftEndTime,
+                  isMulti,
+                  m.shifts,
+                );
+                const daysText = formatWorkingDaysSummary(m.workingDays);
+
+                return (
+                  <div
+                    key={cId}
+                    className="rounded-lg border bg-secondary/30 p-2.5 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-primary">{compName}</span>
+                      {isMulti && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                          Multi-Shift
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-foreground font-medium flex items-center gap-1.5">
+                      <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{shiftText}</span>
+                    </div>
+                    <div className="text-muted-foreground font-semibold flex items-center gap-1.5">
+                      <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{daysText}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       <section>

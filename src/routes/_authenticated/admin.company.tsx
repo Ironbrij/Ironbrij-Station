@@ -24,6 +24,7 @@ import {
 } from "@/lib/types";
 import { ymd } from "@/lib/time";
 import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
+import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 
 export const Route = createFileRoute("/_authenticated/admin/company")({
   head: () => ({
@@ -486,6 +487,9 @@ function CompanyPage() {
                     <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
                       Shift: {c.defaultShiftHours || 8}h · Late grace: {c.lateGraceMinutes || 5}m ·
                       Punch-out grace: {c.punchOutGraceMinutes ?? 20}m
+                    </div>
+                    <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
+                      <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
                     </div>
                   </div>
                 </div>
@@ -950,6 +954,13 @@ function CompanyPage() {
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           />
         </div>
+        <div className="pt-2 border-t">
+          <WorkingDaysPicker
+            label="Company Default Working Days"
+            value={company.workingDays}
+            onChange={(days) => setCompany({ ...company, workingDays: days })}
+          />
+        </div>
         <button
           disabled={busy}
           onClick={() => save()}
@@ -1057,6 +1068,9 @@ function CompanyModal({
   const [punchOutReminderMinutes, setPunchOutReminderMinutes] = useState(
     companyToEdit?.punchOutReminderMinutes ?? 20,
   );
+  const [workingDays, setWorkingDays] = useState<number[]>(
+    companyToEdit?.workingDays ?? [0, 1, 2, 3, 4, 5],
+  );
   const [busy, setBusy] = useState(false);
 
   async function handleSaveCompany(e: React.FormEvent) {
@@ -1076,6 +1090,7 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
+          workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
         });
         toast.success(`Updated ${name}`);
       } else {
@@ -1088,7 +1103,7 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
-          workingDays: [0, 1, 2, 3, 4, 5],
+          workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           holidays: [],
           isMain: false,
           createdAt: new Date().toISOString(),
@@ -1201,6 +1216,15 @@ function CompanyModal({
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
             />
           </div>
+        </div>
+
+        <div className="pt-2 border-t">
+          <WorkingDaysPicker
+            label="Working Days for this Company"
+            value={workingDays}
+            onChange={setWorkingDays}
+            compact
+          />
         </div>
 
         <div className="flex justify-end gap-2 pt-3 border-t">
