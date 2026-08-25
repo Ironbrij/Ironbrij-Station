@@ -954,7 +954,7 @@ export function PromoteModal({
           shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
           shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
           shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
-          workingDays,
+          workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
         }),
       );
 
@@ -1138,7 +1138,6 @@ export function PromoteModal({
             ))}
           </select>
         </div>
-        <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -1270,7 +1269,7 @@ function NewEmployeeForm({
             shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
             shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
             shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
-            workingDays: workingDays || [0, 1, 2, 3, 4, 5],
+            workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
             country: country || "NP",
             state: state || "N/A",
             timezone: COUNTRY_TIMEZONES[country]?.timezone || "Asia/Kathmandu",
@@ -1507,7 +1506,6 @@ function NewEmployeeForm({
               ))}
             </select>
           </div>
-          <WorkingDaysPicker value={workingDays} onChange={setWorkingDays} />
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
