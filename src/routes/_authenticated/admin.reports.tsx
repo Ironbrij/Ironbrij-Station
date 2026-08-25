@@ -391,7 +391,7 @@ function ReportsPage() {
           continue;
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
-        const date = zonedDateKey(punchedAt, shiftTimezone);
+        const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
         if (date < from || date > to) continue;
         if (!dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
         dayPunchGroups.get(date)!.push(punch);
@@ -455,7 +455,9 @@ function ReportsPage() {
 
         // Check if there is an overtime request record for this day
         const otReq = overtimeRequests.find(
-          (r) => r.employeeId === employee.id && r.date === date,
+          (r) =>
+            (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+            r.date === date,
         );
         const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
 

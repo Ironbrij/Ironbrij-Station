@@ -21,7 +21,7 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { Company, Department, Employee, LeaveRequest, Punch } from "@/lib/types";
+import type { Company, Department, Employee, LeaveRequest, OvertimeRequest, OvertimeStatus, Punch } from "@/lib/types";
 import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -80,6 +80,10 @@ type DayRow = {
   status: string;
   isAutoPunchOut: boolean;
   scheduledAt?: Date;
+  isOvertimeApproved: boolean;
+  isOvertimePending: boolean;
+  otStatus?: OvertimeStatus;
+  otRequestId?: string;
 };
 
 function EmployeeDetail() {
@@ -90,6 +94,7 @@ function EmployeeDetail() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [historyScope, setHistoryScope] = useState<HistoryScope>("all");
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -141,6 +146,14 @@ function EmployeeDetail() {
           snapshot.docs.map((item) => ({
             id: item.id,
             ...(item.data() as Omit<LeaveRequest, "id">),
+          })),
+        ),
+      ),
+      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) =>
+        setOvertimeRequests(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<OvertimeRequest, "id">),
           })),
         ),
       ),
@@ -199,7 +212,7 @@ function EmployeeDetail() {
     for (const punch of punches) {
       const punchedAt = toDate(punch.timestamp);
       if (!punchedAt) continue;
-      const date = zonedDateKey(punchedAt, timezone);
+      const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, timezone);
       if (date > today) continue;
       if (!groups.has(date)) groups.set(date, []);
       groups.get(date)!.push(punch);
@@ -241,18 +254,32 @@ function EmployeeDetail() {
       const requiredMinutes =
         attendanceCalculation?.requiredWorkMinutes || getRequiredWorkMinutes(employee, company);
 
+      const otReq = overtimeRequests.find(
+        (r) =>
+          (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+          r.date === date,
+      );
+      const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
+      const isOvertimePending = otReq ? otReq.status === "pending" : overtimeMinutes > 0;
+      const otStatus = otReq?.status;
+      const otRequestId = otReq?.id;
+
       output.push({
         date,
         punches: sorted,
         firstIn,
         lastOut,
-        hours: (normalMinutes + overtimeMinutes) / 60,
+        hours: (normalMinutes + (isOvertimeApproved ? overtimeMinutes : 0)) / 60,
         normalMinutes,
         overtimeMinutes,
         requiredMinutes,
         minutesLate: !holiday && !approvedLeave && lateness?.isLate ? lateness.minutes : 0,
         scheduledAt: lateness?.scheduledAt,
         isAutoPunchOut,
+        isOvertimeApproved,
+        isOvertimePending,
+        otStatus,
+        otRequestId,
         status: holiday
           ? holiday.name || "Holiday"
           : approvedLeave
@@ -275,7 +302,7 @@ function EmployeeDetail() {
       });
     }
     return output.sort((a, b) => b.date.localeCompare(a.date));
-  }, [employee, punches, companyLeaves, company, graceMinutes, now]);
+  }, [employee, punches, companyLeaves, company, graceMinutes, now, overtimeRequests]);
 
   const visibleRows = useMemo(
     () => (historyScope === "all" ? rows : rows.filter((row) => row.date.startsWith(month))),
@@ -378,6 +405,7 @@ function EmployeeDetail() {
       RequiredMinutes: row.requiredMinutes,
       NormalWorkMinutes: row.normalMinutes,
       OvertimeMinutes: row.overtimeMinutes,
+      OvertimeStatus: row.overtimeMinutes > 0 ? (row.isOvertimeApproved ? "Approved" : row.otStatus === "rejected" ? "Rejected" : "Pending") : "N/A",
       Status: row.status,
       MinutesLate: row.minutesLate,
       AllEvents: row.punches
@@ -933,7 +961,32 @@ function EmployeeDetail() {
                   </td>
                   <td className="p-3.5 font-semibold">{formatWorkMinutes(row.requiredMinutes)}</td>
                   <td className="p-3.5 font-semibold">{formatWorkMinutes(row.normalMinutes)}</td>
-                  <td className="p-3.5 font-semibold">{formatWorkMinutes(row.overtimeMinutes)}</td>
+                  <td className="p-3.5 font-semibold">
+                    {row.overtimeMinutes > 0 ? (
+                      row.isOvertimeApproved ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-xs">
+                          {formatWorkMinutes(row.overtimeMinutes)} ✓ Approved
+                        </span>
+                      ) : row.otStatus === "rejected" ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-mono text-rose-700 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 text-xs line-through"
+                          title="Overtime rejected by admin"
+                        >
+                          {formatWorkMinutes(row.overtimeMinutes)} ✗ Rejected
+                        </span>
+                      ) : (
+                        <Link
+                          to="/admin/overtime"
+                          className="inline-flex items-center gap-1 font-mono text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/20 text-xs transition-colors"
+                          title="Click to review in Overtime Approvals"
+                        >
+                          {formatWorkMinutes(row.overtimeMinutes)} ⏳ Pending
+                        </Link>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className="p-3.5">
                     <div className="flex items-center gap-2">
                       <span

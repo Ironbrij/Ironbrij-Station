@@ -331,11 +331,16 @@ function PunchPage() {
         latestType === "extra_in" && targetType === "out" ? "extra_out" : targetType;
       const punchTime = new Date();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
+      const inPunchDate = latestPunch?.attendanceDate || latestPunch?.date || zonedDateKey(toDate(latestPunch?.timestamp) ?? punchTime, getShiftTimezone(employee));
+      const targetAttendanceDate = targetType === "out" && latestPunch ? inPunchDate : punchDate;
       const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
+      const shiftScheduleTime = targetType === "out" && latestPunch?.timestamp
+        ? toDate(latestPunch.timestamp) ?? punchTime
+        : punchTime;
       const schedule = getLiveAttendanceStatus(
         employee,
         companyPunches,
-        punchTime,
+        shiftScheduleTime,
         company?.lateGraceMinutes ?? 5,
         company?.workingDays,
         getEmployeeHolidayDates(company, employee),
@@ -375,8 +380,8 @@ function PunchPage() {
         employeeName: employee.name,
         companyId: activeCompanyId,
         companyName: company?.name || "Company",
-        date: punchDate,
-        attendanceDate: punchDate,
+        date: targetAttendanceDate,
+        attendanceDate: targetAttendanceDate,
         type: punchType,
         timestamp: serverTimestamp(),
         source: "app",
@@ -413,7 +418,7 @@ function PunchPage() {
             employeeId: employee.id,
             employeeName: employee.name,
             companyId: activeCompanyId,
-            date: punchDate,
+            date: targetAttendanceDate,
             requestType: isOffShiftDay ? "off_shift_work" : "overtime",
             punchOutId: punchRef.id,
             punchInId: latestPunch?.id || "",

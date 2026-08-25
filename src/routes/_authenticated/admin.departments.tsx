@@ -245,7 +245,7 @@ function DepartmentsPage() {
         if (!p.timestamp) continue;
         const punchedAt = toDate(p.timestamp);
         if (!punchedAt) continue;
-        const dateStr = zonedDateKey(punchedAt, getShiftTimezone(emp));
+        const dateStr = p.attendanceDate || p.date || zonedDateKey(punchedAt, getShiftTimezone(emp));
         if (!empDays.has(dateStr)) empDays.set(dateStr, []);
         empDays.get(dateStr)!.push(p);
       }
@@ -389,7 +389,7 @@ function DepartmentsPage() {
       for (const punch of employeePunches) {
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
-        const dateKey = zonedDateKey(punchedAt, shiftTimezone);
+        const dateKey = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
         days.set(dateKey, [...(days.get(dateKey) || []), punch]);
       }
       const startKey = zonedDateKey(start, shiftTimezone);
