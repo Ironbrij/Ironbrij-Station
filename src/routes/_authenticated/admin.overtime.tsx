@@ -77,7 +77,16 @@ function AdminOvertimePage() {
     return () => unsubscribers.forEach((u) => u());
   }, []);
 
-  const empMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const empMap = useMemo(() => {
+    const map = new Map<string, Employee>();
+    for (const e of employees) {
+      map.set(e.id, e);
+      if (e.authUid) map.set(e.authUid, e);
+      if (e.email) map.set(e.email.toLowerCase().trim(), e);
+    }
+    return map;
+  }, [employees]);
+
   const deptMap = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments]);
   const compMap = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies]);
 
@@ -99,7 +108,10 @@ function AdminOvertimePage() {
     return requests.filter((req) => {
       if (statusFilter !== "all" && req.status !== statusFilter) return false;
 
-      const emp = empMap.get(req.employeeId);
+      const emp =
+        empMap.get(req.employeeId) ||
+        (req.employeeName ? employees.find((e) => e.name === req.employeeName) : undefined);
+
       if (filterCompany !== "all") {
         const matchesComp =
           req.companyId === filterCompany ||
@@ -124,7 +136,7 @@ function AdminOvertimePage() {
 
       return true;
     });
-  }, [requests, statusFilter, filterCompany, filterDept, filterPeriod, empMap]);
+  }, [requests, statusFilter, filterCompany, filterDept, filterPeriod, empMap, employees]);
 
   async function handleDecision(requestId: string, status: "approved" | "rejected") {
     setProcessingId(requestId);
@@ -317,7 +329,7 @@ function AdminOvertimePage() {
                       <td className="px-4 py-3.5">
                         <Link
                           to="/admin/employees/$id"
-                          params={{ id: req.employeeId }}
+                          params={{ id: emp?.id || req.employeeId }}
                           className="font-bold text-foreground hover:underline"
                         >
                           {req.employeeName || emp?.name || "Employee"}
