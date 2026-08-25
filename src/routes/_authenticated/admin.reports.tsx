@@ -1445,9 +1445,9 @@ function ReportsPage() {
       {viewMode === "summary" ? (
         <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
           {/* Informational Banner */}
-          <div className="px-4 py-3 bg-blue-50/70 border-b border-blue-100 flex items-center justify-between text-xs text-blue-900 gap-2">
+          <div className="px-4 py-3 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-200 dark:border-blue-800 flex items-center justify-between text-xs text-blue-900 dark:text-blue-200 gap-2">
             <div className="flex items-center gap-2 font-medium">
-              <Info className="h-4 w-4 text-blue-600 shrink-0" />
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <span>
                 <strong>Spreadsheet & Interval Inspection:</strong> Click on{" "}
                 <span className="font-bold text-primary underline">Inspect Daily Intervals</span> on
@@ -1456,7 +1456,7 @@ function ReportsPage() {
               </span>
             </div>
             {hasCustomEdits && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                 Custom Edits Active
               </span>
             )}

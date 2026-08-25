@@ -365,31 +365,31 @@ function EmployeesListPage() {
                   </td>
                   <td className="p-3">
                     {e.inviteStatus === "pending" ? (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                         Pending Invite
                       </span>
                     ) : e.status === "inactive" ? (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
                         Suspended
                       </span>
                     ) : getPunchStatus(e.id) === "in" ? (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 inline-flex items-center gap-1">
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Active (Punched In)
                       </span>
                     ) : (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                         Off Shift (Punched Out)
                       </span>
                     )}
                   </td>
                   <td className="p-3 text-xs">
                     {e.inviteStatus === "accepted" ? (
-                      <span className="text-emerald-600 font-medium">Accepted</span>
+                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">Accepted</span>
                     ) : (
                       <button
                         onClick={() => handleCopyInviteLink(e)}
-                        className="btn-lift rounded border border-primary/30 px-2 py-1 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                        className="btn-lift rounded border border-primary/40 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
                       >
                         Copy Link
                       </button>
@@ -399,13 +399,13 @@ function EmployeesListPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => setEmpToPromote(e)}
-                        className="btn-lift text-xs px-2.5 py-1 rounded border border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500 hover:text-white font-bold transition-colors"
+                        className="btn-lift text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-600 hover:text-white font-bold transition-colors"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => setEmpToDelete(e)}
-                        className="btn-lift text-xs px-2 py-1 rounded border border-rose-300 text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="btn-lift text-xs px-2.5 py-1 rounded-md border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white font-bold transition-colors"
                       >
                         Remove
                       </button>
