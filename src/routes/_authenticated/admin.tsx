@@ -14,16 +14,16 @@ function AdminLayout() {
 
   const adminNav = [
     { to: "/admin", label: "Dashboard", exact: true },
+    { to: "/admin/reports", label: "Reports" },
     { to: "/admin/employees", label: "Employees" },
-    { to: "/admin/users", label: "Users" },
     { to: "/admin/overtime", label: "Overtime" },
+    { to: "/admin/leaves", label: "Leave" },
     { to: "/admin/late", label: "Late Logs" },
+    { to: "/admin/sod-eod", label: "SOD & EOD" },
     { to: "/admin/notices", label: "Notifications" },
+    { to: "/admin/users", label: "Users" },
     { to: "/admin/departments", label: "Departments" },
     { to: "/admin/company", label: "Company" },
-    { to: "/admin/leaves", label: "Leave" },
-    { to: "/admin/sod-eod", label: "SOD & EOD" },
-    { to: "/admin/reports", label: "Reports" },
     { to: "/admin/mcp-connect", label: "AI & MCP" },
   ];
 
