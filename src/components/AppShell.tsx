@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
-import { ArrowLeftRight, Headphones, LogOut } from "lucide-react";
+import { ArrowLeftRight, Building2, Headphones, LogOut } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
@@ -88,32 +88,33 @@ export function AppShell({
 
   const companySwitcher =
     companies.length > 1 ? (
-      <div className="flex shrink-0 items-center gap-2 rounded-md border bg-muted/30 p-1.5">
-        <label className="flex items-center gap-2">
-          <span className="hidden text-xs font-medium text-muted-foreground xl:inline">
-            Company
-          </span>
-          <select
-            value={pendingCompanyId}
-            onChange={(event) => setPendingCompanyId(event.target.value)}
-            className="max-w-36 rounded-md border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground sm:max-w-48"
-            aria-label="Choose company"
-          >
-            {companies.map((item) => (
-              <option key={item.id || item.name} value={item.id || COMPANY_ID}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={switchCompany}
-          disabled={pendingCompanyId === activeCompanyId}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-muted disabled:text-muted-foreground"
+      <div className="flex shrink-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-1 transition-colors hover:bg-muted/60">
+        <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
+        <select
+          value={activeCompanyId}
+          onChange={(event) => {
+            const nextId = event.target.value;
+            setPendingCompanyId(nextId);
+            const activeName =
+              companies.find((item) => (item.id || COMPANY_ID) === activeAttendanceCompanyIds[0])?.name ||
+              "another company";
+            if (activeAttendanceCompanyIds.length > 0 && !activeAttendanceCompanyIds.includes(nextId)) {
+              const shouldContinue = window.confirm(
+                `You are still punched in to ${activeName}. Switching company will not close that attendance session. Continue?`,
+              );
+              if (!shouldContinue) return;
+            }
+            setActiveCompanyId(nextId);
+          }}
+          className="max-w-[130px] sm:max-w-[160px] truncate border-none bg-transparent py-0.5 text-xs font-bold text-foreground outline-none cursor-pointer"
+          aria-label="Choose company"
         >
-          Switch
-        </button>
+          {companies.map((item) => (
+            <option key={item.id || item.name} value={item.id || COMPANY_ID}>
+              {item.name}
+            </option>
+          ))}
+        </select>
       </div>
     ) : null;
 
