@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { collection, doc, onSnapshot, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Company, CompanyNotice, Employee, LeaveRequest } from "@/lib/types";
+import type { Company, CompanyNotice, Employee, LeaveDayItem, LeaveRequest } from "@/lib/types";
 import { COMPANY_ID } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding, findEmployeeCompany } from "@/lib/email-branding";
@@ -11,6 +11,7 @@ import { getLeaveLabel } from "@/lib/attendance";
 import { ymd } from "@/lib/time";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
+import { Calendar, CheckCircle2, Clock, Edit3, Plus, Trash2, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/leaves")({
   head: () => ({
@@ -53,6 +54,7 @@ function LeaveRequestsPage() {
   const [dateTo, setDateTo] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
   const { user } = useAuth();
   const today = ymd(new Date());
 
@@ -455,24 +457,80 @@ function LeaveRequestsPage() {
                       </div>
                     </div>
                   </div>
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {leave.status === "pending"
-                      ? "Pending review"
-                      : leave.decisionSource === "automatic"
-                        ? "Rejected automatically"
-                        : leave.status === "approved"
-                          ? "Approved"
-                          : "Rejected"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingLeave(leave)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border bg-secondary/50 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-secondary transition shadow-2xs"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      Tweak Dates & Breakdown
+                    </button>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {leave.status === "pending"
+                        ? "Pending review"
+                        : leave.decisionSource === "automatic"
+                          ? "Rejected automatically"
+                          : leave.status === "approved"
+                            ? "Approved"
+                            : "Rejected"}
+                    </span>
+                  </div>
                 </div>
 
                 <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
                   <div>
-                    <dt className="text-xs text-muted-foreground">Dates</dt>
-                    <dd className="mt-0.5 font-medium text-foreground">
-                      {formatLeaveDateRange(leave.dateFrom, leave.dateTo)}
-                    </dd>
-                    <dd className="text-xs text-muted-foreground">{dateDurationLabel(leave)}</dd>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-xs text-muted-foreground">Dates</dt>
+                      <button
+                        type="button"
+                        onClick={() => setEditingLeave(leave)}
+                        className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                      >
+                        <Edit3 className="h-3 w-3" /> Edit Dates
+                      </button>
+                    </div>
+                    {Array.isArray(leave.dates) && leave.dates.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {leave.dates.map((d) => (
+                          <span
+                            key={d.date}
+                            className="inline-flex items-center gap-1 rounded-md border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                          >
+                            <Calendar className="h-3 w-3 text-muted-foreground" />
+                            <span className="font-bold">{formatDateKey(d.date)}</span>:{" "}
+                            <span className="text-muted-foreground">
+                              {d.leaveType === "half_day"
+                                ? d.halfDayPeriod === "second_half"
+                                  ? "Half (2nd)"
+                                  : "Half (1st)"
+                                : d.leaveType === "timed_break"
+                                  ? `Break (${d.startTime || ""}-${d.endTime || ""})`
+                                  : "Full day"}
+                            </span>
+                            <span className="text-muted-foreground">·</span>
+                            <span
+                              className={
+                                d.paymentStatus === "unpaid"
+                                  ? "font-bold text-amber-600 dark:text-amber-400"
+                                  : "font-bold text-emerald-600 dark:text-emerald-400"
+                              }
+                            >
+                              {d.paymentStatus || "paid"}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <dd className="mt-0.5 font-medium text-foreground">
+                          {formatLeaveDateRange(leave.dateFrom, leave.dateTo)}
+                        </dd>
+                        <dd className="text-xs text-muted-foreground">
+                          {dateDurationLabel(leave)}
+                        </dd>
+                      </>
+                    )}
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Type</dt>
@@ -562,6 +620,15 @@ function LeaveRequestsPage() {
             Load more
           </button>
         </div>
+      )}
+
+      {/* Edit Leave Dates & Breakdown Modal */}
+      {editingLeave && (
+        <EditLeaveModal
+          leave={editingLeave}
+          employee={employeeById.get(editingLeave.employeeId)}
+          onClose={() => setEditingLeave(null)}
+        />
       )}
     </div>
   );
@@ -655,4 +722,372 @@ function formatIsoDateTime(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function addCalendarDays(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + days));
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+function EditLeaveModal({
+  leave,
+  employee,
+  onClose,
+}: {
+  leave: LeaveRequest;
+  employee?: Employee;
+  onClose: () => void;
+}) {
+  const initialDates: LeaveDayItem[] = useMemo(() => {
+    if (Array.isArray(leave.dates) && leave.dates.length > 0) {
+      return [...leave.dates].sort((a, b) => a.date.localeCompare(b.date));
+    }
+    const list: LeaveDayItem[] = [];
+    let d = leave.dateFrom;
+    while (d <= leave.dateTo) {
+      list.push({
+        date: d,
+        leaveType: leave.leaveType || "full_day",
+        paymentStatus: leave.paymentStatus || "paid",
+        leaveCategory: leave.leaveCategory || "annual",
+        halfDayPeriod: leave.halfDayPeriod || "first_half",
+        startTime: leave.startTime || "09:00",
+        endTime: leave.endTime || "17:00",
+      });
+      d = addCalendarDays(d, 1);
+    }
+    return list;
+  }, [leave]);
+
+  const [datesList, setDatesList] = useState<LeaveDayItem[]>(initialDates);
+  const [newDate, setNewDate] = useState("");
+  const [newType, setNewType] = useState<NonNullable<LeaveDayItem["leaveType"]>>("full_day");
+  const [newPayment, setNewPayment] = useState<NonNullable<LeaveDayItem["paymentStatus"]>>("paid");
+  const [newHalfDayPeriod, setNewHalfDayPeriod] = useState<"first_half" | "second_half">("first_half");
+  const [newCategory, setNewCategory] = useState<NonNullable<LeaveDayItem["leaveCategory"]>>(
+    leave.leaveCategory || "annual",
+  );
+  const [remarks, setRemarks] = useState(leave.remarks || "");
+  const [reason, setReason] = useState(leave.reason || "");
+  const [saving, setSaving] = useState(false);
+
+  const handleAddDate = () => {
+    if (!newDate) {
+      toast.error("Please pick a date to add");
+      return;
+    }
+    if (datesList.some((item) => item.date === newDate)) {
+      toast.error("This date is already in the leave list");
+      return;
+    }
+    const item: LeaveDayItem = {
+      date: newDate,
+      leaveType: newType,
+      paymentStatus: newPayment,
+      halfDayPeriod: newType === "half_day" ? newHalfDayPeriod : undefined,
+      leaveCategory: newCategory,
+    };
+    const updated = [...datesList, item].sort((a, b) => a.date.localeCompare(b.date));
+    setDatesList(updated);
+    setNewDate("");
+    toast.success(`Added ${newDate}`);
+  };
+
+  const handleRemoveDate = (dateToRemove: string) => {
+    if (datesList.length <= 1) {
+      toast.error("A leave request must have at least one date");
+      return;
+    }
+    setDatesList(datesList.filter((item) => item.date !== dateToRemove));
+  };
+
+  const handleUpdateItem = (index: number, patch: Partial<LeaveDayItem>) => {
+    const next = [...datesList];
+    next[index] = { ...next[index], ...patch };
+    setDatesList(next);
+  };
+
+  const handleSave = async () => {
+    if (datesList.length === 0) {
+      toast.error("Please add at least one date");
+      return;
+    }
+    setSaving(true);
+    try {
+      const sorted = [...datesList].sort((a, b) => a.date.localeCompare(b.date));
+      const minDate = sorted[0].date;
+      const maxDate = sorted[sorted.length - 1].date;
+
+      await updateDoc(doc(db(), "leaveRequests", leave.id), {
+        dates: sorted,
+        dateFrom: minDate,
+        dateTo: maxDate,
+        leaveType: sorted[0]?.leaveType || "full_day",
+        paymentStatus: sorted[0]?.paymentStatus || "paid",
+        leaveCategory: sorted[0]?.leaveCategory || "annual",
+        halfDayPeriod: sorted[0]?.halfDayPeriod || "first_half",
+        remarks,
+        reason,
+      });
+
+      toast.success("Leave dates and breakdown successfully updated!");
+      onClose();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+      <div className="rounded-2xl border bg-card max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="p-5 border-b bg-secondary/30 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+              <Calendar className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-foreground">
+                Tweak Leave Dates & Breakdown
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {employee?.name || leave.employeeId} · {employee?.email || ""}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5 overflow-y-auto flex-1 text-sm">
+          {/* Reason Box */}
+          <div className="p-3 rounded-xl bg-muted/40 border text-xs space-y-1">
+            <div className="font-bold text-foreground flex items-center gap-1.5 text-muted-foreground">
+              Submitted Request & Reason
+            </div>
+            <p className="text-foreground whitespace-pre-wrap leading-relaxed font-medium">
+              {leave.reason?.trim() || "No submitted reason."}
+            </p>
+          </div>
+
+          {/* Dates Breakdown Table */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-foreground uppercase tracking-wide">
+                Included Dates ({datesList.length})
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                Configure type and paid status per date
+              </span>
+            </div>
+
+            <div className="rounded-xl border divide-y overflow-hidden bg-background">
+              {datesList.map((item, idx) => (
+                <div
+                  key={item.date}
+                  className="p-3 flex flex-wrap items-center justify-between gap-2.5 hover:bg-muted/20"
+                >
+                  <div className="flex items-center gap-2 min-w-[130px]">
+                    <Calendar className="h-4 w-4 text-primary shrink-0" />
+                    <div>
+                      <div className="font-bold text-xs text-foreground">
+                        {formatDateKey(item.date)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{item.date}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Type Selector */}
+                    <select
+                      value={
+                        item.leaveType === "half_day"
+                          ? `half_${item.halfDayPeriod || "first_half"}`
+                          : item.leaveType || "full_day"
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.startsWith("half_")) {
+                          handleUpdateItem(idx, {
+                            leaveType: "half_day",
+                            halfDayPeriod: val === "half_second_half" ? "second_half" : "first_half",
+                          });
+                        } else {
+                          handleUpdateItem(idx, {
+                            leaveType: val as LeaveDayItem["leaveType"],
+                            halfDayPeriod: undefined,
+                          });
+                        }
+                      }}
+                      className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-foreground outline-none"
+                    >
+                      <option value="full_day">Full Day</option>
+                      <option value="half_first_half">Half Day (1st Half)</option>
+                      <option value="half_second_half">Half Day (2nd Half)</option>
+                      <option value="timed_break">Timed Break</option>
+                    </select>
+
+                    {/* Paid / Unpaid */}
+                    <select
+                      value={item.paymentStatus || "paid"}
+                      onChange={(e) =>
+                        handleUpdateItem(idx, {
+                          paymentStatus: e.target.value as "paid" | "unpaid",
+                        })
+                      }
+                      className={`rounded-md border px-2 py-1 text-xs font-bold outline-none ${
+                        item.paymentStatus === "unpaid"
+                          ? "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300"
+                          : "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      }`}
+                    >
+                      <option value="paid">Paid</option>
+                      <option value="unpaid">Unpaid</option>
+                    </select>
+
+                    {/* Category */}
+                    <select
+                      value={item.leaveCategory || "annual"}
+                      onChange={(e) =>
+                        handleUpdateItem(idx, {
+                          leaveCategory: e.target.value as LeaveDayItem["leaveCategory"],
+                        })
+                      }
+                      className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-muted-foreground outline-none"
+                    >
+                      <option value="annual">Annual</option>
+                      <option value="sick">Sick</option>
+                      <option value="personal">Personal</option>
+                      <option value="other">Other</option>
+                    </select>
+
+                    {/* Remove Date */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDate(item.date)}
+                      className="p-1 rounded-md text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      title="Remove date"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Add Another Date Bar */}
+          <div className="p-3 rounded-xl border bg-secondary/20 space-y-2">
+            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5 text-primary" /> Add Another Date to this Leave
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground outline-none"
+              />
+              <select
+                value={
+                  newType === "half_day"
+                    ? `half_${newHalfDayPeriod}`
+                    : newType
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.startsWith("half_")) {
+                    setNewType("half_day");
+                    setNewHalfDayPeriod(val === "half_second_half" ? "second_half" : "first_half");
+                  } else {
+                    setNewType(val as LeaveDayItem["leaveType"]);
+                  }
+                }}
+                className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none"
+              >
+                <option value="full_day">Full Day</option>
+                <option value="half_first_half">Half Day (1st Half)</option>
+                <option value="half_second_half">Half Day (2nd Half)</option>
+                <option value="timed_break">Timed Break</option>
+              </select>
+
+              <select
+                value={newPayment}
+                onChange={(e) => setNewPayment(e.target.value as "paid" | "unpaid")}
+                className="rounded-md border bg-background px-2 py-1.5 text-xs font-semibold text-foreground outline-none"
+              >
+                <option value="paid">Paid</option>
+                <option value="unpaid">Unpaid</option>
+              </select>
+
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value as LeaveDayItem["leaveCategory"])}
+                className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none"
+              >
+                <option value="annual">Annual</option>
+                <option value="sick">Sick</option>
+                <option value="personal">Personal</option>
+                <option value="other">Other</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={handleAddDate}
+                className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-bold shadow-xs hover:bg-primary/90 flex items-center gap-1"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Date
+              </button>
+            </div>
+          </div>
+
+          {/* Admin Remarks */}
+          <div>
+            <label className="block text-xs font-bold text-foreground mb-1">
+              Admin Remarks / Notes
+            </label>
+            <input
+              type="text"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="e.g. Approved per Rose request for Aug 25, 28 (half), 31"
+              className="w-full px-3 py-2 rounded-lg border bg-background text-foreground text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t bg-secondary/30 flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border text-xs font-bold text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={handleSave}
+            className="px-5 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold shadow-sm hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {saving ? (
+              <>Saving Changes…</>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4" /> Save Dates & Breakdown
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

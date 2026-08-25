@@ -212,6 +212,17 @@ export interface OvertimeRequest {
   createdAt: string;
 }
 
+export interface LeaveDayItem {
+  date: string; // YYYY-MM-DD
+  leaveType?: "full_day" | "half_day" | "timed_break";
+  paymentStatus?: "paid" | "unpaid";
+  leaveCategory?: "annual" | "sick" | "personal" | "other";
+  halfDayPeriod?: "first_half" | "second_half";
+  startTime?: string;
+  endTime?: string;
+  notes?: string;
+}
+
 export interface LeaveRequest {
   id: string;
   employeeId: string;
@@ -225,6 +236,7 @@ export interface LeaveRequest {
   endTime?: string; // HH:mm in the employee shift timezone
   dateFrom: string; // YYYY-MM-DD
   dateTo: string;
+  dates?: LeaveDayItem[];
   reason: string;
   status: "pending" | "approved" | "rejected";
   createdAt: Timestamp;

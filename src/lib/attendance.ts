@@ -56,20 +56,26 @@ export function getShiftTimezone(
   return getEmployeeTimezone(employee);
 }
 
-export function isEmployeeOnApprovedLeave(
+export function isEmployeeOnLeaveForDate(
   employee: Pick<Employee, "id" | "authUid">,
   leaves: LeaveRequest[],
   dateKey: string,
 ): boolean {
-  return leaves.some(
-    (leave) =>
-      leave.status === "approved" &&
+  return leaves.some((leave) => {
+    if (leave.status !== "approved" || !leaveMatchesEmployee(leave, employee)) return false;
+    if (Array.isArray(leave.dates) && leave.dates.length > 0) {
+      const match = leave.dates.find((d) => d.date === dateKey);
+      return Boolean(match && (!match.leaveType || match.leaveType === "full_day"));
+    }
+    return (
       (!leave.leaveType || leave.leaveType === "full_day") &&
-      (leave.employeeId === employee.id || leave.employeeId === employee.authUid) &&
       leave.dateFrom <= dateKey &&
-      leave.dateTo >= dateKey,
-  );
+      leave.dateTo >= dateKey
+    );
+  });
 }
+
+export const isEmployeeOnApprovedLeave = isEmployeeOnLeaveForDate;
 
 function leaveMatchesEmployee(
   leave: LeaveRequest,
@@ -83,15 +89,28 @@ export function getEmployeeApprovedLeaveForDate(
   leaves: LeaveRequest[],
   dateKey: string,
 ): LeaveRequest | null {
-  return (
-    leaves.find(
-      (leave) =>
-        leave.status === "approved" &&
-        leaveMatchesEmployee(leave, employee) &&
-        leave.dateFrom <= dateKey &&
-        leave.dateTo >= dateKey,
-    ) ?? null
-  );
+  for (const leave of leaves) {
+    if (leave.status !== "approved" || !leaveMatchesEmployee(leave, employee)) continue;
+    if (Array.isArray(leave.dates) && leave.dates.length > 0) {
+      const match = leave.dates.find((d) => d.date === dateKey);
+      if (match) {
+        return {
+          ...leave,
+          dateFrom: match.date,
+          dateTo: match.date,
+          leaveType: match.leaveType || leave.leaveType || "full_day",
+          paymentStatus: match.paymentStatus || leave.paymentStatus || "paid",
+          leaveCategory: match.leaveCategory || leave.leaveCategory || "annual",
+          halfDayPeriod: match.halfDayPeriod || leave.halfDayPeriod,
+          startTime: match.startTime || leave.startTime,
+          endTime: match.endTime || leave.endTime,
+        };
+      }
+    } else if (leave.dateFrom <= dateKey && leave.dateTo >= dateKey) {
+      return leave;
+    }
+  }
+  return null;
 }
 
 export function getEmployeeApprovedLeaveDates(
@@ -101,10 +120,16 @@ export function getEmployeeApprovedLeaveDates(
   const dates = new Set<string>();
   for (const leave of leaves) {
     if (leave.status !== "approved" || !leaveMatchesEmployee(leave, employee)) continue;
-    let dateKey = leave.dateFrom;
-    while (dateKey <= leave.dateTo) {
-      dates.add(dateKey);
-      dateKey = addCalendarDays(dateKey, 1);
+    if (Array.isArray(leave.dates) && leave.dates.length > 0) {
+      for (const d of leave.dates) {
+        if (d.date) dates.add(d.date);
+      }
+    } else {
+      let dateKey = leave.dateFrom;
+      while (dateKey <= leave.dateTo) {
+        dates.add(dateKey);
+        dateKey = addCalendarDays(dateKey, 1);
+      }
     }
   }
   return [...dates];
@@ -126,22 +151,36 @@ export function getActiveEmployeeLeave(
 ): LeaveRequest | null {
   const timezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(instant, timezone);
-  const applicable = leaves.filter(
-    (leave) =>
-      leave.status === "approved" &&
-      leaveMatchesEmployee(leave, employee) &&
-      leave.dateFrom <= dateKey &&
-      leave.dateTo >= dateKey,
-  );
 
-  for (const leave of applicable) {
-    if (!leave.leaveType || leave.leaveType === "full_day") return leave;
-    if (leave.leaveType === "timed_break" && leave.startTime && leave.endTime) {
-      const start = zonedDateTimeToDate(dateKey, leave.startTime, timezone);
-      const end = zonedDateTimeToDate(dateKey, leave.endTime, timezone);
-      if (instant >= start && instant < end) return leave;
+  for (const leave of leaves) {
+    if (leave.status !== "approved" || !leaveMatchesEmployee(leave, employee)) continue;
+
+    let targetLeave: LeaveRequest = leave;
+    if (Array.isArray(leave.dates) && leave.dates.length > 0) {
+      const match = leave.dates.find((d) => d.date === dateKey);
+      if (!match) continue;
+      targetLeave = {
+        ...leave,
+        dateFrom: match.date,
+        dateTo: match.date,
+        leaveType: match.leaveType || leave.leaveType || "full_day",
+        paymentStatus: match.paymentStatus || leave.paymentStatus || "paid",
+        leaveCategory: match.leaveCategory || leave.leaveCategory || "annual",
+        halfDayPeriod: match.halfDayPeriod || leave.halfDayPeriod,
+        startTime: match.startTime || leave.startTime,
+        endTime: match.endTime || leave.endTime,
+      };
+    } else {
+      if (leave.dateFrom > dateKey || leave.dateTo < dateKey) continue;
     }
-    if (leave.leaveType === "half_day") {
+
+    if (!targetLeave.leaveType || targetLeave.leaveType === "full_day") return targetLeave;
+    if (targetLeave.leaveType === "timed_break" && targetLeave.startTime && targetLeave.endTime) {
+      const start = zonedDateTimeToDate(dateKey, targetLeave.startTime, timezone);
+      const end = zonedDateTimeToDate(dateKey, targetLeave.endTime, timezone);
+      if (instant >= start && instant < end) return targetLeave;
+    }
+    if (targetLeave.leaveType === "half_day") {
       const shift = getShiftWindow(
         dateKey,
         employee.shiftStartTime || "09:00",
@@ -150,10 +189,10 @@ export function getActiveEmployeeLeave(
       );
       const midpoint = new Date((shift.start.getTime() + shift.end.getTime()) / 2);
       const isActive =
-        leave.halfDayPeriod === "second_half"
+        targetLeave.halfDayPeriod === "second_half"
           ? instant >= midpoint && instant < shift.end
           : instant >= shift.start && instant < midpoint;
-      if (isActive) return leave;
+      if (isActive) return targetLeave;
     }
   }
   return null;
