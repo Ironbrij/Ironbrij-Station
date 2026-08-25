@@ -2069,7 +2069,7 @@ function ReportsPage() {
       {/* ========================================================================= */}
       {isSendModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
-          <div className="rounded-2xl border bg-card max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="rounded-2xl border bg-card max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b bg-secondary/30 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
@@ -2202,9 +2202,69 @@ function ReportsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-muted-foreground text-[11px]">
-                      + Full table of {reportRows.length} team member
-                      {reportRows.length === 1 ? "" : "s"} with live edited hours and remarks.
+                    {/* Full Employee Breakdown Table Preview */}
+                    <div className="rounded-lg border bg-card overflow-hidden">
+                      <div className="p-2.5 bg-muted/60 border-b font-bold text-foreground text-xs flex items-center justify-between">
+                        <span>Detailed Team Member Report Table</span>
+                        <span className="text-[11px] font-normal text-muted-foreground">
+                          {reportRows.length} team members
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto max-h-64">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-secondary/70 text-[10px] uppercase font-bold text-muted-foreground sticky top-0">
+                            <tr>
+                              <th className="p-2">Employee / V.A.</th>
+                              <th className="p-2">Role / Dept</th>
+                              <th className="p-2 text-right">Reg Hours</th>
+                              <th className="p-2 text-right">Overtime</th>
+                              <th className="p-2 text-center">Leaves</th>
+                              <th className="p-2">Remarks</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {reportRows.map((row) => (
+                              <tr
+                                key={row.id}
+                                className={`hover:bg-muted/30 ${!row.worked ? "opacity-60 bg-muted/20" : ""}`}
+                              >
+                                <td className="p-2 font-bold text-foreground">
+                                  {row.employeeName}
+                                  {row.employeeEmail && (
+                                    <div className="text-[10px] text-muted-foreground font-normal">
+                                      {row.employeeEmail}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-2 text-muted-foreground">
+                                  {row.role} · {row.department}
+                                </td>
+                                <td className="p-2 text-right font-bold text-sky-600">
+                                  {Number(row.regularHours).toFixed(1)}h
+                                </td>
+                                <td className="p-2 text-right font-bold text-amber-600 whitespace-nowrap">
+                                  {row.overtimeHours > 0
+                                    ? `+${Number(row.overtimeHours).toFixed(1)}h`
+                                    : "—"}
+                                  {row.overtimeDates.length > 0 && (
+                                    <div className="text-[9px] text-muted-foreground font-normal">
+                                      {row.overtimeDates.length} date(s)
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
+                                  {row.paidLeaveDays > 0 || row.unpaidLeaveDays > 0
+                                    ? `Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`
+                                    : "—"}
+                                </td>
+                                <td className="p-2 text-muted-foreground italic max-w-xs truncate">
+                                  {row.remarks || "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}
