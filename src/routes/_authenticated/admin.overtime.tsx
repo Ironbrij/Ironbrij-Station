@@ -457,10 +457,11 @@ function AdminOvertimePage() {
               <thead className="bg-muted/40 border-b text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Employee</th>
-                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Shift Date</th>
                   <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Overtime Duration</th>
-                  <th className="px-4 py-3">Reason</th>
+                  <th className="px-4 py-3">Normal (Auto)</th>
+                  <th className="px-4 py-3 text-primary font-black">Overtime to Approve</th>
+                  <th className="px-4 py-3">Reason / Shift Note</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -503,9 +504,15 @@ function AdminOvertimePage() {
                           </span>
                         )}
                       </td>
+                      <td className="px-4 py-3.5 whitespace-nowrap text-muted-foreground font-semibold">
+                        {formatWorkMinutes(req.normalWorkMinutes || 0)}
+                        <span className="text-[10px] text-muted-foreground/80 block font-normal">
+                          (auto-counted)
+                        </span>
+                      </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="font-bold text-sm text-foreground">
-                          {formatWorkMinutes(req.overtimeMinutes)}
+                        <span className="inline-flex items-center font-bold text-sm bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20">
+                          +{formatWorkMinutes(req.overtimeMinutes)}
                         </span>
                       </td>
                       <td className="px-4 py-3.5 max-w-xs text-muted-foreground font-medium truncate">
