@@ -13,11 +13,18 @@ import {
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding } from "@/lib/email-branding";
-import type { LeaveRequest } from "@/lib/types";
+import type { LeaveDayItem, LeaveRequest } from "@/lib/types";
 import { toast } from "sonner";
-import { CalendarDays, CheckCircle2, Clock3, XCircle } from "lucide-react";
+import {
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Plus,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { format } from "date-fns";
-import { toDate, toMillis } from "@/lib/time";
+import { toDate } from "@/lib/time";
 
 export const Route = createFileRoute("/_authenticated/app/leave")({
   head: () => ({
@@ -33,6 +40,7 @@ export const Route = createFileRoute("/_authenticated/app/leave")({
 
 function LeavePage() {
   const { employee, user, company, activeCompanyId } = useAuth();
+  const [selectionMode, setSelectionMode] = useState<"range" | "custom">("range");
   const [leaveType, setLeaveType] = useState<NonNullable<LeaveRequest["leaveType"]>>("full_day");
   const [leaveCategory, setLeaveCategory] =
     useState<NonNullable<LeaveRequest["leaveCategory"]>>("annual");
@@ -44,6 +52,12 @@ function LeavePage() {
   const [endTime, setEndTime] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [customDates, setCustomDates] = useState<LeaveDayItem[]>([]);
+  const [newDateInput, setNewDateInput] = useState("");
+  const [newDateType, setNewDateType] = useState<NonNullable<LeaveDayItem["leaveType"]>>("full_day");
+  const [newDatePayment, setNewDatePayment] = useState<NonNullable<LeaveDayItem["paymentStatus"]>>("paid");
+  const [newDateHalfPeriod, setNewDateHalfPeriod] = useState<"first_half" | "second_half">("first_half");
+  const [newDateCategory, setNewDateCategory] = useState<NonNullable<LeaveDayItem["leaveCategory"]>>("annual");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<LeaveRequest[]>([]);
@@ -71,11 +85,102 @@ function LeavePage() {
     });
   }, [activeCompanyId, employee]);
 
+  const handleAddCustomDate = () => {
+    if (!newDateInput) {
+      toast.error("Please select a date first");
+      return;
+    }
+    if (customDates.some((d) => d.date === newDateInput)) {
+      toast.error("Date already added to this application");
+      return;
+    }
+    const item: LeaveDayItem = {
+      date: newDateInput,
+      leaveType: newDateType,
+      paymentStatus: newDatePayment,
+      halfDayPeriod: newDateType === "half_day" ? newDateHalfPeriod : undefined,
+      leaveCategory: newDateCategory,
+    };
+    setCustomDates([...customDates, item].sort((a, b) => a.date.localeCompare(b.date)));
+    setNewDateInput("");
+    toast.success(`Added ${newDateInput}`);
+  };
+
+  const handleRemoveCustomDate = (dateToRemove: string) => {
+    setCustomDates(customDates.filter((d) => d.date !== dateToRemove));
+  };
+
+  const handleUpdateCustomItem = (index: number, patch: Partial<LeaveDayItem>) => {
+    const next = [...customDates];
+    next[index] = { ...next[index], ...patch };
+    setCustomDates(next);
+  };
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!employee) return;
     setBusy(true);
     try {
+      if (selectionMode === "custom") {
+        if (customDates.length === 0) {
+          toast.error("Please add at least one date for this leave application.");
+          setBusy(false);
+          return;
+        }
+        const sorted = [...customDates].sort((a, b) => a.date.localeCompare(b.date));
+        const finalDateFrom = sorted[0].date;
+        const finalDateTo = sorted[sorted.length - 1].date;
+
+        const leaveRef = await addDoc(collection(db(), "leaveRequests"), {
+          employeeId: employee.id,
+          companyId: activeCompanyId,
+          dates: sorted,
+          dateFrom: finalDateFrom,
+          dateTo: finalDateTo,
+          leaveType: sorted[0]?.leaveType || "full_day",
+          leaveCategory: sorted[0]?.leaveCategory || "annual",
+          paymentStatus: sorted[0]?.paymentStatus || "paid",
+          halfDayPeriod: sorted[0]?.halfDayPeriod || "first_half",
+          reason,
+          remarks: reason,
+          status: "pending",
+          createdAt: serverTimestamp(),
+        });
+        toast.success("Multi-date leave application submitted!");
+        try {
+          const idToken = await user?.getIdToken();
+          if (idToken) {
+            await fetch("/api/leave-notification", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${idToken}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                company: companyEmailBranding(company, employee.companyId),
+                leaveRequestId: leaveRef.id,
+                employeeId: employee.id,
+                employeeName: employee.name,
+                employeeEmail: employee.email,
+                companyId: activeCompanyId,
+                dateFrom: finalDateFrom,
+                dateTo: finalDateTo,
+                leaveType: sorted[0]?.leaveType || "full_day",
+                leaveCategory: sorted[0]?.leaveCategory || "annual",
+                paymentStatus: sorted[0]?.paymentStatus || "paid",
+                reason,
+              }),
+            });
+          }
+        } catch {
+          // Ignore notification error
+        }
+        setCustomDates([]);
+        setReason("");
+        setBusy(false);
+        return;
+      }
+
       if (leaveType === "timed_break" && (!startTime || !endTime || startTime >= endTime)) {
         toast.error("Choose a valid break start and end time.");
         setBusy(false);
@@ -101,7 +206,7 @@ function LeavePage() {
       try {
         const idToken = await user?.getIdToken();
         if (idToken) {
-          const notificationResponse = await fetch("/api/leave-notification", {
+          await fetch("/api/leave-notification", {
             method: "POST",
             headers: {
               authorization: `Bearer ${idToken}`,
@@ -125,12 +230,9 @@ function LeavePage() {
               reason,
             }),
           });
-          if (!notificationResponse.ok) {
-            toast.info("Request saved. Manager email automation is not configured yet.");
-          }
         }
       } catch {
-        toast.info("Request saved. Manager email could not be sent.");
+        // Notification optional
       }
       setDateFrom("");
       setDateTo("");
@@ -178,134 +280,323 @@ function LeavePage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <form onSubmit={submit} className="rounded-xl border bg-card p-5 space-y-4 shadow-lift">
-          <h2 className="font-semibold text-foreground border-b pb-2">Request leave</h2>
-
-          <div>
-            <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-              Leave Type
-            </label>
-            <select
-              value={leaveType}
-              onChange={(e) =>
-                setLeaveType(e.target.value as NonNullable<LeaveRequest["leaveType"]>)
-              }
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-            >
-              <option value="full_day">Full Day Leave</option>
-              <option value="half_day">Half Day Leave</option>
-              <option value="timed_break">Timed Break / Short Leave</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                Leave category
-              </label>
-              <select
-                value={leaveCategory}
-                onChange={(event) =>
-                  setLeaveCategory(event.target.value as NonNullable<LeaveRequest["leaveCategory"]>)
-                }
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+            <h2 className="font-semibold text-foreground">Request leave</h2>
+            {/* Mode Switcher */}
+            <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setSelectionMode("range")}
+                className={`px-2.5 py-1 rounded-md transition ${
+                  selectionMode === "range"
+                    ? "bg-background text-foreground shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                <option value="annual">Annual leave</option>
-                <option value="sick">Sick leave</option>
-                <option value="personal">Personal leave</option>
-                <option value="other">Other leave</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                Payment
-              </label>
-              <select
-                value={paymentStatus}
-                onChange={(event) =>
-                  setPaymentStatus(event.target.value as NonNullable<LeaveRequest["paymentStatus"]>)
-                }
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                Date Range
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectionMode("custom")}
+                className={`px-2.5 py-1 rounded-md transition ${
+                  selectionMode === "custom"
+                    ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                <option value="paid">Paid leave</option>
-                <option value="unpaid">Unpaid leave</option>
-              </select>
+                Pick Specific Dates
+              </button>
             </div>
           </div>
 
-          {leaveType === "half_day" && (
-            <div>
-              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                Half Day Period
-              </label>
-              <select
-                value={halfDayPeriod}
-                onChange={(e) =>
-                  setHalfDayPeriod(e.target.value as NonNullable<LeaveRequest["halfDayPeriod"]>)
-                }
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-              >
-                <option value="first_half">First Half (Morning)</option>
-                <option value="second_half">Second Half (Afternoon)</option>
-              </select>
-            </div>
-          )}
-
-          {leaveType === "timed_break" && (
-            <div className="grid grid-cols-2 gap-3">
+          {selectionMode === "range" ? (
+            <>
               <div>
                 <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                  Start Time
+                  Leave Type
                 </label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
+                <select
+                  value={leaveType}
+                  onChange={(e) =>
+                    setLeaveType(e.target.value as NonNullable<LeaveRequest["leaveType"]>)
+                  }
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-                  required
-                />
+                >
+                  <option value="full_day">Full Day Leave</option>
+                  <option value="half_day">Half Day Leave</option>
+                  <option value="timed_break">Timed Break / Short Leave</option>
+                </select>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                    Leave category
+                  </label>
+                  <select
+                    value={leaveCategory}
+                    onChange={(event) =>
+                      setLeaveCategory(event.target.value as NonNullable<LeaveRequest["leaveCategory"]>)
+                    }
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                  >
+                    <option value="annual">Annual leave</option>
+                    <option value="sick">Sick leave</option>
+                    <option value="personal">Personal leave</option>
+                    <option value="other">Other leave</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                    Payment
+                  </label>
+                  <select
+                    value={paymentStatus}
+                    onChange={(event) =>
+                      setPaymentStatus(event.target.value as NonNullable<LeaveRequest["paymentStatus"]>)
+                    }
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                  >
+                    <option value="paid">Paid leave</option>
+                    <option value="unpaid">Unpaid leave</option>
+                  </select>
+                </div>
+              </div>
+
+              {leaveType === "half_day" && (
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                    Half Day Period
+                  </label>
+                  <select
+                    value={halfDayPeriod}
+                    onChange={(e) =>
+                      setHalfDayPeriod(e.target.value as NonNullable<LeaveRequest["halfDayPeriod"]>)
+                    }
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                  >
+                    <option value="first_half">First Half (Morning)</option>
+                    <option value="second_half">Second Half (Afternoon)</option>
+                  </select>
+                </div>
+              )}
+
+              {leaveType === "timed_break" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                    From Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
+                    To Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    disabled={leaveType !== "full_day"}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium disabled:opacity-50"
+                    required={leaveType === "full_day"}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Multi-Date Specific Picker Mode */
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-xl border bg-secondary/30 space-y-3">
+                <div className="font-bold text-xs text-foreground flex items-center justify-between">
+                  <span>Add Specific Dates to this Application</span>
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    e.g. Aug 25, Aug 28, Aug 31
+                  </span>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground uppercase mb-0.5">
+                      Select Date
+                    </label>
+                    <input
+                      type="date"
+                      value={newDateInput}
+                      onChange={(e) => setNewDateInput(e.target.value)}
+                      className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground uppercase mb-0.5">
+                      Leave Type
+                    </label>
+                    <select
+                      value={
+                        newDateType === "half_day"
+                          ? `half_${newDateHalfPeriod}`
+                          : newDateType
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.startsWith("half_")) {
+                          setNewDateType("half_day");
+                          setNewDateHalfPeriod(val === "half_second_half" ? "second_half" : "first_half");
+                        } else {
+                          setNewDateType(val as LeaveDayItem["leaveType"]);
+                        }
+                      }}
+                      className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
+                    >
+                      <option value="full_day">Full Day</option>
+                      <option value="half_first_half">Half Day (1st Half)</option>
+                      <option value="half_second_half">Half Day (2nd Half)</option>
+                      <option value="timed_break">Timed Break</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground uppercase mb-0.5">
+                      Payment
+                    </label>
+                    <select
+                      value={newDatePayment}
+                      onChange={(e) => setNewDatePayment(e.target.value as "paid" | "unpaid")}
+                      className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold"
+                    >
+                      <option value="paid">Paid leave</option>
+                      <option value="unpaid">Unpaid leave</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-muted-foreground uppercase mb-0.5">
+                      Category
+                    </label>
+                    <select
+                      value={newDateCategory}
+                      onChange={(e) => setNewDateCategory(e.target.value as LeaveDayItem["leaveCategory"])}
+                      className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
+                    >
+                      <option value="annual">Annual leave</option>
+                      <option value="sick">Sick leave</option>
+                      <option value="personal">Personal leave</option>
+                      <option value="other">Other leave</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddCustomDate}
+                  className="w-full py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground text-xs font-bold transition flex items-center justify-center gap-1.5 border border-primary/30"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Date to List
+                </button>
+              </div>
+
+              {/* Added Dates List */}
               <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                  End Time
+                <label className="block text-xs font-bold text-foreground mb-1.5">
+                  Selected Dates ({customDates.length})
                 </label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-                  required
-                />
+                {customDates.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed text-center text-xs text-muted-foreground">
+                    No dates added yet. Pick a date above and click <strong>Add Date to List</strong>.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border divide-y overflow-hidden">
+                    {customDates.map((item, idx) => (
+                      <div
+                        key={item.date}
+                        className="p-2.5 flex items-center justify-between gap-2 text-xs hover:bg-muted/20"
+                      >
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-primary shrink-0" />
+                          <div>
+                            <span className="font-bold text-foreground">{item.date}</span>
+                            <span className="text-muted-foreground ml-1.5">
+                              {item.leaveType === "half_day"
+                                ? item.halfDayPeriod === "second_half"
+                                  ? "Half (2nd)"
+                                  : "Half (1st)"
+                                : item.leaveType === "timed_break"
+                                  ? "Break"
+                                  : "Full"}
+                            </span>
+                            <span className="text-muted-foreground mx-1">·</span>
+                            <span
+                              className={
+                                item.paymentStatus === "unpaid"
+                                  ? "font-bold text-amber-600 dark:text-amber-400"
+                                  : "font-bold text-emerald-600 dark:text-emerald-400"
+                              }
+                            >
+                              {item.paymentStatus}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={item.paymentStatus || "paid"}
+                            onChange={(e) =>
+                              handleUpdateCustomItem(idx, {
+                                paymentStatus: e.target.value as "paid" | "unpaid",
+                              })
+                            }
+                            className="rounded border bg-background px-1.5 py-0.5 text-[11px] font-bold"
+                          >
+                            <option value="paid">Paid</option>
+                            <option value="unpaid">Unpaid</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomDate(item.date)}
+                            className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                From Date
-              </label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
-                To Date
-              </label>
-              <input
-                type="date"
-                value={dateTo}
-                disabled={leaveType !== "full_day"}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium disabled:opacity-50"
-                required={leaveType === "full_day"}
-              />
-            </div>
-          </div>
 
           <div>
             <label className="block text-xs font-bold text-muted-foreground uppercase mb-1">
@@ -351,26 +642,68 @@ function LeavePage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <div className="flex items-center gap-1.5 text-sm font-bold">
-                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                        {leave.dateFrom}
-                        {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""}
-                      </div>
-                      <div className="mt-1 text-xs font-semibold text-primary">
-                        {!leave.leaveType || leave.leaveType === "full_day"
-                          ? "Full-day leave"
-                          : leave.leaveType === "half_day"
-                            ? `Half-day · ${leave.halfDayPeriod === "second_half" ? "second half" : "first half"}`
-                            : `Scheduled break · ${leave.startTime}–${leave.endTime}`}
-                      </div>
-                      <div className="mt-1 text-[11px] font-semibold text-muted-foreground">
-                        {(leave.leaveCategory || "other").replace("_", " ")} ·{" "}
-                        {leave.paymentStatus === "unpaid"
-                          ? "Unpaid"
-                          : leave.paymentStatus === "paid"
-                            ? "Paid"
-                            : "Not classified"}
-                      </div>
+                      {/* Multi-Date Badges or Standard Range */}
+                      {Array.isArray(leave.dates) && leave.dates.length > 0 ? (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-foreground mb-1">
+                            <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                            {leave.dates.length} Specific Dates:
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {leave.dates.map((d) => (
+                              <span
+                                key={d.date}
+                                className="inline-flex items-center gap-1 rounded-md border bg-muted/60 px-2 py-0.5 text-[11px] font-semibold text-foreground"
+                              >
+                                <span className="font-bold">{d.date}</span>:{" "}
+                                <span className="text-muted-foreground">
+                                  {d.leaveType === "half_day"
+                                    ? d.halfDayPeriod === "second_half"
+                                      ? "Half (2nd)"
+                                      : "Half (1st)"
+                                    : d.leaveType === "timed_break"
+                                      ? "Break"
+                                      : "Full"}
+                                </span>
+                                <span className="text-muted-foreground">·</span>
+                                <span
+                                  className={
+                                    d.paymentStatus === "unpaid"
+                                      ? "font-bold text-amber-600 dark:text-amber-400"
+                                      : "font-bold text-emerald-600 dark:text-emerald-400"
+                                  }
+                                >
+                                  {d.paymentStatus || "paid"}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-sm font-bold">
+                            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                            {leave.dateFrom}
+                            {leave.dateFrom !== leave.dateTo ? ` → ${leave.dateTo}` : ""}
+                          </div>
+                          <div className="mt-1 text-xs font-semibold text-primary">
+                            {!leave.leaveType || leave.leaveType === "full_day"
+                              ? "Full-day leave"
+                              : leave.leaveType === "half_day"
+                                ? `Half-day · ${leave.halfDayPeriod === "second_half" ? "second half" : "first half"}`
+                                : `Scheduled break · ${leave.startTime}–${leave.endTime}`}
+                          </div>
+                          <div className="mt-1 text-[11px] font-semibold text-muted-foreground">
+                            {(leave.leaveCategory || "other").replace("_", " ")} ·{" "}
+                            {leave.paymentStatus === "unpaid"
+                              ? "Unpaid"
+                              : leave.paymentStatus === "paid"
+                                ? "Paid"
+                                : "Not classified"}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-1 text-xs text-muted-foreground">{leave.reason}</div>
                     </div>
                     <div className="flex items-center gap-2">
