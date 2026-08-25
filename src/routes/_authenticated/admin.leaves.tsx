@@ -785,9 +785,11 @@ function EditLeaveModal({
       date: newDate,
       leaveType: newType,
       paymentStatus: newPayment,
-      halfDayPeriod: newType === "half_day" ? newHalfDayPeriod : undefined,
       leaveCategory: newCategory,
     };
+    if (newType === "half_day") {
+      item.halfDayPeriod = newHalfDayPeriod;
+    }
     const updated = [...datesList, item].sort((a, b) => a.date.localeCompare(b.date));
     setDatesList(updated);
     setNewDate("");
@@ -804,7 +806,15 @@ function EditLeaveModal({
 
   const handleUpdateItem = (index: number, patch: Partial<LeaveDayItem>) => {
     const next = [...datesList];
-    next[index] = { ...next[index], ...patch };
+    const updated = { ...next[index], ...patch };
+    if (updated.leaveType !== "half_day") {
+      delete updated.halfDayPeriod;
+    }
+    if (updated.leaveType !== "timed_break") {
+      delete updated.startTime;
+      delete updated.endTime;
+    }
+    next[index] = updated;
     setDatesList(next);
   };
 
@@ -815,21 +825,43 @@ function EditLeaveModal({
     }
     setSaving(true);
     try {
-      const sorted = [...datesList].sort((a, b) => a.date.localeCompare(b.date));
+      const cleanedDates: LeaveDayItem[] = datesList.map((item) => {
+        const res: LeaveDayItem = {
+          date: item.date,
+          leaveType: item.leaveType || "full_day",
+          paymentStatus: item.paymentStatus || "paid",
+          leaveCategory: item.leaveCategory || "annual",
+        };
+        if (item.leaveType === "half_day" && item.halfDayPeriod) {
+          res.halfDayPeriod = item.halfDayPeriod;
+        }
+        if (item.leaveType === "timed_break") {
+          if (item.startTime) res.startTime = item.startTime;
+          if (item.endTime) res.endTime = item.endTime;
+        }
+        return res;
+      });
+
+      const sorted = cleanedDates.sort((a, b) => a.date.localeCompare(b.date));
       const minDate = sorted[0].date;
       const maxDate = sorted[sorted.length - 1].date;
 
-      await updateDoc(doc(db(), "leaveRequests", leave.id), {
+      const payload: Record<string, any> = {
         dates: sorted,
         dateFrom: minDate,
         dateTo: maxDate,
         leaveType: sorted[0]?.leaveType || "full_day",
         paymentStatus: sorted[0]?.paymentStatus || "paid",
         leaveCategory: sorted[0]?.leaveCategory || "annual",
-        halfDayPeriod: sorted[0]?.halfDayPeriod || "first_half",
-        remarks,
-        reason,
-      });
+        remarks: remarks || "",
+        reason: reason || "",
+      };
+
+      if (sorted[0]?.leaveType === "half_day" && sorted[0]?.halfDayPeriod) {
+        payload.halfDayPeriod = sorted[0].halfDayPeriod;
+      }
+
+      await updateDoc(doc(db(), "leaveRequests", leave.id), payload);
 
       toast.success("Leave dates and breakdown successfully updated!");
       onClose();

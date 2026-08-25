@@ -98,9 +98,11 @@ function LeavePage() {
       date: newDateInput,
       leaveType: newDateType,
       paymentStatus: newDatePayment,
-      halfDayPeriod: newDateType === "half_day" ? newDateHalfPeriod : undefined,
       leaveCategory: newDateCategory,
     };
+    if (newDateType === "half_day") {
+      item.halfDayPeriod = newDateHalfPeriod;
+    }
     setCustomDates([...customDates, item].sort((a, b) => a.date.localeCompare(b.date)));
     setNewDateInput("");
     toast.success(`Added ${newDateInput}`);
@@ -112,7 +114,15 @@ function LeavePage() {
 
   const handleUpdateCustomItem = (index: number, patch: Partial<LeaveDayItem>) => {
     const next = [...customDates];
-    next[index] = { ...next[index], ...patch };
+    const updated = { ...next[index], ...patch };
+    if (updated.leaveType !== "half_day") {
+      delete updated.halfDayPeriod;
+    }
+    if (updated.leaveType !== "timed_break") {
+      delete updated.startTime;
+      delete updated.endTime;
+    }
+    next[index] = updated;
     setCustomDates(next);
   };
 
@@ -121,31 +131,55 @@ function LeavePage() {
     if (!employee) return;
     setBusy(true);
     try {
+      const companyId = activeCompanyId || employee.companyId || employee.companyIds?.[0] || "";
+
       if (selectionMode === "custom") {
         if (customDates.length === 0) {
           toast.error("Please add at least one date for this leave application.");
           setBusy(false);
           return;
         }
-        const sorted = [...customDates].sort((a, b) => a.date.localeCompare(b.date));
+        const cleanedDates: LeaveDayItem[] = customDates.map((item) => {
+          const res: LeaveDayItem = {
+            date: item.date,
+            leaveType: item.leaveType || "full_day",
+            paymentStatus: item.paymentStatus || "paid",
+            leaveCategory: item.leaveCategory || "annual",
+          };
+          if (item.leaveType === "half_day" && item.halfDayPeriod) {
+            res.halfDayPeriod = item.halfDayPeriod;
+          }
+          if (item.leaveType === "timed_break") {
+            if (item.startTime) res.startTime = item.startTime;
+            if (item.endTime) res.endTime = item.endTime;
+          }
+          return res;
+        });
+
+        const sorted = cleanedDates.sort((a, b) => a.date.localeCompare(b.date));
         const finalDateFrom = sorted[0].date;
         const finalDateTo = sorted[sorted.length - 1].date;
 
-        const leaveRef = await addDoc(collection(db(), "leaveRequests"), {
+        const payload: Record<string, any> = {
           employeeId: employee.id,
-          companyId: activeCompanyId,
+          companyId,
           dates: sorted,
           dateFrom: finalDateFrom,
           dateTo: finalDateTo,
           leaveType: sorted[0]?.leaveType || "full_day",
           leaveCategory: sorted[0]?.leaveCategory || "annual",
           paymentStatus: sorted[0]?.paymentStatus || "paid",
-          halfDayPeriod: sorted[0]?.halfDayPeriod || "first_half",
-          reason,
-          remarks: reason,
+          reason: reason || "",
+          remarks: reason || "",
           status: "pending",
           createdAt: serverTimestamp(),
-        });
+        };
+
+        if (sorted[0]?.leaveType === "half_day" && sorted[0]?.halfDayPeriod) {
+          payload.halfDayPeriod = sorted[0].halfDayPeriod;
+        }
+
+        const leaveRef = await addDoc(collection(db(), "leaveRequests"), payload);
         toast.success("Multi-date leave application submitted!");
         try {
           const idToken = await user?.getIdToken();
@@ -162,7 +196,7 @@ function LeavePage() {
                 employeeId: employee.id,
                 employeeName: employee.name,
                 employeeEmail: employee.email,
-                companyId: activeCompanyId,
+                companyId,
                 dateFrom: finalDateFrom,
                 dateTo: finalDateTo,
                 leaveType: sorted[0]?.leaveType || "full_day",
@@ -187,21 +221,28 @@ function LeavePage() {
         return;
       }
       const finalDateTo = leaveType === "full_day" ? dateTo || dateFrom : dateFrom;
-      const leaveRef = await addDoc(collection(db(), "leaveRequests"), {
+      const payload: Record<string, any> = {
         employeeId: employee.id,
-        companyId: activeCompanyId,
+        companyId,
         leaveType,
         leaveCategory,
         paymentStatus,
-        ...(leaveType === "half_day" ? { halfDayPeriod } : {}),
-        ...(leaveType === "timed_break" ? { startTime, endTime } : {}),
         dateFrom,
         dateTo: finalDateTo,
-        reason,
-        remarks: reason,
+        reason: reason || "",
+        remarks: reason || "",
         status: "pending",
         createdAt: serverTimestamp(),
-      });
+      };
+      if (leaveType === "half_day" && halfDayPeriod) {
+        payload.halfDayPeriod = halfDayPeriod;
+      }
+      if (leaveType === "timed_break" && startTime && endTime) {
+        payload.startTime = startTime;
+        payload.endTime = endTime;
+      }
+
+      const leaveRef = await addDoc(collection(db(), "leaveRequests"), payload);
       toast.success("Leave request submitted");
       try {
         const idToken = await user?.getIdToken();
@@ -218,7 +259,7 @@ function LeavePage() {
               employeeId: employee.id,
               employeeName: employee.name,
               employeeEmail: employee.email,
-              companyId: activeCompanyId,
+              companyId,
               dateFrom,
               dateTo: finalDateTo,
               leaveType,
