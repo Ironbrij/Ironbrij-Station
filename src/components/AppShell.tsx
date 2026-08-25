@@ -198,25 +198,25 @@ export function AppShell({
         </div>
 
         <div className="hidden border-t bg-background md:block">
-          <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 scrollbar-none">
+          <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-1 px-4 py-1.5 sm:px-6">
             {companySwitcher}
-            {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 bg-border" />}
+            {companySwitcher && <div className="mx-1 h-6 w-px shrink-0 bg-border" />}
             {nav.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
                 activeOptions={{ exact: item.exact }}
-                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 activeProps={{
                   className:
-                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-2.5 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-muted hover:text-foreground",
                 }}
               >
                 {item.label}
                 {item.to === "/admin/notices" && unreadLateCount > 0 && (
                   <span
                     aria-label={`${unreadLateCount} unread late alerts`}
-                    className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[10px] font-bold leading-none text-white shadow-sm"
+                    className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm"
                   >
                     +{unreadLateCount}
                   </span>
@@ -226,7 +226,7 @@ export function AppShell({
           </nav>
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-t bg-background px-4 py-2 md:hidden scrollbar-none">
+        <div className="flex flex-wrap gap-1 border-t bg-background px-4 py-1.5 md:hidden">
           {companySwitcher}
           {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 self-center bg-border" />}
           {nav.map((item) => (
