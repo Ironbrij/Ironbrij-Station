@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
 import {
   Building2,
   CheckCircle2,
@@ -8,6 +8,7 @@ import {
   Clock3,
   Filter,
   Layers,
+  RefreshCw,
   Sparkles,
   UserCheck,
   UserX,
@@ -21,8 +22,12 @@ import {
   type Employee,
   type OvertimeRequest,
   type OvertimeStatus,
+  type Punch,
 } from "@/lib/types";
-import { formatWorkMinutes } from "@/lib/attendance-calculation";
+import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
+import { getShiftTimezone, zonedDateKey } from "@/lib/attendance";
+import { getRequiredWorkMinutes } from "@/lib/company-context";
+import { toDate, toMillis } from "@/lib/time";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -37,12 +42,14 @@ function AdminOvertimePage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const [statusFilter, setStatusFilter] = useState<OvertimeStatus | "all">("pending");
   const [filterCompany, setFilterCompany] = useState("all");
   const [filterDept, setFilterDept] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("all");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -71,6 +78,11 @@ function AdminOvertimePage() {
       onSnapshot(collection(db(), "companies"), (snapshot) =>
         setCompanies(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+        ),
+      ),
+      onSnapshot(collection(db(), "punches"), (snapshot) =>
+        setAllPunches(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
         ),
       ),
     ];
@@ -180,6 +192,129 @@ function AdminOvertimePage() {
     }
   }
 
+  async function handleSyncPastOvertime() {
+    setSyncing(true);
+    try {
+      let createdCount = 0;
+      const existingOutIds = new Set(requests.map((r) => r.punchOutId).filter(Boolean));
+      const existingDateKeys = new Set(
+        requests.map((r) => `${r.employeeId}__${r.date}`),
+      );
+
+      // Group punches by employee
+      const empPunchesMap = new Map<string, Punch[]>();
+      for (const p of allPunches) {
+        if (!p.employeeId) continue;
+        if (!empPunchesMap.has(p.employeeId)) empPunchesMap.set(p.employeeId, []);
+        empPunchesMap.get(p.employeeId)!.push(p);
+      }
+
+      for (const [empId, empPunchesList] of empPunchesMap) {
+        const emp = empMap.get(empId);
+        const sorted = [...empPunchesList].sort(
+          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
+        );
+
+        let lastIn: Punch | null = null;
+        for (const p of sorted) {
+          if (p.type === "in" || p.type === "extra_in") {
+            lastIn = p;
+          } else if ((p.type === "out" || p.type === "extra_out") && lastIn) {
+            const punchDate = p.attendanceDate || p.date || lastIn.attendanceDate || lastIn.date;
+            if (
+              existingOutIds.has(p.id) ||
+              (punchDate && existingDateKeys.has(`${empId}__${punchDate}`))
+            ) {
+              lastIn = null;
+              continue;
+            }
+
+            const inTime = toDate(lastIn.timestamp);
+            const outTime = toDate(p.timestamp);
+            if (!inTime || !outTime) {
+              lastIn = null;
+              continue;
+            }
+
+            const isExtra = p.type === "extra_out";
+            const reqMinutes = emp
+              ? getRequiredWorkMinutes(
+                  emp,
+                  companies.find((c) => c.id === p.companyId),
+                )
+              : 480;
+            const isOff = Boolean(p.isOffShiftDay || lastIn.isOffShiftDay);
+
+            let otMinutes = 0;
+            if (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0) {
+              otMinutes = p.overtimeMinutes;
+            } else if (isExtra) {
+              otMinutes = Math.max(0, Math.floor((outTime.getTime() - inTime.getTime()) / 60_000));
+            } else if (emp) {
+              const calc = calculateAttendanceSession({
+                employee: emp,
+                company: companies.find((c) => c.id === p.companyId),
+                punchIn: inTime,
+                punchOut: outTime,
+                requiredWorkMinutes: reqMinutes,
+                isOffShiftDay: isOff,
+              });
+              otMinutes = calc.overtimeMinutes;
+            } else {
+              const elapsed = Math.max(
+                0,
+                Math.floor((outTime.getTime() - inTime.getTime()) / 60_000),
+              );
+              otMinutes = Math.max(0, elapsed - reqMinutes);
+            }
+
+            if (otMinutes > 0) {
+              const reason = isOff
+                ? `Worked ${formatWorkMinutes(otMinutes)} on off-shift day (synced)`
+                : `Worked ${formatWorkMinutes(otMinutes)} past shift hours (synced)`;
+
+              await addDoc(collection(db(), "overtimeRequests"), {
+                employeeId: empId,
+                employeeName: p.employeeName || emp?.name || "Employee",
+                companyId: p.companyId || emp?.companyId || COMPANY_ID,
+                date:
+                  punchDate ||
+                  zonedDateKey(inTime, emp ? getShiftTimezone(emp) : "Asia/Kathmandu"),
+                requestType: isOff ? "off_shift_work" : isExtra ? "extra_hours" : "overtime",
+                punchOutId: p.id,
+                punchInId: lastIn.id,
+                overtimeMinutes: otMinutes,
+                normalWorkMinutes: Math.max(
+                  0,
+                  Math.floor((outTime.getTime() - inTime.getTime()) / 60_000) - otMinutes,
+                ),
+                isOffShiftDay: isOff,
+                reason,
+                status: "pending",
+                createdAt: new Date().toISOString(),
+              });
+
+              existingOutIds.add(p.id);
+              if (punchDate) existingDateKeys.add(`${empId}__${punchDate}`);
+              createdCount++;
+            }
+            lastIn = null;
+          }
+        }
+      }
+
+      if (createdCount > 0) {
+        toast.success(`Synced and recovered ${createdCount} past overtime requests!`);
+      } else {
+        toast.info("All past overtime records are already synced.");
+      }
+    } catch (err) {
+      toast.error("Failed to sync past overtime: " + (err as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Top Header */}
@@ -193,16 +328,28 @@ function AdminOvertimePage() {
           </p>
         </div>
 
-        {counts.pending > 0 && (
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={handleApproveAllPending}
-            disabled={bulkProcessing}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all disabled:opacity-50"
+            onClick={handleSyncPastOvertime}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 rounded-xl border bg-background px-3 py-2 text-xs font-semibold text-foreground shadow-xs hover:bg-muted transition-all disabled:opacity-50"
+            title="Scan and recover all past shift punches with overtime"
           >
-            <Sparkles className="h-4 w-4" />
-            {bulkProcessing ? "Approving..." : `Approve All Pending (${counts.pending})`}
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing..." : "Sync Past Overtime"}
           </button>
-        )}
+
+          {counts.pending > 0 && (
+            <button
+              onClick={handleApproveAllPending}
+              disabled={bulkProcessing}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" />
+              {bulkProcessing ? "Approving..." : `Approve All Pending (${counts.pending})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter Toolbar */}
