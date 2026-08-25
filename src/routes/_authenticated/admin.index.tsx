@@ -418,23 +418,23 @@ function AdminHome() {
 
       {/* Pending Overtime Alert Banner */}
       {pendingOvertimeCount > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300/80 dark:border-amber-700/50 shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shrink-0 shadow-xs">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <span className="font-bold text-sm text-amber-950 dark:text-amber-100 block">
+              <span className="font-extrabold text-sm text-amber-950 dark:text-amber-100 block tracking-tight">
                 {pendingOvertimeCount} Pending Overtime Request{pendingOvertimeCount > 1 ? "s" : ""}
               </span>
-              <p className="text-xs text-muted-foreground font-medium mt-0.5">
+              <p className="text-xs text-amber-900/80 dark:text-amber-200/80 font-medium mt-0.5">
                 Team members have logged overtime that requires admin review before payroll calculation.
               </p>
             </div>
           </div>
           <Link
             to="/admin/overtime"
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
           >
             Review Overtime &rarr;
           </Link>
