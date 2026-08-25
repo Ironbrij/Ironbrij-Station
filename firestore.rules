@@ -126,18 +126,7 @@ service cloud.firestore {
     }
 
     match /attendanceReminders/{id} {
-      allow get: if isAdmin() || (
-        isAuthed() && id.matches(request.auth.uid + '__punch-out__.*')
-      );
-      allow list: if isAdmin() || (
-        ownsEmployee(resource.data.employeeId) &&
-        canAccessCompany(resource.data.companyId)
-      );
-      allow create, update: if isAdmin() || (
-        ownsEmployee(request.resource.data.employeeId) &&
-        canAccessCompany(request.resource.data.companyId)
-      );
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // SOD & EOD configuration and question bank

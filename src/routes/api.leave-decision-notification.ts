@@ -29,38 +29,57 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
       GET: async () =>
         Response.json({
           ok: true,
-          configured: Boolean(process.env.N8N_LEAVE_DECISION_WEBHOOK_URL),
+          configured: Boolean(
+            process.env.N8N_LEAVE_DECISION_WEBHOOK_URL ||
+              "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision",
+          ),
         }),
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
-        const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+        const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
         const masterKey =
           process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
         const isMasterKey = Boolean(token && token === masterKey);
 
-        const firebaseApiKey =
-          process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
+        const candidateKeys = [
+          process.env.VITE_FIREBASE_API_KEY,
+          "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw",
+          "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY",
+        ].filter(Boolean) as string[];
 
         if (!token) {
           return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
         }
 
+        let authenticatedEmail = "";
+        let authenticatedLocalId = "";
         if (!isMasterKey) {
-          const identityResponse = await fetch(
-            `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ idToken: token }),
-            },
-          );
-          if (!identityResponse.ok) {
+          for (const apiKey of candidateKeys) {
+            try {
+              const identityResponse = await fetch(
+                `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ idToken: token }),
+                },
+              );
+              if (identityResponse.ok) {
+                const identityPayload = (await identityResponse.json()) as {
+                  users?: Array<{ localId?: string; email?: string }>;
+                };
+                if (identityPayload.users?.[0]?.email) {
+                  authenticatedEmail = identityPayload.users[0].email.toLowerCase();
+                  authenticatedLocalId = identityPayload.users[0].localId || "";
+                  break;
+                }
+              }
+            } catch {}
+          }
+
+          if (!authenticatedEmail) {
             return Response.json({ ok: false, error: "Invalid login token" }, { status: 401 });
           }
-          const identityPayload = (await identityResponse.json()) as {
-            users?: Array<{ localId?: string; email?: string }>;
-          };
-          const authenticatedEmail = identityPayload.users?.[0]?.email?.toLowerCase() ?? "";
           const configuredAdmins = (
             process.env.LEAVE_ADMIN_EMAILS ??
             "pabibek9@gmail.com,bibekparajuli05@gmail.com,louis@ironbrij.com.au,rose@ironbrij.com.au,ann@ironbrij.com.au,mv@ironbrij.com.au,admin@ironbrij.com.au"
