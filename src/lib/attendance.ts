@@ -328,33 +328,37 @@ export function computeRegularWorkedMsForDay(
   now = new Date(),
 ) {
   const timezone = getShiftTimezone(employee);
-  const dateKey = zonedDateKey(day, timezone);
-  const dayStart = zonedDateTimeToDate(dateKey, "00:00", timezone).getTime();
-  const dayEnd = zonedDateTimeToDate(addCalendarDays(dateKey, 1), "00:00", timezone).getTime();
-  const sorted = [...punches]
+  const targetDateKey = zonedDateKey(day, timezone);
+
+  // Filter punches belonging to targetDateKey's shift session
+  const dayPunches = punches.filter((punch) => {
+    const pDate =
+      punch.attendanceDate ||
+      punch.date ||
+      (punch.timestamp ? zonedDateKey(toDate(punch.timestamp) ?? new Date(), timezone) : "");
+    return pDate === targetDateKey;
+  });
+
+  const sorted = [...dayPunches]
     .filter((punch) => punch.timestamp)
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+
   let openIn: number | null = null;
   let workedMs = 0;
-
-  function addInterval(start: number, end: number) {
-    workedMs += Math.max(0, Math.min(end, dayEnd) - Math.max(start, dayStart));
-  }
 
   for (const punch of sorted) {
     const timestamp = toMillis(punch.timestamp);
     if (!timestamp) continue;
-    if (punch.type === "in") {
+    if (punch.type === "in" || punch.type === "extra_in") {
       openIn = timestamp;
-    } else if (punch.type === "out" && openIn !== null) {
-      addInterval(openIn, timestamp);
+    } else if ((punch.type === "out" || punch.type === "extra_out") && openIn !== null) {
+      workedMs += Math.max(0, timestamp - openIn);
       openIn = null;
     }
   }
 
   if (openIn !== null) {
-    const completion = getShiftCompletion(employee, new Date(openIn));
-    addInterval(openIn, Math.min(now.getTime(), completion.punchOutAt.getTime()));
+    workedMs += Math.max(0, now.getTime() - openIn);
   }
 
   return workedMs;
