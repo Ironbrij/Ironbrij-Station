@@ -289,7 +289,7 @@ function ReportsPage() {
           continue;
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
-        const date = zonedDateKey(punchedAt, shiftTimezone);
+        const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
         if (date < from || date > to) continue;
         if (!groups.has(date)) groups.set(date, []);
         groups.get(date)!.push(punch);
@@ -317,6 +317,16 @@ function ReportsPage() {
             )
           : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
+
+        const otReq = overtimeRequests.find(
+          (r) =>
+            (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+            r.date === date,
+        );
+        const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
+        const effectiveHours =
+          calculation.regularHours + (isOvertimeApproved ? calculation.overtimeHours : 0);
+
         output.push({
           key: `${employee.id}-${date}`,
           employee,
@@ -324,7 +334,7 @@ function ReportsPage() {
           date,
           firstIn,
           lastOut,
-          hours: calculation.regularHours + calculation.overtimeHours,
+          hours: Math.round(effectiveHours * 10) / 10,
           status: holiday
             ? "Holiday"
             : approvedLeave
@@ -352,6 +362,7 @@ function ReportsPage() {
     filteredEmployees,
     punches,
     leaves,
+    overtimeRequests,
     departments,
     from,
     to,
@@ -570,6 +581,7 @@ function ReportsPage() {
     filteredEmployees,
     punches,
     leaves,
+    overtimeRequests,
     departments,
     from,
     to,
@@ -1069,6 +1081,102 @@ function ReportsPage() {
     toast.success("Downloaded Report PDF");
   }
 
+  // Export Daily Logs to CSV
+  function exportDailyCsv() {
+    if (!dailyRows.length) return toast.error("No daily logs available to export.");
+    const data = dailyRows.map((row) => ({
+      Date: row.date,
+      Employee: row.employee.name,
+      Email: row.employee.email || "",
+      Department: row.department,
+      "Punch In": row.firstIn
+        ? formatInTimezone(
+            toDate(row.firstIn.timestamp) ?? new Date(),
+            getEmployeeTimezone(row.employee),
+          )
+        : "—",
+      "Punch Out": row.lastOut
+        ? formatInTimezone(
+            toDate(row.lastOut.timestamp) ?? new Date(),
+            getEmployeeTimezone(row.employee),
+          )
+        : "—",
+      "Hours Worked": Number(row.hours).toFixed(1),
+      Status: row.status,
+      "Minutes Late": row.minutesLate,
+      "Auto Punch-Out": row.isAutoPunchOut ? "Yes" : "No",
+    }));
+    const blob = new Blob([Papa.unparse(data)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `daily_logs_${companyDisplayName.replace(/\s+/g, "_")}_${from}_to_${to}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded Daily Logs CSV");
+  }
+
+  // Export Daily Logs to PDF
+  function exportDailyPdf() {
+    if (!dailyRows.length) return toast.error("No daily logs available to export.");
+    const pdf = new jsPDF({ orientation: "landscape" });
+
+    pdf.setFontSize(16);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(`${companyDisplayName} — Daily Punch Logs`, 14, 16);
+
+    pdf.setFontSize(9);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`Period: ${periodLabel} · Total Log Entries: ${dailyRows.length}`, 14, 22);
+
+    let y = 32;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFillColor(241, 245, 249);
+    pdf.rect(14, y - 5, 268, 8, "F");
+    pdf.setTextColor(30, 41, 59);
+    pdf.text("Date", 16, y);
+    pdf.text("Employee", 45, y);
+    pdf.text("Department", 95, y);
+    pdf.text("Punch In", 135, y);
+    pdf.text("Punch Out", 175, y);
+    pdf.text("Hours", 215, y);
+    pdf.text("Status", 235, y);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+
+    for (const row of dailyRows) {
+      y += 8;
+      if (y > 190) {
+        pdf.addPage();
+        y = 20;
+      }
+      const tz = getEmployeeTimezone(row.employee);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(row.date, 16, y);
+      pdf.text(row.employee.name.slice(0, 20), 45, y);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(row.department.slice(0, 18), 95, y);
+      pdf.text(
+        row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), tz) : "—",
+        135,
+        y,
+      );
+      pdf.text(
+        row.lastOut ? formatInTimezone(toDate(row.lastOut.timestamp) ?? new Date(), tz) : "—",
+        175,
+        y,
+      );
+      pdf.setTextColor(2, 132, 199);
+      pdf.text(`${Number(row.hours).toFixed(1)}h`, 215, y);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text(row.status.slice(0, 15), 235, y);
+    }
+
+    pdf.save(`daily_logs_${companyDisplayName.replace(/\s+/g, "_")}_${from}_to_${to}.pdf`);
+    toast.success("Downloaded Daily Logs PDF");
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* Top Header */}
@@ -1267,13 +1375,13 @@ function ReportsPage() {
             )}
 
             <button
-              onClick={viewMode === "summary" ? exportSummaryCsv : () => {}}
+              onClick={viewMode === "summary" ? exportSummaryCsv : exportDailyCsv}
               className="rounded-md border px-3.5 py-2 text-xs font-bold text-foreground hover:bg-secondary flex items-center justify-center gap-1.5"
             >
               <Download className="h-4 w-4 text-muted-foreground" /> CSV
             </button>
             <button
-              onClick={viewMode === "summary" ? exportSummaryPdf : () => {}}
+              onClick={viewMode === "summary" ? exportSummaryPdf : exportDailyPdf}
               className="rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 flex items-center justify-center gap-1.5"
             >
               <FileText className="h-4 w-4" /> PDF
