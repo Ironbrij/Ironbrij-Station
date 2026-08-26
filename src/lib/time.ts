@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase/firestore";
-import type { Company, CountryCode, Employee, Punch } from "./types";
-import { calculateAttendanceSession } from "./attendance-calculation";
+import type { Company, CountryCode, Employee, Punch } from "./types.ts";
+import { calculateAttendanceSession } from "./attendance-calculation.ts";
 
 export interface DayHours {
   regularHours: number;

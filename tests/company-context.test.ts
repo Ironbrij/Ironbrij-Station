@@ -5,6 +5,7 @@ import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
+  getRequiredWorkMinutes,
 } from "../src/lib/company-context.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
 
@@ -63,3 +64,35 @@ test("calculateTotalShiftMinutes correctly sums multiple shift intervals", () =>
   const total = calculateTotalShiftMinutes(true, shifts);
   assert.equal(total, 540); // 9 hours total = 540 minutes
 });
+
+test("calculateTotalShiftMinutes and getRequiredWorkMinutes respect shift-specific working days", () => {
+  const shifts = [
+    { startTime: "04:00", endTime: "07:00", workingDays: [0, 1] }, // Shift #1: Sun, Mon (3h)
+    { startTime: "12:00", endTime: "15:00", workingDays: [4] }, // Shift #2: Thu only (3h)
+  ];
+  // Sunday (0): Shift 1 active (180 mins)
+  assert.equal(calculateTotalShiftMinutes(true, shifts, undefined, undefined, 0), 180);
+  // Monday (1): Shift 1 active (180 mins)
+  assert.equal(calculateTotalShiftMinutes(true, shifts, undefined, undefined, 1), 180);
+  // Tuesday (2): No shifts active (0 mins)
+  assert.equal(calculateTotalShiftMinutes(true, shifts, undefined, undefined, 2), 0);
+  // Thursday (4): Shift 2 active (180 mins)
+  assert.equal(calculateTotalShiftMinutes(true, shifts, undefined, undefined, 4), 180);
+
+  const multiShiftEmployee: Employee = {
+    id: "emp-multi",
+    name: "Multi Shift User",
+    email: "multi@example.com",
+    status: "active",
+    inviteStatus: "accepted",
+    isMultipleShift: true,
+    shifts,
+  };
+
+  // getRequiredWorkMinutes with dayOfWeek
+  assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 0), 180); // Sunday
+  assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 1), 180); // Monday
+  assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 2), 0); // Tuesday (off day)
+  assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 4), 180); // Thursday
+});
+

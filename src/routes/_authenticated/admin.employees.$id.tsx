@@ -749,24 +749,57 @@ function EmployeeDetail() {
                 return (
                   <div
                     key={cId}
-                    className="rounded-lg border bg-secondary/30 p-2.5 text-xs space-y-1"
+                    className="rounded-lg border bg-secondary/30 p-2.5 text-xs space-y-1.5"
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-bold text-primary">{compName}</span>
                       {isMulti && (
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                          Multi-Shift
+                          Multi-Shift ({m.shifts?.length || 0})
                         </span>
                       )}
                     </div>
-                    <div className="text-foreground font-medium flex items-center gap-1.5">
-                      <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{shiftText}</span>
-                    </div>
-                    <div className="text-muted-foreground font-semibold flex items-center gap-1.5">
-                      <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{daysText}</span>
-                    </div>
+                    {isMulti && m.shifts && m.shifts.length > 0 ? (
+                      <div className="space-y-1 pt-0.5">
+                        {m.shifts.map((s, idx) => {
+                          const sDaysText = formatWorkingDaysSummary(s.workingDays || m.workingDays);
+                          return (
+                            <div
+                              key={idx}
+                              className="rounded bg-background/60 p-1.5 border border-border/40 text-[11px] space-y-0.5"
+                            >
+                              <div className="flex items-center justify-between font-semibold">
+                                <span className="text-foreground">
+                                  Shift #{idx + 1}: {formatShiftRange(s.startTime, s.endTime)}
+                                </span>
+                                <span className="font-mono text-primary font-bold">
+                                  {Number((calculateShiftMinutes(s.startTime, s.endTime) / 60).toFixed(1))}h
+                                </span>
+                              </div>
+                              <div className="text-muted-foreground flex items-center gap-1 text-[10px]">
+                                <CalendarDays className="h-3 w-3" />
+                                <span>{sDaysText}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="text-muted-foreground font-semibold flex items-center gap-1.5 pt-0.5 text-[11px]">
+                          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>Overall: {daysText}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-foreground font-medium flex items-center gap-1.5">
+                          <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{shiftText}</span>
+                        </div>
+                        <div className="text-muted-foreground font-semibold flex items-center gap-1.5">
+                          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{daysText}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}

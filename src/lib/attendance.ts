@@ -337,12 +337,26 @@ export function getShiftWindow(
 export function getEmployeeShiftWindow(employee: Employee, instant = new Date()) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(instant, shiftTimezone);
-  return getShiftWindow(
-    dateKey,
-    employee.shiftStartTime || "09:00",
-    employee.shiftEndTime || "17:00",
-    shiftTimezone,
-  );
+  let startTime = employee.shiftStartTime || "09:00";
+  let endTime = employee.shiftEndTime || "17:00";
+
+  if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
+    const [shiftYear, shiftMonth, shiftDay] = dateKey.split("-").map(Number);
+    const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+    const fallbackDays = employee.workingDays || [0, 1, 2, 3, 4, 5];
+    const activeShifts = employee.shifts.filter((s) => {
+      const days =
+        Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
+      return days.includes(shiftWeekday);
+    });
+
+    if (activeShifts.length > 0) {
+      startTime = activeShifts[0].startTime;
+      endTime = activeShifts[activeShifts.length - 1].endTime;
+    }
+  }
+
+  return getShiftWindow(dateKey, startTime, endTime, shiftTimezone);
 }
 
 export function getShiftCompletion(employee: Employee, punchedInAt: Date) {
@@ -514,9 +528,22 @@ export function getFirstRegularPunchInForShift(
 }
 
 export function getEffectiveEmployeeWorkingDays(
-  employee?: Pick<Employee, "workingDays">,
+  employee?: Pick<Employee, "workingDays" | "isMultipleShift" | "shifts">,
   companyWorkingDays?: number[],
 ): number[] {
+  if (employee?.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
+    const shiftDays = new Set<number>();
+    let hasCustomShiftDays = false;
+    for (const shift of employee.shifts) {
+      if (Array.isArray(shift.workingDays) && shift.workingDays.length > 0) {
+        hasCustomShiftDays = true;
+        shift.workingDays.forEach((d) => shiftDays.add(d));
+      }
+    }
+    if (hasCustomShiftDays && shiftDays.size > 0) {
+      return Array.from(shiftDays).sort((a, b) => a - b);
+    }
+  }
   if (Array.isArray(employee?.workingDays) && employee!.workingDays!.length > 0) {
     return employee!.workingDays!;
   }

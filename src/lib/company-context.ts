@@ -28,9 +28,17 @@ export function calculateTotalShiftMinutes(
   shifts?: ShiftInterval[],
   singleStart?: string,
   singleEnd?: string,
+  dayOfWeek?: number,
 ): number {
   if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
-    return shifts.reduce((sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime), 0);
+    const activeShifts =
+      dayOfWeek !== undefined && dayOfWeek >= 0 && dayOfWeek <= 6
+        ? shifts.filter((s) => {
+            if (!Array.isArray(s.workingDays) || s.workingDays.length === 0) return true;
+            return s.workingDays.includes(dayOfWeek);
+          })
+        : shifts;
+    return activeShifts.reduce((sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime), 0);
   }
   return calculateShiftMinutes(singleStart || "09:00", singleEnd || "17:00");
 }
@@ -92,8 +100,41 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
   };
 }
 
-export function getRequiredWorkMinutes(employee: Employee, company?: Company | null): number {
+export function getRequiredWorkMinutes(
+  employee: Employee,
+  company?: Company | null,
+  dateOrDayOfWeek?: Date | string | number,
+): number {
   if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
+    if (dateOrDayOfWeek !== undefined && dateOrDayOfWeek !== null) {
+      let dayOfWeek: number = -1;
+      if (typeof dateOrDayOfWeek === "number") {
+        dayOfWeek = dateOrDayOfWeek;
+      } else if (typeof dateOrDayOfWeek === "string") {
+        const [y, m, d] = dateOrDayOfWeek.split("-").map(Number);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          dayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+        }
+      } else if (dateOrDayOfWeek instanceof Date) {
+        dayOfWeek = dateOrDayOfWeek.getDay();
+      }
+
+      if (dayOfWeek >= 0 && dayOfWeek <= 6) {
+        const fallbackDays = employee.workingDays || company?.workingDays || [0, 1, 2, 3, 4, 5];
+        const activeShifts = employee.shifts.filter((s) => {
+          const shiftDays =
+            Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
+          return shiftDays.includes(dayOfWeek);
+        });
+        if (activeShifts.length > 0) {
+          return activeShifts.reduce(
+            (sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime),
+            0,
+          );
+        }
+        return 0;
+      }
+    }
     return calculateTotalShiftMinutes(true, employee.shifts);
   }
   const configured = employee.requiredWorkMinutes;
@@ -115,13 +156,20 @@ export function buildCompanyMembership(
   input: Partial<CompanyMembership>,
 ): CompanyMembership {
   const isMultipleShift = Boolean(input.isMultipleShift);
+  const fallbackWorkingDays = input.workingDays || [0, 1, 2, 3, 4, 5];
   const shifts =
     input.shifts && input.shifts.length > 0
-      ? input.shifts
+      ? input.shifts.map((s) => ({
+          ...s,
+          workingDays:
+            Array.isArray(s.workingDays) && s.workingDays.length > 0
+              ? s.workingDays
+              : fallbackWorkingDays,
+        }))
       : isMultipleShift
         ? [
-            { startTime: "04:00", endTime: "07:00" },
-            { startTime: "12:00", endTime: "15:00" },
+            { startTime: "04:00", endTime: "07:00", workingDays: fallbackWorkingDays },
+            { startTime: "12:00", endTime: "15:00", workingDays: fallbackWorkingDays },
           ]
         : [];
 
@@ -134,6 +182,19 @@ export function buildCompanyMembership(
     input.requiredWorkMinutes ??
     calculateTotalShiftMinutes(isMultipleShift, shifts, shiftStartTime, shiftEndTime);
 
+  let resolvedWorkingDays = fallbackWorkingDays;
+  if (isMultipleShift && shifts.length > 0) {
+    const daysSet = new Set<number>();
+    shifts.forEach((s) => {
+      if (Array.isArray(s.workingDays)) {
+        s.workingDays.forEach((d) => daysSet.add(d));
+      }
+    });
+    if (daysSet.size > 0) {
+      resolvedWorkingDays = Array.from(daysSet).sort((a, b) => a - b);
+    }
+  }
+
   return {
     companyId: companyId || COMPANY_ID,
     role: input.role || "employee",
@@ -144,7 +205,7 @@ export function buildCompanyMembership(
     shiftStartTime,
     shiftEndTime,
     shiftTimezone: input.shiftTimezone || "Australia/Sydney",
-    workingDays: input.workingDays || [0, 1, 2, 3, 4, 5],
+    workingDays: resolvedWorkingDays,
     departmentId: input.departmentId || "",
     joinedAt: input.joinedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),

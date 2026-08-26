@@ -87,7 +87,16 @@ export function formatShiftRange(
 
   if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
     return shifts
-      .map((s) => `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`)
+      .map((s) => {
+        const timeRange = `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`;
+        if (Array.isArray(s.workingDays) && s.workingDays.length > 0 && s.workingDays.length < 7) {
+          const daysStr = s.workingDays
+            .map((d) => DAY_OPTIONS.find((o) => o.value === d)?.short || d)
+            .join(",");
+          return `${timeRange} [${daysStr}]`;
+        }
+        return timeRange;
+      })
       .join(", ");
   }
 
@@ -607,9 +616,10 @@ function CompanyMembershipSettings({
 
   function handleAddShiftSlot(companyId: string) {
     const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const fallbackDays = current.workingDays || [0, 1, 2, 3, 4, 5];
     const existingShifts = current.shifts || [
-      { startTime: "04:00", endTime: "07:00" },
-      { startTime: "12:00", endTime: "15:00" },
+      { startTime: "04:00", endTime: "07:00", workingDays: fallbackDays },
+      { startTime: "12:00", endTime: "15:00", workingDays: fallbackDays },
     ];
     const lastShift = existingShifts[existingShifts.length - 1];
     let nextStart = "16:00";
@@ -623,7 +633,10 @@ function CompanyMembershipSettings({
         nextEnd = `${String(endH).padStart(2, "0")}:${String(m || 0).padStart(2, "0")}`;
       }
     }
-    const updatedShifts = [...existingShifts, { startTime: nextStart, endTime: nextEnd }];
+    const updatedShifts = [
+      ...existingShifts,
+      { startTime: nextStart, endTime: nextEnd, workingDays: fallbackDays },
+    ];
     update(companyId, {
       isMultipleShift: true,
       shifts: updatedShifts,
@@ -660,6 +673,26 @@ function CompanyMembershipSettings({
     });
   }
 
+  function handleShiftDaysChange(companyId: string, index: number, days: number[]) {
+    const current = value[companyId] || buildCompanyMembership(companyId, {});
+    const existingShifts = [...(current.shifts || [])];
+    if (!existingShifts[index]) return;
+    existingShifts[index] = {
+      ...existingShifts[index],
+      workingDays: days,
+    };
+    const daysSet = new Set<number>();
+    existingShifts.forEach((s) => {
+      (s.workingDays || current.workingDays || [0, 1, 2, 3, 4, 5]).forEach((d) => daysSet.add(d));
+    });
+    const mergedDays = Array.from(daysSet).sort((a, b) => a - b);
+    update(companyId, {
+      isMultipleShift: true,
+      shifts: existingShifts,
+      workingDays: mergedDays.length > 0 ? mergedDays : current.workingDays,
+    });
+  }
+
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium">Company-specific work settings</div>
@@ -670,8 +703,8 @@ function CompanyMembershipSettings({
           "Main Company";
         const isMulti = Boolean(membership.isMultipleShift);
         const shifts = membership.shifts || [
-          { startTime: "04:00", endTime: "07:00" },
-          { startTime: "12:00", endTime: "15:00" },
+          { startTime: "04:00", endTime: "07:00", workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5] },
+          { startTime: "12:00", endTime: "15:00", workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5] },
         ];
         const durationMins = calculateTotalShiftMinutes(
           isMulti,
@@ -725,21 +758,44 @@ function CompanyMembershipSettings({
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {shifts.map((s, idx) => {
                     const singleMins = calculateShiftMinutes(s.startTime, s.endTime);
                     const singleHours = Number((singleMins / 60).toFixed(1));
+                    const shiftDays =
+                      Array.isArray(s.workingDays) && s.workingDays.length > 0
+                        ? s.workingDays
+                        : membership.workingDays || [0, 1, 2, 3, 4, 5];
+
                     return (
                       <div
                         key={idx}
-                        className="flex items-center gap-2 p-2 rounded-md bg-background border text-xs"
+                        className="p-2.5 rounded-lg bg-background border text-xs space-y-2.5 shadow-xs"
                       >
-                        <span className="font-bold text-muted-foreground min-w-[48px] shrink-0">
-                          Shift #{idx + 1}
-                        </span>
-                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <div>
-                            <span className="text-[10px] text-muted-foreground block">Start</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-foreground text-xs">
+                              Shift #{idx + 1}
+                            </span>
+                            <span className="font-mono text-[11px] text-primary font-bold px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+                              {singleHours}h
+                            </span>
+                          </div>
+                          {shifts.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveShiftSlot(companyId, idx)}
+                              className="p-1 rounded text-rose-500 hover:bg-rose-500/10 font-bold text-xs"
+                              title="Remove shift"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">Start</span>
                             <input
                               type="time"
                               value={s.startTime}
@@ -751,35 +807,85 @@ function CompanyMembershipSettings({
                                   e.target.value,
                                 )
                               }
-                              className="rounded border bg-background px-1.5 py-1 text-xs font-semibold"
+                              className="w-full rounded border bg-background px-2 py-1 text-xs font-semibold"
                             />
                           </div>
                           <span className="text-muted-foreground mt-3">–</span>
-                          <div>
-                            <span className="text-[10px] text-muted-foreground block">End</span>
+                          <div className="flex-1">
+                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">End</span>
                             <input
                               type="time"
                               value={s.endTime}
                               onChange={(e) =>
                                 handleShiftIntervalChange(companyId, idx, "endTime", e.target.value)
                               }
-                              className="rounded border bg-background px-1.5 py-1 text-xs font-semibold"
+                              className="w-full rounded border bg-background px-2 py-1 text-xs font-semibold"
                             />
                           </div>
                         </div>
-                        <span className="font-mono text-[11px] text-primary font-bold px-1.5 py-0.5 rounded bg-primary/5 border border-primary/10 shrink-0">
-                          {singleHours}h
-                        </span>
-                        {shifts.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveShiftSlot(companyId, idx)}
-                            className="p-1 rounded text-rose-500 hover:bg-rose-500/10 font-bold text-xs shrink-0"
-                            title="Remove shift"
-                          >
-                            ✕
-                          </button>
-                        )}
+
+                        {/* Shift-specific Working Days Picker */}
+                        <div className="pt-2 border-t border-border/50 space-y-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                            <span className="font-medium text-muted-foreground">
+                              Shift #{idx + 1} Working Days ({shiftDays.length}d)
+                            </span>
+                            <div className="flex flex-wrap gap-1 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5, 6])}
+                                className="text-primary hover:underline font-bold"
+                              >
+                                All 7d
+                              </button>
+                              <span className="text-muted-foreground">·</span>
+                              <button
+                                type="button"
+                                onClick={() => handleShiftDaysChange(companyId, idx, [1, 2, 3, 4, 5])}
+                                className="text-primary hover:underline font-bold"
+                              >
+                                Mon–Fri (5d)
+                              </button>
+                              <span className="text-muted-foreground">·</span>
+                              <button
+                                type="button"
+                                onClick={() => handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5])}
+                                className="text-primary hover:underline font-bold"
+                              >
+                                Sun–Fri (6d)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-7 gap-1">
+                            {DAY_OPTIONS.map((day) => {
+                              const selected = shiftDays.includes(day.value);
+                              return (
+                                <button
+                                  key={day.value}
+                                  type="button"
+                                  onClick={() => {
+                                    let newDays: number[];
+                                    if (selected) {
+                                      if (shiftDays.length === 1) return;
+                                      newDays = shiftDays.filter((d) => d !== day.value).sort((a, b) => a - b);
+                                    } else {
+                                      newDays = [...shiftDays, day.value].sort((a, b) => a - b);
+                                    }
+                                    handleShiftDaysChange(companyId, idx, newDays);
+                                  }}
+                                  className={`py-1 text-[11px] rounded-md border font-bold transition-all ${
+                                    selected
+                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                      : "bg-background text-muted-foreground border-border hover:bg-muted"
+                                  }`}
+                                >
+                                  {day.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
@@ -870,12 +976,23 @@ function CompanyMembershipSettings({
             )}
 
             <div className="pt-2 border-t mt-2">
-              <WorkingDaysPicker
-                label={`Working Days for ${companyName}`}
-                value={membership.workingDays}
-                onChange={(days) => update(companyId, { workingDays: days })}
-                compact
-              />
+              {isMulti ? (
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-muted-foreground font-medium">
+                    Overall Active Days for {companyName}:
+                  </span>
+                  <span className="font-bold text-foreground">
+                    {formatWorkingDaysSummary(membership.workingDays)}
+                  </span>
+                </div>
+              ) : (
+                <WorkingDaysPicker
+                  label={`Working Days for ${companyName}`}
+                  value={membership.workingDays}
+                  onChange={(days) => update(companyId, { workingDays: days })}
+                  compact
+                />
+              )}
             </div>
           </div>
         );

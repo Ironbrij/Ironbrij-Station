@@ -124,10 +124,15 @@ const TOOLS = [
             properties: {
               startTime: { type: "string" },
               endTime: { type: "string" },
+              workingDays: {
+                type: "array",
+                items: { type: "number" },
+                description: "Array of days (0=Sun..6=Sat) for this shift",
+              },
             },
             required: ["startTime", "endTime"],
           },
-          description: "List of shift intervals if isMultipleShift is true",
+          description: "List of shift intervals with optional shift-specific working days if isMultipleShift is true",
         },
       },
       required: ["name", "email"],

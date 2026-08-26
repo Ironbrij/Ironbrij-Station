@@ -48,8 +48,10 @@ export type InviteStatus = "pending" | "accepted";
 export type CountryCode = "NP" | "AU" | "PH";
 
 export interface ShiftInterval {
+  id?: string;
   startTime: string; // e.g. "04:00"
   endTime: string; // e.g. "07:00"
+  workingDays?: number[]; // Specific working days for this shift interval: 0=Sun..6=Sat
 }
 
 export type ReportingRequirement = "sod_only" | "eod_only" | "sod_eod" | "none";
