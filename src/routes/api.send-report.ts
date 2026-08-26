@@ -133,9 +133,9 @@ export const Route = createFileRoute("/api/send-report")({
           return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
         }
 
-        if (!isMasterKey) {
-          let authenticatedEmail = "";
+        let authenticatedEmail = isMasterKey ? "system@ironbrij.com.au" : "";
 
+        if (!isMasterKey) {
           for (const apiKey of candidateKeys) {
             try {
               const identityResponse = await fetch(

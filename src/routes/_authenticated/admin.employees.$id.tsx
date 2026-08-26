@@ -21,7 +21,7 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import type { Company, Department, Employee, LeaveRequest, OvertimeRequest, OvertimeStatus, Punch } from "@/lib/types";
+import { COMPANY_ID, type Company, type Department, type Employee, type LeaveRequest, type OvertimeRequest, type OvertimeStatus, type Punch } from "@/lib/types";
 import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -44,6 +44,7 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
 import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
 import {
+  calculateShiftMinutes,
   getEmployeeForCompany,
   getPunchCompanyId,
   getRequiredWorkMinutes,

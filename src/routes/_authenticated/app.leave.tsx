@@ -518,7 +518,7 @@ function LeavePage() {
                           setNewDateType("half_day");
                           setNewDateHalfPeriod(val === "half_second_half" ? "second_half" : "first_half");
                         } else {
-                          setNewDateType(val as LeaveDayItem["leaveType"]);
+                          setNewDateType((val as LeaveDayItem["leaveType"]) || "full_day");
                         }
                       }}
                       className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
@@ -548,7 +548,9 @@ function LeavePage() {
                     </label>
                     <select
                       value={newDateCategory}
-                      onChange={(e) => setNewDateCategory(e.target.value as LeaveDayItem["leaveCategory"])}
+                      onChange={(e) =>
+                        setNewDateCategory((e.target.value as LeaveDayItem["leaveCategory"]) || "annual")
+                      }
                       className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
                     >
                       <option value="annual">Annual leave</option>

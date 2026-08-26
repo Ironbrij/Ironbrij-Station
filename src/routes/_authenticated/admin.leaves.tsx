@@ -1039,7 +1039,7 @@ function EditLeaveModal({
                     setNewType("half_day");
                     setNewHalfDayPeriod(val === "half_second_half" ? "second_half" : "first_half");
                   } else {
-                    setNewType(val as LeaveDayItem["leaveType"]);
+                    setNewType((val as LeaveDayItem["leaveType"]) || "full_day");
                   }
                 }}
                 className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none"
@@ -1061,7 +1061,9 @@ function EditLeaveModal({
 
               <select
                 value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value as LeaveDayItem["leaveCategory"])}
+                onChange={(e) =>
+                  setNewCategory((e.target.value as LeaveDayItem["leaveCategory"]) || "annual")
+                }
                 className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none"
               >
                 <option value="annual">Annual</option>

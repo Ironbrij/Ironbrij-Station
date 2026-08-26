@@ -92,11 +92,12 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
             (adm) => authenticatedEmail.includes(adm) || adm === authenticatedEmail,
           );
 
-          if (!isKnownAdmin && identityPayload.users?.[0]?.localId) {
+          if (!isKnownAdmin && authenticatedLocalId) {
             // Also check Firestore admins collection
             const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
+            const apiKey = candidateKeys[0] || "";
             const adminCheckRes = await fetch(
-              `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/admins/${identityPayload.users[0].localId}?key=${encodeURIComponent(firebaseApiKey)}`,
+              `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/admins/${authenticatedLocalId}?key=${encodeURIComponent(apiKey)}`,
             );
             if (!adminCheckRes.ok) {
               return Response.json({ ok: false, error: "Admin access required" }, { status: 403 });
