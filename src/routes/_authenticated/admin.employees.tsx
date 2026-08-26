@@ -310,7 +310,7 @@ function EmployeesListPage() {
         </select>
       </div>
 
-      <div className="mt-4 rounded-xl border bg-card overflow-hidden">
+      <div className="mt-4 rounded-xl border bg-card overflow-hidden shadow-xs">
         {employees === null ? (
           <div className="p-6 space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -318,112 +318,118 @@ function EmployeesListPage() {
             ))}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-secondary text-left">
-              <tr>
-                <th className="p-3">Name</th>
-                <th className="p-3">Title</th>
-                <th className="p-3">Department</th>
-                <th className="p-3">Shift Hours</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Invite Link</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-sm min-w-[820px]">
+              <thead className="bg-secondary text-left">
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                    No employees yet.
-                  </td>
+                  <th className="p-3">Name</th>
+                  <th className="p-3">Title</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Shift Hours</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Invite Link</th>
+                  <th className="p-3 text-right sticky right-0 bg-secondary shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)] min-w-[140px]">
+                    Actions
+                  </th>
                 </tr>
-              )}
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-t hover:bg-sky-soft/40 transition-colors">
-                  <td className="p-3 font-medium">
-                    <Link
-                      to="/admin/employees/$id"
-                      params={{ id: e.id }}
-                      className="text-primary hover:underline font-bold block"
-                    >
-                      {e.name?.trim()
-                        ? e.name
-                        : e.email?.trim()
-                          ? e.email
-                          : `Unnamed Employee (${e.id.slice(0, 8)})`}
-                    </Link>
-                    <div className="text-xs text-muted-foreground font-normal">
-                      {e.email?.trim() || "No email assigned"}
-                    </div>
-                  </td>
-                  <td className="p-3">{e.jobTitle?.trim() || "—"}</td>
-                  <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
-                  <td className="p-3 text-xs whitespace-nowrap">
-                    <div className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                      ⏰{" "}
-                      {formatShiftRange(
-                        e.shiftStartTime,
-                        e.shiftEndTime,
-                        e.isMultipleShift,
-                        e.shifts,
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                      No employees yet.
+                    </td>
+                  </tr>
+                )}
+                {filtered.map((e) => (
+                  <tr key={e.id} className="border-t hover:bg-sky-soft/40 transition-colors">
+                    <td className="p-3 font-medium">
+                      <Link
+                        to="/admin/employees/$id"
+                        params={{ id: e.id }}
+                        className="text-primary hover:underline font-bold block"
+                      >
+                        {e.name?.trim()
+                          ? e.name
+                          : e.email?.trim()
+                            ? e.email
+                            : `Unnamed Employee (${e.id.slice(0, 8)})`}
+                      </Link>
+                      <div className="text-xs text-muted-foreground font-normal">
+                        {e.email?.trim() || "No email assigned"}
+                      </div>
+                    </td>
+                    <td className="p-3">{e.jobTitle?.trim() || "—"}</td>
+                    <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
+                    <td className="p-3 text-xs max-w-xs">
+                      <div className="font-mono font-semibold text-slate-700 dark:text-slate-300 break-words">
+                        ⏰{" "}
+                        {formatShiftRange(
+                          e.shiftStartTime,
+                          e.shiftEndTime,
+                          e.isMultipleShift,
+                          e.shifts,
+                        )}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
+                        📅 {formatWorkingDaysSummary(e.workingDays)}
+                      </div>
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      {e.inviteStatus === "pending" ? (
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          Pending Invite
+                        </span>
+                      ) : e.status === "inactive" ? (
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                          Suspended
+                        </span>
+                      ) : getPunchStatus(e.id) === "in" ? (
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Active (Punched In)
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          Off Shift (Punched Out)
+                        </span>
                       )}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
-                      📅 {formatWorkingDaysSummary(e.workingDays)}
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    {e.inviteStatus === "pending" ? (
-                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                        Pending Invite
-                      </span>
-                    ) : e.status === "inactive" ? (
-                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                        Suspended
-                      </span>
-                    ) : getPunchStatus(e.id) === "in" ? (
-                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Active (Punched In)
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                        Off Shift (Punched Out)
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 text-xs">
-                    {e.inviteStatus === "accepted" ? (
-                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">Accepted</span>
-                    ) : (
-                      <button
-                        onClick={() => handleCopyInviteLink(e)}
-                        className="btn-lift rounded border border-primary/40 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-                      >
-                        Copy Link
-                      </button>
-                    )}
-                  </td>
-                  <td className="p-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => setEmpToPromote(e)}
-                        className="btn-lift text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-600 hover:text-white font-bold transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => setEmpToDelete(e)}
-                        className="btn-lift text-xs px-2.5 py-1 rounded-md border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white font-bold transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                    <td className="p-3 text-xs whitespace-nowrap">
+                      {e.inviteStatus === "accepted" ? (
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">Accepted</span>
+                      ) : (
+                        <button
+                          onClick={() => handleCopyInviteLink(e)}
+                          className="btn-lift rounded border border-primary/40 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                        >
+                          Copy Link
+                        </button>
+                      )}
+                    </td>
+                    <td className="p-3 text-right whitespace-nowrap sticky right-0 bg-card hover:bg-sky-soft/40 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEmpToPromote(e)}
+                          className="btn-lift text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-600 hover:text-white font-bold transition-colors shadow-2xs"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmpToDelete(e)}
+                          className="btn-lift text-xs px-2.5 py-1 rounded-md border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white font-bold transition-colors shadow-2xs"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -1144,7 +1150,7 @@ export function PromoteModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <form
         onSubmit={save}
-        className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto space-y-4 text-left"
+        className="w-full max-w-xl rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto space-y-4 text-left"
       >
         <div>
           <h3 className="text-lg font-bold text-primary">Edit Employee Profile</h3>
@@ -1510,7 +1516,7 @@ function NewEmployeeForm({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <form
         onSubmit={submit}
-        className="w-full max-w-md rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-xl rounded-xl bg-card p-6 shadow-lift max-h-[90vh] overflow-y-auto"
       >
         <h3 className="text-lg font-semibold text-primary">Add person to company</h3>
         <p className="mt-1 text-xs text-muted-foreground">
