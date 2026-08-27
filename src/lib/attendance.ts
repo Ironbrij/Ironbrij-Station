@@ -362,16 +362,29 @@ export function getEmployeeShiftWindow(employee: Employee, instant = new Date())
 export function getShiftCompletion(employee: Employee, punchedInAt: Date) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(punchedInAt, shiftTimezone);
-  const shift = getShiftWindow(
-    dateKey,
-    employee.shiftStartTime || "09:00",
-    employee.shiftEndTime || "17:00",
-    shiftTimezone,
-  );
-  const shiftDurationMs = shift.end.getTime() - shift.start.getTime();
+  const shift = getEmployeeShiftWindow(employee, punchedInAt);
+  const shiftDurationMs = Math.max(0, shift.end.getTime() - shift.start.getTime());
   const punchOutAt = new Date(punchedInAt.getTime() + shiftDurationMs);
 
   return { shift, shiftDurationMs, punchOutAt };
+}
+
+export function getShiftTimeout(
+  employee: Employee,
+  punchedInAt: Date,
+  now = new Date(),
+  graceMinutes = 20,
+) {
+  const completion = getShiftCompletion(employee, punchedInAt);
+  // Auto punch-out triggers after scheduled shift end + grace period
+  const timeoutThreshold = Math.max(
+    completion.shift.end.getTime() + graceMinutes * 60_000,
+    completion.punchOutAt.getTime() + graceMinutes * 60_000,
+  );
+
+  if (now.getTime() < timeoutThreshold) return null;
+
+  return completion;
 }
 
 export function computeRegularWorkedMsForDay(

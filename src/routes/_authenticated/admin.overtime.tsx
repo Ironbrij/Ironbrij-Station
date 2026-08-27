@@ -25,7 +25,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
-import { getShiftTimezone, zonedDateKey } from "@/lib/attendance";
+import { getEmployeeShiftWindow, getShiftTimezone, zonedDateKey } from "@/lib/attendance";
 import { getRequiredWorkMinutes } from "@/lib/company-context";
 import { toDate, toMillis } from "@/lib/time";
 import { useAuth } from "@/lib/auth-context";
@@ -197,9 +197,7 @@ function AdminOvertimePage() {
     try {
       let createdCount = 0;
       const existingOutIds = new Set(requests.map((r) => r.punchOutId).filter(Boolean));
-      const existingDateKeys = new Set(
-        requests.map((r) => `${r.employeeId}__${r.date}`),
-      );
+      const existingInIds = new Set(requests.map((r) => r.punchInId).filter(Boolean));
 
       // Group punches by employee
       const empPunchesMap = new Map<string, Punch[]>();
@@ -219,12 +217,39 @@ function AdminOvertimePage() {
         for (const p of sorted) {
           if (p.type === "in" || p.type === "extra_in") {
             lastIn = p;
+            // Also check for early punch-in
+            if (emp && p.timestamp && !existingInIds.has(p.id)) {
+              const inTime = toDate(p.timestamp);
+              if (inTime) {
+                const shiftTimezone = getShiftTimezone(emp);
+                const shift = getEmployeeShiftWindow(emp, inTime);
+                if (inTime.getTime() < shift.start.getTime()) {
+                  const earlyMins = Math.floor((shift.start.getTime() - inTime.getTime()) / 60_000);
+                  if (earlyMins >= 5) {
+                    const punchDate = p.attendanceDate || p.date || zonedDateKey(inTime, shiftTimezone);
+                    await addDoc(collection(db(), "overtimeRequests"), {
+                      employeeId: empId,
+                      employeeName: p.employeeName || emp?.name || "Employee",
+                      companyId: p.companyId || emp?.companyId || COMPANY_ID,
+                      date: punchDate,
+                      requestType: "early_clock_in",
+                      punchInId: p.id,
+                      overtimeMinutes: earlyMins,
+                      normalWorkMinutes: 0,
+                      isOffShiftDay: false,
+                      reason: `Early clock-in: started work ${formatWorkMinutes(earlyMins)} before shift (synced)`,
+                      status: "pending",
+                      createdAt: new Date().toISOString(),
+                    });
+                    existingInIds.add(p.id);
+                    createdCount++;
+                  }
+                }
+              }
+            }
           } else if ((p.type === "out" || p.type === "extra_out") && lastIn) {
             const punchDate = p.attendanceDate || p.date || lastIn.attendanceDate || lastIn.date;
-            if (
-              existingOutIds.has(p.id) ||
-              (punchDate && existingDateKeys.has(`${empId}__${punchDate}`))
-            ) {
+            if (existingOutIds.has(p.id)) {
               lastIn = null;
               continue;
             }
@@ -269,9 +294,12 @@ function AdminOvertimePage() {
             }
 
             if (otMinutes > 0) {
+              const isPostShiftWork = emp && inTime.getTime() >= getEmployeeShiftWindow(emp, inTime).end.getTime();
               const reason = isOff
                 ? `Worked ${formatWorkMinutes(otMinutes)} on off-shift day (synced)`
-                : `Worked ${formatWorkMinutes(otMinutes)} past shift hours (synced)`;
+                : isPostShiftWork
+                  ? `Worked ${formatWorkMinutes(otMinutes)} post-shift overtime (synced)`
+                  : `Worked ${formatWorkMinutes(otMinutes)} past shift hours (synced)`;
 
               await addDoc(collection(db(), "overtimeRequests"), {
                 employeeId: empId,
@@ -295,7 +323,6 @@ function AdminOvertimePage() {
               });
 
               existingOutIds.add(p.id);
-              if (punchDate) existingDateKeys.add(`${empId}__${punchDate}`);
               createdCount++;
             }
             lastIn = null;

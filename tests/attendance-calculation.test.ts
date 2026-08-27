@@ -7,6 +7,7 @@ import {
 import {
   getEffectiveEmployeeWorkingDays,
   getEmployeeShiftWindow,
+  getShiftTimeout,
   zonedDateTimeToDate,
 } from "../src/lib/attendance.ts";
 import type { Company, Employee } from "../src/lib/types.ts";
@@ -189,5 +190,84 @@ test("getEmployeeShiftWindow selects the active shift for that day", () => {
   const thursdayWindow = getEmployeeShiftWindow(multiEmp, thursdayDate);
   assert.equal(thursdayWindow.start.toISOString(), zonedDateTimeToDate("2026-08-13", "12:00", timezone).toISOString());
   assert.equal(thursdayWindow.end.toISOString(), zonedDateTimeToDate("2026-08-13", "15:00", timezone).toISOString());
+});
+
+test("getShiftTimeout triggers auto punch out when now passes shift end + grace", () => {
+  const emp = employee();
+  const punchInAt = at("09:00");
+
+  // Before shift end (e.g. 16:55) -> null
+  assert.equal(getShiftTimeout(emp, punchInAt, at("16:55"), 20), null);
+
+  // During grace period (e.g. 17:15) -> null
+  assert.equal(getShiftTimeout(emp, punchInAt, at("17:15"), 20), null);
+
+  // After grace period passes (e.g. 17:21) -> returns timeout completion
+  const timeout = getShiftTimeout(emp, punchInAt, at("17:21"), 20);
+  assert.ok(timeout);
+  assert.equal(timeout?.shift.end.toISOString(), at("17:00").toISOString());
+  assert.equal(timeout?.punchOutAt.toISOString(), at("17:00").toISOString());
+});
+
+test("early clock-in tracks early start minutes and regular shift duration", () => {
+  const earlyEmp = employee({
+    shiftStartTime: "06:00",
+    shiftEndTime: "14:00",
+  });
+
+  // Clocked in at 05:00 (1 hour early)
+  // At 05:30 (before official shift starts)
+  const preShiftSession = calculateAttendanceSession({
+    employee: earlyEmp,
+    company,
+    punchIn: at("05:00"),
+    punchOut: null,
+    now: at("05:30"),
+  });
+  assert.equal(preShiftSession.earlyStartMinutes, 60);
+  assert.equal(preShiftSession.normalWorkMinutes, 0);
+  assert.equal(preShiftSession.missingPunchOut, false);
+  assert.equal(preShiftSession.status, "in_progress");
+
+  // Clocked out at 14:00 (official shift completion)
+  const completedSession = calculateAttendanceSession({
+    employee: earlyEmp,
+    company,
+    punchIn: at("05:00"),
+    punchOut: at("14:00"),
+  });
+  assert.equal(completedSession.earlyStartMinutes, 60);
+  assert.equal(completedSession.normalWorkMinutes, 480);
+  assert.equal(completedSession.overtimeMinutes, 60);
+  assert.equal(completedSession.status, "complete");
+});
+
+test("post-shift overtime sessions count 100% of duration as overtime", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+
+  // Session 1: Started overtime at 18:00 and finished at 18:07 (7 minutes)
+  const sevenMinSession = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("18:00"),
+    punchOut: at("18:07"),
+  });
+  assert.equal(sevenMinSession.normalWorkMinutes, 0);
+  assert.equal(sevenMinSession.overtimeMinutes, 7);
+  assert.equal(sevenMinSession.status, "complete");
+
+  // Session 2: Started overtime at 18:15 and finished at 18:16 (1 minute)
+  const oneMinSession = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("18:15"),
+    punchOut: at("18:16"),
+  });
+  assert.equal(oneMinSession.normalWorkMinutes, 0);
+  assert.equal(oneMinSession.overtimeMinutes, 1);
+  assert.equal(oneMinSession.status, "complete");
 });
 

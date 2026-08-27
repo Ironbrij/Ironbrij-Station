@@ -1,13 +1,19 @@
 import { createFileRoute, Outlet, Navigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { AppShell } from "@/components/AppShell";
+import { useCompanyShiftAutoPunchOut } from "@/lib/use-shift-auto-punch-out";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminLayout,
 });
 
 function AdminLayout() {
-  const { isAdmin, loading } = useAuth();
+  const { isAdmin, loading, company, activeCompanyId } = useAuth();
+  useCompanyShiftAutoPunchOut({
+    enabled: Boolean(isAdmin),
+    company,
+    activeCompanyId,
+  });
 
   if (loading) return null;
   if (!isAdmin) return <Navigate to="/app/punch" />;

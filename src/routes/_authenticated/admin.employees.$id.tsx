@@ -27,6 +27,7 @@ import {
   computeEmployeeLateness,
   formatInTimezone,
   getActiveEmployeeLeave,
+  getEffectiveEmployeeWorkingDays,
   getEffectiveLateGraceMinutes,
   getEmployeeApprovedLeaveForDate,
   getEmployeeApprovedLeaveDates,
@@ -235,7 +236,13 @@ function EmployeeDetail() {
       const rawCalculation = computeDay(sorted);
       const approvedLeave = getEmployeeApprovedLeaveForDate(employee, companyLeaves, date);
       const holiday = getEmployeeHoliday(company, employee, date);
-      const lateness = firstIn
+      const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
+      const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+      const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, company?.workingDays);
+      const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
+      const isOffShiftDay = !isScheduledDay;
+
+      const lateness = firstIn && isScheduledDay
         ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? new Date(), employee, graceMinutes)
         : null;
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
@@ -247,6 +254,7 @@ function EmployeeDetail() {
             punchOut: toDate(lastOut?.timestamp) || null,
             now,
             requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+            isOffShiftDay,
           })
         : null;
       const extraOvertimeMinutes = Math.round(rawCalculation.overtimeHours * 60);
@@ -255,22 +263,35 @@ function EmployeeDetail() {
       const requiredMinutes =
         attendanceCalculation?.requiredWorkMinutes || getRequiredWorkMinutes(employee, company);
 
-      const otReq = overtimeRequests.find(
+      const dayOtRequests = overtimeRequests.filter(
         (r) =>
           (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
           r.date === date,
       );
-      const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
-      const isOvertimePending = otReq ? otReq.status === "pending" : overtimeMinutes > 0;
-      const otStatus = otReq?.status;
-      const otRequestId = otReq?.id;
+      const approvedDayOtMinutes = dayOtRequests
+        .filter((r) => r.status === "approved")
+        .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
+      const pendingDayOtMinutes = dayOtRequests
+        .filter((r) => r.status === "pending")
+        .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
+
+      const isOvertimeApproved = approvedDayOtMinutes > 0;
+      const isOvertimePending = pendingDayOtMinutes > 0 || (dayOtRequests.length === 0 && overtimeMinutes > 0);
+      const otStatus = dayOtRequests.length > 0
+        ? approvedDayOtMinutes > 0
+          ? "approved"
+          : pendingDayOtMinutes > 0
+            ? "pending"
+            : "rejected"
+        : undefined;
+      const otRequestId = dayOtRequests[0]?.id;
 
       output.push({
         date,
         punches: sorted,
         firstIn,
         lastOut,
-        hours: (normalMinutes + (isOvertimeApproved ? overtimeMinutes : 0)) / 60,
+        hours: (normalMinutes + (approvedDayOtMinutes > 0 ? approvedDayOtMinutes : 0)) / 60,
         normalMinutes,
         overtimeMinutes,
         requiredMinutes,

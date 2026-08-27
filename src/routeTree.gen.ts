@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
+import { Route as ApiAutoPunchOutNotificationRouteImport } from './routes/api.auto-punch-out-notification'
 import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation-status'
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
@@ -69,6 +70,12 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   path: '/app',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiAutoPunchOutNotificationRoute =
+  ApiAutoPunchOutNotificationRouteImport.update({
+    id: '/api/auto-punch-out-notification',
+    path: '/api/auto-punch-out-notification',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutomationStatusRoute = ApiAutomationStatusRouteImport.update({
   id: '/api/automation-status',
   path: '/api/automation-status',
@@ -239,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
@@ -274,6 +282,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
@@ -312,6 +321,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
@@ -350,6 +360,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin'
     | '/app'
+    | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
@@ -385,6 +396,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/app'
+    | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
@@ -422,6 +434,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/admin'
     | '/_authenticated/app'
+    | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
@@ -458,6 +471,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiAutoPunchOutNotificationRoute: typeof ApiAutoPunchOutNotificationRoute
   ApiAutomationStatusRoute: typeof ApiAutomationStatusRoute
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
@@ -506,6 +520,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app'
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/auto-punch-out-notification': {
+      id: '/api/auto-punch-out-notification'
+      path: '/api/auto-punch-out-notification'
+      fullPath: '/api/auto-punch-out-notification'
+      preLoaderRoute: typeof ApiAutoPunchOutNotificationRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/automation-status': {
       id: '/api/automation-status'
@@ -809,6 +830,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiAutoPunchOutNotificationRoute: ApiAutoPunchOutNotificationRoute,
   ApiAutomationStatusRoute: ApiAutomationStatusRoute,
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,

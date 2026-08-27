@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
 import {
   Download,
   FileText,
@@ -45,6 +45,7 @@ import { calculateAttendanceSession } from "@/lib/attendance-calculation";
 import {
   computeEmployeeLateness,
   formatInTimezone,
+  getEffectiveEmployeeWorkingDays,
   getEffectiveLateGraceMinutes,
   getEmployeeApprovedLeaveForDate,
   getEmployeeApprovedLeaveDates,
@@ -309,7 +310,13 @@ function ReportsPage() {
         const calculation = computeDay(sorted, { employee, company: reportCompany });
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
         const holiday = getEmployeeHoliday(reportCompany, employee, date);
-        const late = firstIn
+        const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
+        const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+        const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
+        const isOffShiftDay = !isScheduledDay;
+
+        const late = firstIn && isScheduledDay
           ? computeEmployeeLateness(
               toDate(firstIn.timestamp) ?? new Date(),
               employee,
@@ -318,14 +325,17 @@ function ReportsPage() {
           : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
 
-        const otReq = overtimeRequests.find(
+        const dayOtRequests = overtimeRequests.filter(
           (r) =>
             (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
             r.date === date,
         );
-        const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
+        const approvedDayOtMinutes = dayOtRequests
+          .filter((r) => r.status === "approved")
+          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
+        const isOvertimeApproved = approvedDayOtMinutes > 0;
         const effectiveHours =
-          calculation.regularHours + (isOvertimeApproved ? calculation.overtimeHours : 0);
+          calculation.regularHours + (approvedDayOtMinutes > 0 ? approvedDayOtMinutes / 60 : 0);
 
         output.push({
           key: `${employee.id}-${date}`,
@@ -339,17 +349,19 @@ function ReportsPage() {
             ? "Holiday"
             : approvedLeave
               ? getLeaveLabel(approvedLeave)
-              : !firstIn
-                ? "No punch in"
-                : !lastOut
-                  ? "Still punched in"
-                  : isAutoPunchOut
-                    ? late?.isLate
-                      ? "Auto punched out · Late"
-                      : "Auto punched out"
-                    : late?.isLate
-                      ? "Late"
-                      : "On time",
+              : isOffShiftDay && firstIn
+                ? "Off-day Shift"
+                : !firstIn
+                  ? "No punch in"
+                  : !lastOut
+                    ? "Still punched in"
+                    : isAutoPunchOut
+                      ? late?.isLate
+                        ? "Auto punched out · Late"
+                        : "Auto punched out"
+                      : late?.isLate
+                        ? "Late"
+                        : "On time",
           minutesLate: !holiday && !approvedLeave && late?.isLate ? late.minutes : 0,
           isAutoPunchOut,
         });
@@ -435,6 +447,14 @@ function ReportsPage() {
         const firstIn = sorted.find((punch) => punch.type === "in");
         const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
 
+        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
+        const holiday = getEmployeeHoliday(reportCompany, employee, date);
+        const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
+        const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+        const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
+        const isOffShiftDay = !isScheduledDay;
+
         const sessionCalc = firstIn
           ? calculateAttendanceSession({
               employee,
@@ -442,13 +462,11 @@ function ReportsPage() {
               punchIn: toDate(firstIn.timestamp) ?? new Date(),
               punchOut: lastOut ? toDate(lastOut.timestamp) ?? new Date() : null,
               requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
+              isOffShiftDay,
             })
           : null;
 
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
-        const holiday = getEmployeeHoliday(reportCompany, employee, date);
-
-        const lateness = firstIn
+        const lateness = firstIn && isScheduledDay
           ? computeEmployeeLateness(
               toDate(firstIn.timestamp) ?? new Date(),
               employee,
@@ -464,23 +482,36 @@ function ReportsPage() {
         const regHours = sessionCalc ? sessionCalc.normalWorkMinutes / 60 : 0;
         const otHours = sessionCalc ? sessionCalc.overtimeMinutes / 60 : 0;
 
-        // Check if there is an overtime request record for this day
-        const otReq = overtimeRequests.find(
+        // Check all overtime requests for this employee on this day
+        const dayOtRequests = overtimeRequests.filter(
           (r) =>
             (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
             r.date === date,
         );
-        const isOvertimeApproved = otReq ? otReq.status === "approved" : false;
+
+        const approvedDayOtMinutes = dayOtRequests
+          .filter((r) => r.status === "approved")
+          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
+
+        const pendingDayOtMinutes = dayOtRequests
+          .filter((r) => r.status === "pending")
+          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
+
+        const approvedOtHours = approvedDayOtMinutes / 60;
+        const pendingOtHours = pendingDayOtMinutes / 60;
+        const fallbackOtHours = dayOtRequests.length === 0 ? otHours : 0;
 
         totalRegularHours += regHours;
-        if (otHours > 0) {
-          if (isOvertimeApproved) {
-            totalApprovedOvertimeHours += otHours;
-            approvedOvertimeDatesList.push(`${date} (+${otHours.toFixed(1)}h)`);
-          } else {
-            totalPendingOvertimeHours += otHours;
-          }
+        if (approvedOtHours > 0) {
+          totalApprovedOvertimeHours += approvedOtHours;
+          approvedOvertimeDatesList.push(`${date} (+${approvedOtHours.toFixed(1)}h)`);
         }
+        if (pendingOtHours > 0 || fallbackOtHours > 0) {
+          totalPendingOvertimeHours += (pendingOtHours + fallbackOtHours);
+        }
+
+        const isOvertimeApproved = approvedOtHours > 0;
+        const displayOtHours = approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : otHours;
 
         const scheduledShiftStr =
           employee.shiftStartTime && employee.shiftEndTime
@@ -515,7 +546,7 @@ function ReportsPage() {
           isAutoPunchOut,
           minutesLate: lateness?.isLate ? lateness.minutes : 0,
           regularHours: Math.round(regHours * 10) / 10,
-          rawOvertimeHours: Math.round(otHours * 10) / 10,
+          rawOvertimeHours: Math.round(displayOtHours * 10) / 10,
           isOvertimeApproved,
           status: holiday
             ? "Holiday"
@@ -525,11 +556,13 @@ function ReportsPage() {
                 ? "Missing Punch Out"
                 : isAutoPunchOut
                   ? "Auto Punched Out"
-                  : lateness?.isLate
-                    ? `Late (${lateness.minutes}m)`
-                    : firstIn
-                      ? "Complete"
-                      : "Off / No punches",
+                  : isOffShiftDay && firstIn
+                    ? "Off-day Shift"
+                    : lateness?.isLate
+                      ? `Late (${lateness.minutes}m)`
+                      : firstIn
+                        ? "Complete"
+                        : "Off / No punches",
         });
       }
 
@@ -743,141 +776,42 @@ function ReportsPage() {
     );
   }
 
-  // Fix Missed Punch Out on a day (sets standard shift end time e.g. 17:00)
-  function handleFixMissedPunchOut(employeeRowId: string, date: string, defaultEndTime = "17:00") {
-    handleUpdateDayInterval(employeeRowId, date, {
-      punchOutTime: defaultEndTime,
-      isMissingPunchOut: false,
-      status: "Punch Out Added by Admin",
-      regularHours: 8, // standard full day
-    });
-    toast.success(`Fixed punch out for ${date} (set to ${defaultEndTime}, 8.0h)`);
-  }
+  // Fix Missed Punch Out on a day (sets standard shift end time from employee profile)
+  async function handleFixMissedPunchOut(employeeRowId: string, date: string) {
+    const emp = filteredEmployees.find((e) => e.id === employeeRowId || e.authUid === employeeRowId);
+    const defaultEndTime = emp?.shiftEndTime || "17:00";
+    const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
+    const fixedOutDate = new Date(`${date}T${defaultEndTime}:00`);
 
-  // Toggle Overtime Approval for a specific day
-  function handleToggleOvertimeApproval(employeeRowId: string, date: string) {
-    const currentDay = selectedIntervalEmployee?.dailyIntervals.find((d) => d.date === date);
-    if (!currentDay) return;
-    const nextApproved = !currentDay.isOvertimeApproved;
-    handleUpdateDayInterval(employeeRowId, date, {
-      isOvertimeApproved: nextApproved,
-    });
-
-    const empId = selectedIntervalEmployee?.employeeId || employeeRowId;
-    const otReq = overtimeRequests.find((r) => r.employeeId === empId && r.date === date);
-    if (otReq) {
-      updateDoc(doc(db(), "overtimeRequests", otReq.id), {
-        status: nextApproved ? "approved" : "rejected",
-        decidedBy: user?.email || "Admin",
-        decidedAt: new Date().toISOString(),
-      }).catch((err) => console.warn("Could not sync overtime request status:", err));
-    }
-
-    toast.success(
-      nextApproved
-        ? `Accepted overtime for ${date} (+${currentDay.rawOvertimeHours.toFixed(1)}h added to report)`
-        : `Unaccepted overtime for ${date}`,
-    );
-  }
-
-  // Approve ALL overtime sessions for an employee
-  function handleApproveAllOvertime(employeeRowId: string) {
-    setHasCustomEdits(true);
-    const empId = selectedIntervalEmployee?.employeeId || employeeRowId;
-
-    // Sync all matching overtimeRequests
-    overtimeRequests
-      .filter((r) => r.employeeId === empId && r.status !== "approved")
-      .forEach((req) => {
-        updateDoc(doc(db(), "overtimeRequests", req.id), {
-          status: "approved",
-          decidedBy: user?.email || "Admin",
-          decidedAt: new Date().toISOString(),
-        }).catch((err) => console.warn("Could not sync overtime request status:", err));
+    try {
+      const fixedPunchRef = await addDoc(collection(db(), "punches"), {
+        employeeId: emp?.id || employeeRowId,
+        employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
+        companyId: companyFilter === "all" ? (emp?.companyId || COMPANY_ID) : companyFilter,
+        companyName: selectedCompany?.name || "Company",
+        date,
+        attendanceDate: date,
+        type: "out",
+        timestamp: Timestamp.fromDate(fixedOutDate),
+        source: "app",
+        isAuto: false,
+        isAdminFix: true,
+        adminFixedBy: user?.email || "admin",
+        adminFixedAt: new Date().toISOString(),
+        shiftTimezone: empTz,
+        attendanceStatus: "complete",
       });
 
-    setReportRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== employeeRowId) return row;
-
-        const updatedIntervals = row.dailyIntervals.map((day) => ({
-          ...day,
-          isOvertimeApproved: day.rawOvertimeHours > 0 ? true : day.isOvertimeApproved,
-        }));
-
-        let newApprovedOt = 0;
-        const newOtDates: string[] = [];
-        for (const day of updatedIntervals) {
-          if (day.rawOvertimeHours > 0) {
-            newApprovedOt += day.rawOvertimeHours;
-            newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
-          }
-        }
-
-        const updatedRow: ReportRow = {
-          ...row,
-          dailyIntervals: updatedIntervals,
-          overtimeHours: Math.round(newApprovedOt * 10) / 10,
-          pendingOvertimeHours: 0,
-          overtimeDates: newOtDates,
-        };
-
-        if (selectedIntervalEmployee?.id === employeeRowId) {
-          setSelectedIntervalEmployee(updatedRow);
-        }
-
-        return updatedRow;
-      }),
-    );
-    toast.success("Approved all overtime sessions for this report.");
-  }
-
-  // Approve ALL overtime across the ENTIRE company report
-  function handleApproveAllOvertimeGlobal() {
-    setHasCustomEdits(true);
-    setReportRows((prev) =>
-      prev.map((row) => {
-        const updatedIntervals = row.dailyIntervals.map((day) => ({
-          ...day,
-          isOvertimeApproved: day.rawOvertimeHours > 0 ? true : day.isOvertimeApproved,
-        }));
-
-        let newApprovedOt = 0;
-        const newOtDates: string[] = [];
-        for (const day of updatedIntervals) {
-          if (day.rawOvertimeHours > 0) {
-            newApprovedOt += day.rawOvertimeHours;
-            newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
-          }
-        }
-
-        const fallbackOt =
-          newApprovedOt > 0 ? newApprovedOt : row.overtimeHours + row.pendingOvertimeHours;
-
-        return {
-          ...row,
-          dailyIntervals: updatedIntervals,
-          overtimeHours: Math.round(fallbackOt * 10) / 10,
-          pendingOvertimeHours: 0,
-          overtimeDates: newOtDates.length ? newOtDates : row.overtimeDates,
-        };
-      }),
-    );
-    toast.success("Accepted and approved all overtime across all employees!");
-  }
-
-  // Toggle Overtime Approval directly from table row
-  function handleToggleRowOvertimeApproval(employeeRowId: string) {
-    const row = reportRows.find((r) => r.id === employeeRowId);
-    if (!row) return;
-    if (row.overtimeHours > 0) {
-      // Unaccept
-      handleUpdateRowField(employeeRowId, "overtimeHours", 0);
-      handleUpdateRowField(employeeRowId, "overtimeDates", []);
-      toast.success(`Marked ${row.employeeName}'s overtime as unaccepted`);
-    } else {
-      // Accept
-      handleApproveAllOvertime(employeeRowId);
+      handleUpdateDayInterval(employeeRowId, date, {
+        punchOutTime: defaultEndTime,
+        lastOutPunchId: fixedPunchRef.id,
+        isMissingPunchOut: false,
+        status: "Punch Out Fixed by Admin",
+      });
+      toast.success(`Fixed punch out for ${date} (set to ${defaultEndTime})`);
+    } catch (err) {
+      console.error("Failed to fix punch out:", err);
+      toast.error("Could not fix punch out: " + (err as Error).message);
     }
   }
 
@@ -1007,7 +941,7 @@ function ReportsPage() {
       Department: row.department,
       "Regular Hours": Number(row.regularHours).toFixed(1),
       "Accepted Overtime Hours": Number(row.overtimeHours).toFixed(1),
-      "Overtime Dates": row.overtimeDates.join("; "),
+      "Overtime Dates": (row.overtimeDates || []).join("; "),
       "Paid Leave (Days)": row.paidLeaveDays,
       "Unpaid Leave (Days)": row.unpaidLeaveDays,
       Remarks: row.remarks,
@@ -1066,9 +1000,10 @@ function ReportsPage() {
       pdf.setTextColor(2, 132, 199);
       pdf.text(`${Number(row.regularHours).toFixed(1)}h`, 125, y);
       pdf.setTextColor(217, 119, 6);
+      const otDates = row.overtimeDates || [];
       const otText =
         row.overtimeHours > 0
-          ? `+${Number(row.overtimeHours).toFixed(1)}h ${row.overtimeDates.length ? `(${row.overtimeDates.length} dates)` : ""}`
+          ? `+${Number(row.overtimeHours).toFixed(1)}h ${otDates.length ? `(${otDates.length} dates)` : ""}`
           : "—";
       pdf.text(otText, 155, y);
       pdf.setTextColor(30, 41, 59);
@@ -1358,14 +1293,6 @@ function ReportsPage() {
                 )}
 
                 <button
-                  onClick={handleApproveAllOvertimeGlobal}
-                  className="rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-500/30 px-3.5 py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                  title="Approve all calculated overtime for all employees"
-                >
-                  <ShieldCheck className="h-4 w-4 text-amber-700" /> Accept All Overtime
-                </button>
-
-                <button
                   onClick={openSendEmailModal}
                   className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition"
                 >
@@ -1470,7 +1397,7 @@ function ReportsPage() {
                   <th className="p-3 font-bold min-w-[170px]">Employee / V.A.</th>
                   <th className="p-3 font-bold min-w-[130px]">Role / Title</th>
                   <th className="p-3 font-bold w-[120px] text-right">Regular Hours</th>
-                  <th className="p-3 font-bold min-w-[130px] text-right">Overtime & Approval</th>
+                  <th className="p-3 font-bold min-w-[130px] text-right">Overtime</th>
                   <th className="p-3 font-bold min-w-[180px]">Overtime Dates</th>
                   <th className="p-3 font-bold w-[90px] text-center">Paid Leave</th>
                   <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave</th>
@@ -1565,56 +1492,51 @@ function ReportsPage() {
                       </div>
                     </td>
 
-                    {/* Accepted Overtime Hours Input & 1-Click Acceptance Button */}
+                    {/* Overtime Hours Display */}
                     <td className="p-3 text-right">
-                      <div className="relative inline-flex items-center w-full">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={row.overtimeHours}
-                          onChange={(e) =>
-                            handleUpdateRowField(
-                              row.id,
-                              "overtimeHours",
-                              parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
-                            row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
-                          }`}
-                        />
-                        <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
-                          h
-                        </span>
-                      </div>
-
-                      {/* 1-Click Accept Overtime button for this employee */}
-                      {(row.overtimeHours > 0 ||
-                        row.pendingOvertimeHours > 0 ||
-                        (row.dailyIntervals &&
-                          row.dailyIntervals.some((d) => d.rawOvertimeHours > 0))) && (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRowOvertimeApproval(row.id)}
-                          className={`mt-1.5 w-full text-[10px] font-bold py-1 px-2 rounded-md flex items-center justify-center gap-1 transition shadow-xs ${
-                            row.overtimeHours > 0
-                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                              : "bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
-                          }`}
-                          title="Click to toggle acceptance of this employee's overtime"
-                        >
-                          {row.overtimeHours > 0 ? (
-                            <>
-                              <Check className="h-3 w-3" /> Accepted
-                            </>
-                          ) : (
-                            <>
-                              <ClockAlert className="h-3 w-3 text-amber-700" /> Accept OT (+
-                              {row.pendingOvertimeHours.toFixed(1)}h)
-                            </>
-                          )}
-                        </button>
+                      {row.isCustom ? (
+                        <div className="relative inline-flex items-center w-full">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={row.overtimeHours}
+                            onChange={(e) =>
+                              handleUpdateRowField(
+                                row.id,
+                                "overtimeHours",
+                                parseFloat(e.target.value) || 0,
+                              )
+                            }
+                            className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                              row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
+                            }`}
+                          />
+                          <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
+                            h
+                          </span>
+                        </div>
+                      ) : row.overtimeHours > 0 ? (
+                        <div className="text-right">
+                          <span className="font-bold text-xs text-amber-600 block">
+                            +{row.overtimeHours.toFixed(1)}h
+                          </span>
+                          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-0.5">
+                            <Check className="h-3 w-3" /> Approved
+                          </span>
+                        </div>
+                      ) : row.pendingOvertimeHours > 0 ? (
+                        <div className="text-right">
+                          <Link
+                            to="/admin/overtime"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-2 py-0.5 rounded transition"
+                            title="Click to review in Overtime tab"
+                          >
+                            <ClockAlert className="h-3 w-3" /> +{row.pendingOvertimeHours.toFixed(1)}h Pending →
+                          </Link>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground font-medium">—</span>
                       )}
                     </td>
 
@@ -1622,7 +1544,7 @@ function ReportsPage() {
                     <td className="p-3">
                       <input
                         type="text"
-                        value={row.overtimeDates.join(", ")}
+                        value={(row.overtimeDates || []).join(", ")}
                         onChange={(e) =>
                           handleUpdateRowField(
                             row.id,
@@ -1835,13 +1757,6 @@ function ReportsPage() {
 
               <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  onClick={() => handleApproveAllOvertime(selectedIntervalEmployee.id)}
-                  className="rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 border border-amber-500/30 px-3 py-1.5 text-xs font-bold flex items-center gap-1.5"
-                >
-                  <CheckCheck className="h-3.5 w-3.5" /> Accept All Overtime
-                </button>
-                <button
                   onClick={() => setSelectedIntervalEmployee(null)}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
                 >
@@ -1891,7 +1806,7 @@ function ReportsPage() {
                     <th className="p-2.5 text-left">Punch Out</th>
                     <th className="p-2.5 text-right">Regular (h)</th>
                     <th className="p-2.5 text-right">Overtime (h)</th>
-                    <th className="p-2.5 text-center">Overtime Approval</th>
+                    <th className="p-2.5 text-center">Overtime Status</th>
                     <th className="p-2.5 text-left">Status</th>
                   </tr>
                 </thead>
@@ -1943,9 +1858,10 @@ function ReportsPage() {
                               onClick={() =>
                                 handleFixMissedPunchOut(selectedIntervalEmployee.id, day.date)
                               }
-                              className="px-2 py-0.5 rounded bg-amber-500 text-white font-bold text-[10px] hover:bg-amber-600 shadow-sm"
+                              className="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] hover:opacity-90 shadow-sm"
+                              title="Set shift end punch-out time"
                             >
-                              Fix End (17:00)
+                              Fix End
                             </button>
                           </div>
                         ) : (
@@ -1998,30 +1914,22 @@ function ReportsPage() {
                         />
                       </td>
 
-                      {/* Overtime Acceptance Toggle */}
+                      {/* Overtime Status */}
                       <td className="p-2.5 text-center">
                         {day.rawOvertimeHours > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleOvertimeApproval(selectedIntervalEmployee.id, day.date)
-                            }
-                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center justify-center gap-1 mx-auto transition ${
-                              day.isOvertimeApproved
-                                ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-                                : "bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200"
-                            }`}
-                          >
-                            {day.isOvertimeApproved ? (
-                              <>
-                                <ShieldCheck className="h-3.5 w-3.5" /> Accepted
-                              </>
-                            ) : (
-                              <>
-                                <ClockAlert className="h-3.5 w-3.5" /> Accept OT
-                              </>
-                            )}
-                          </button>
+                          day.isOvertimeApproved ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                              <Check className="h-3 w-3" /> Approved
+                            </span>
+                          ) : (
+                            <Link
+                              to="/admin/overtime"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/20 transition"
+                              title="Click to review in Overtime tab"
+                            >
+                              <ClockAlert className="h-3 w-3" /> Pending in OT Tab →
+                            </Link>
+                          )
                         ) : (
                           <span className="text-muted-foreground text-[10px]">—</span>
                         )}
@@ -2246,9 +2154,9 @@ function ReportsPage() {
                                   {row.overtimeHours > 0
                                     ? `+${Number(row.overtimeHours).toFixed(1)}h`
                                     : "—"}
-                                  {row.overtimeDates.length > 0 && (
+                                  {(row.overtimeDates || []).length > 0 && (
                                     <div className="text-[9px] text-muted-foreground font-normal">
-                                      {row.overtimeDates.length} date(s)
+                                      {(row.overtimeDates || []).length} date(s)
                                     </div>
                                   )}
                                 </td>
@@ -2392,7 +2300,7 @@ function ReportsPage() {
                 </label>
                 <input
                   type="text"
-                  value={newRowData.overtimeDates.join(", ")}
+                  value={(newRowData.overtimeDates || []).join(", ")}
                   onChange={(e) =>
                     setNewRowData({
                       ...newRowData,

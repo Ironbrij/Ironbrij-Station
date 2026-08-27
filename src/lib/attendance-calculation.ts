@@ -1,4 +1,4 @@
-import { getShiftTimezone, getShiftWindow, zonedDateKey } from "./attendance.ts";
+import { getEmployeeShiftWindow, getShiftTimezone, zonedDateKey } from "./attendance.ts";
 import { getRequiredWorkMinutes } from "./company-context.ts";
 import type { AttendanceStatus, Company, Employee } from "./types.ts";
 
@@ -13,6 +13,7 @@ export interface AttendanceCalculation {
   actualWorkMinutes: number;
   normalWorkMinutes: number;
   overtimeMinutes: number;
+  earlyStartMinutes?: number;
   totalEligibleMinutes: number;
   graceMinutes: number;
   graceApplied: boolean;
@@ -47,20 +48,17 @@ export function calculateAttendanceSession({
 }: AttendanceCalculationInput): AttendanceCalculation {
   const timezone = getShiftTimezone(employee);
   const attendanceDate = zonedDateKey(punchIn, timezone);
-  const shift = getShiftWindow(
-    attendanceDate,
-    employee.shiftStartTime || "09:00",
-    employee.shiftEndTime || "17:00",
-    timezone,
-  );
+  const shift = getEmployeeShiftWindow(employee, punchIn);
   const required = positiveMinutes(requiredWorkMinutes, getRequiredWorkMinutes(employee, company));
   const graceMinutes = positiveMinutes(
     punchOutGraceMinutes ?? company?.punchOutGraceMinutes,
     DEFAULT_PUNCH_OUT_GRACE_MINUTES,
   );
 
-  // If working on an off-shift day or company holiday: all worked time is overtime
-  if (isOffShiftDay) {
+  // If working on an off-shift day, company holiday, or after scheduled shift end: all worked time is overtime
+  const isPostShift = punchIn.getTime() >= shift.end.getTime();
+
+  if (isOffShiftDay || isPostShift) {
     if (!punchOut) {
       const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - punchIn.getTime()) / 60_000));
       return {
@@ -99,11 +97,23 @@ export function calculateAttendanceSession({
     };
   }
 
+  const isEarlyStart = punchIn.getTime() < shift.start.getTime();
+  const earlyStartMinutes = isEarlyStart
+    ? Math.max(0, Math.floor((shift.start.getTime() - punchIn.getTime()) / 60_000))
+    : 0;
+
   if (!punchOut) {
     const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - punchIn.getTime()) / 60_000));
+    const isBeforeShift = now.getTime() < shift.start.getTime();
+    const shiftElapsedMinutes = isBeforeShift
+      ? 0
+      : Math.floor((now.getTime() - shift.start.getTime()) / 60_000);
     const missingPunchOut = now.getTime() > shift.end.getTime();
-    const normalWorkMinutes = Math.min(required, elapsedMinutes);
-    const overtimeMinutes = Math.max(0, elapsedMinutes - required);
+    const normalWorkMinutes = Math.min(required, isEarlyStart ? shiftElapsedMinutes : elapsedMinutes);
+    const overtimeMinutes = isEarlyStart
+      ? earlyStartMinutes + Math.max(0, shiftElapsedMinutes - required)
+      : Math.max(0, elapsedMinutes - required);
+
     return {
       attendanceDate,
       scheduledShiftStart: shift.start,
@@ -112,6 +122,7 @@ export function calculateAttendanceSession({
       actualWorkMinutes: elapsedMinutes,
       normalWorkMinutes,
       overtimeMinutes,
+      earlyStartMinutes,
       totalEligibleMinutes: normalWorkMinutes + overtimeMinutes,
       graceMinutes,
       graceApplied: false,
@@ -128,17 +139,21 @@ export function calculateAttendanceSession({
     0,
     Math.floor((punchOut.getTime() - punchIn.getTime()) / 60_000),
   );
+
+  // If punched in early, normal work hours start from shift.start
+  const effectiveIn = isEarlyStart ? shift.start : punchIn;
   const normalizedWorkMinutes = Math.max(
     0,
-    Math.floor((normalizedOut.getTime() - punchIn.getTime()) / 60_000),
+    Math.floor((normalizedOut.getTime() - effectiveIn.getTime()) / 60_000),
   );
   const normalWorkMinutes = Math.min(required, normalizedWorkMinutes);
   
-  // Overtime starts after required hours or after grace boundary
-  const overtimeMinutes =
+  // Overtime starts after required hours or after grace boundary, plus any early start minutes
+  const postShiftOvertime =
     punchOut > graceBoundary || normalizedWorkMinutes > required
-      ? Math.max(0, actualWorkMinutes - normalWorkMinutes)
+      ? Math.max(0, Math.floor((punchOut.getTime() - effectiveIn.getTime()) / 60_000) - normalWorkMinutes)
       : 0;
+  const overtimeMinutes = earlyStartMinutes + postShiftOvertime;
 
   return {
     attendanceDate,
@@ -148,6 +163,7 @@ export function calculateAttendanceSession({
     actualWorkMinutes,
     normalWorkMinutes,
     overtimeMinutes,
+    earlyStartMinutes,
     totalEligibleMinutes: normalWorkMinutes + overtimeMinutes,
     graceMinutes,
     graceApplied: isInsideGrace,
@@ -167,14 +183,7 @@ export function isPunchOutReminderDue({
   now?: Date;
   reminderMinutes?: number;
 }): boolean {
-  const timezone = getShiftTimezone(employee);
-  const dateKey = zonedDateKey(punchIn, timezone);
-  const shift = getShiftWindow(
-    dateKey,
-    employee.shiftStartTime || "09:00",
-    employee.shiftEndTime || "17:00",
-    timezone,
-  );
+  const shift = getEmployeeShiftWindow(employee, punchIn);
   const startsAt = shift.end.getTime() - positiveMinutes(reminderMinutes, 20) * 60_000;
   return now.getTime() >= startsAt && now.getTime() < shift.end.getTime();
 }

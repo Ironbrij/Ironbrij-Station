@@ -473,17 +473,19 @@ function PunchPage() {
         }
       }
 
-      try {
-        await publishPersonalAttendanceEvent({
-          ownerUid: user.uid,
-          employee,
-          punchId: punchRef.id,
-          punchType,
-          date: punchDate,
-          occurredAt: punchTime,
-        });
-      } catch (automationError) {
-        console.warn("Personal automation status could not be updated:", automationError);
+      if (user?.uid) {
+        try {
+          await publishPersonalAttendanceEvent({
+            ownerUid: user.uid,
+            employee,
+            punchId: punchRef.id,
+            punchType,
+            date: punchDate,
+            occurredAt: punchTime,
+          });
+        } catch (automationError) {
+          console.warn("Personal automation status could not be updated:", automationError);
+        }
       }
 
       setQuote(randomQuote());
@@ -944,18 +946,24 @@ function PunchPage() {
               ) : isPunchedIn && lastIn ? (
                 <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
                   <div className="text-lg font-semibold">
-                    {currentSessionCalculation?.missingPunchOut
-                      ? "Missing punch out"
-                      : `Working since ${format(lastIn, "h:mm a")}`}
+                    {lastIn && attendanceStatus?.shift?.start && lastIn.getTime() < attendanceStatus.shift.start.getTime() && new Date().getTime() < attendanceStatus.shift.start.getTime()
+                      ? `Early start · Working since ${format(lastIn, "h:mm a")}`
+                      : currentSessionCalculation?.missingPunchOut
+                        ? "Shift completed"
+                        : `Working since ${format(lastIn, "h:mm a")}`}
                   </div>
                   <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
                   <div className="mt-1 text-sm font-medium text-emerald-900">
                     {company?.name || "Company"} · {deptName}
                   </div>
+                  {lastIn && attendanceStatus?.shift?.start && lastIn.getTime() < attendanceStatus.shift.start.getTime() && (
+                    <div className="mt-2 text-xs font-semibold text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded">
+                      Early Clock-In: Started {format(lastIn, "h:mm a")} before scheduled shift ({format(attendanceStatus.shift.start, "h:mm a")}). Early start overtime request is submitted for admin review.
+                    </div>
+                  )}
                   {currentSessionCalculation?.missingPunchOut && (
-                    <div className="mt-2 text-xs font-semibold text-rose-700">
-                      Your scheduled shift ended without a punch-out. Stop work now to record the
-                      actual time; no automatic time was added.
+                    <div className="mt-2 text-xs font-semibold text-sky-800 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded">
+                      Scheduled shift duration has completed. SavyTimes automatically preserves regular scheduled hours. Overtime worked is tracked for admin approval.
                     </div>
                   )}
                 </div>
