@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ArrowLeftRight, Building2, Headphones, LogOut } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
+import { useNavigationBadgeCounts } from "@/lib/use-navigation-badge-counts";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -38,7 +39,12 @@ export function AppShell({
   const navigate = useNavigate();
   const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
   const [pendingCompanyId, setPendingCompanyId] = useState(activeCompanyId);
-  const unreadLateCount = useAdminLateNotificationCount({ enabled: isAdmin, company });
+  const navBadges = useNavigationBadgeCounts({
+    isAdmin: Boolean(isAdmin),
+    employee,
+    company,
+    activeCompanyId,
+  });
   useAutoRejectExpiredLeaves(isAdmin);
 
   useEffect(() => {
@@ -201,56 +207,62 @@ export function AppShell({
           <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-1 px-4 py-1.5 sm:px-6">
             {companySwitcher}
             {companySwitcher && <div className="mx-1 h-6 w-px shrink-0 bg-border" />}
-            {nav.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                activeOptions={{ exact: item.exact }}
-                className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                activeProps={{
-                  className:
-                    "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-2.5 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-muted hover:text-foreground",
-                }}
-              >
-                {item.label}
-                {item.to === "/admin/notices" && unreadLateCount > 0 && (
-                  <span
-                    aria-label={`${unreadLateCount} unread late alerts`}
-                    className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm"
-                  >
-                    +{unreadLateCount}
-                  </span>
-                )}
-              </Link>
-            ))}
+            {nav.map((item) => {
+              const badgeCount = navBadges[item.to] ?? 0;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  activeOptions={{ exact: item.exact }}
+                  className="relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  activeProps={{
+                    className:
+                      "relative inline-flex shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-2.5 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  }}
+                >
+                  {item.label}
+                  {badgeCount > 0 && (
+                    <span
+                      aria-label={`${badgeCount} pending or unread items`}
+                      className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm animate-in zoom-in-50"
+                    >
+                      +{badgeCount > 99 ? "99" : badgeCount}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 
         <div className="flex flex-wrap gap-1 border-t bg-background px-4 py-1.5 md:hidden">
           {companySwitcher}
           {companySwitcher && <div className="mx-1 h-7 w-px shrink-0 self-center bg-border" />}
-          {nav.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              activeOptions={{ exact: item.exact }}
-              className="relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              activeProps={{
-                className:
-                  "relative shrink-0 whitespace-nowrap rounded-md bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted hover:text-foreground",
-              }}
-            >
-              {item.label}
-              {item.to === "/admin/notices" && unreadLateCount > 0 && (
-                <span
-                  aria-label={`${unreadLateCount} unread late alerts`}
-                  className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm"
-                >
-                  +{unreadLateCount}
-                </span>
-              )}
-            </Link>
-          ))}
+          {nav.map((item) => {
+            const badgeCount = navBadges[item.to] ?? 0;
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                activeOptions={{ exact: item.exact }}
+                className="relative shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                activeProps={{
+                  className:
+                    "relative shrink-0 whitespace-nowrap rounded-md bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted hover:text-foreground",
+                }}
+              >
+                {item.label}
+                {badgeCount > 0 && (
+                  <span
+                    aria-label={`${badgeCount} pending or unread items`}
+                    className="absolute -right-1.5 -top-1.5 flex min-h-4 min-w-4 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm animate-in zoom-in-50"
+                  >
+                    +{badgeCount > 99 ? "99" : badgeCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </header>
 
