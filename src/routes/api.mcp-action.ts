@@ -244,10 +244,136 @@ function getOpenApiSchema(appUrl: string) {
               ],
               description: "The admin tool action to execute.",
             },
+            name: {
+              type: "string",
+              description:
+                "Name of the company, employee, or department (e.g. 'Ironbrij', 'Alex Smith', 'Accounts')",
+            },
+            companyName: {
+              type: "string",
+              description: "Company name when creating or updating a company",
+            },
+            companyId: {
+              type: "string",
+              description: "Company ID (defaults to 'default')",
+            },
+            code: {
+              type: "string",
+              description: "Short company or department identifier code (e.g. 'IRON')",
+            },
+            timezone: {
+              type: "string",
+              description: "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
+            },
+            defaultShiftHours: {
+              type: "number",
+              description: "Default daily required shift hours (default: 8)",
+            },
+            workingDays: {
+              type: "array",
+              items: { type: "number" },
+              description: "Working days where 0=Sun, 1=Mon..6=Sat (e.g. [1, 2, 3, 4, 5])",
+            },
+            lateGraceMinutes: {
+              type: "number",
+              description: "Grace minutes allowed before lateness starts (default: 5)",
+            },
+            punchOutGraceMinutes: {
+              type: "number",
+              description: "Grace period in minutes after shift end before auto punch-out (default: 30)",
+            },
+            punchOutReminderMinutes: {
+              type: "number",
+              description: "Minutes before shift end to send reminder email (default: 20)",
+            },
+            breakAllowanceMinutes: {
+              type: "number",
+              description: "Break duration in minutes (default: 30, or 0 for N/A / no break)",
+            },
+            maxDailyBreaks: {
+              type: "number",
+              description: "Maximum breaks allowed per shift (default: 1, or 0 for N/A / no breaks)",
+            },
+            departments: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "List of initial department names to create under the company (e.g. ['Operations', 'Accounts'])",
+            },
+            email: {
+              type: "string",
+              description: "Email address for employee or client contact",
+            },
+            jobTitle: {
+              type: "string",
+              description: "Job title (e.g. 'Virtual Assistant', 'Software Engineer')",
+            },
+            shiftStartTime: {
+              type: "string",
+              description: "Shift start time in HH:MM format (e.g. '09:00')",
+            },
+            shiftEndTime: {
+              type: "string",
+              description: "Shift end time in HH:MM format (e.g. '17:00')",
+            },
+            shiftTimezone: {
+              type: "string",
+              description: "Shift timezone for employee",
+            },
+            country: {
+              type: "string",
+              enum: ["NP", "AU", "PH"],
+              description: "Country code",
+            },
+            type: {
+              type: "string",
+              enum: ["in", "out"],
+              description: "Punch type for add_or_fix_punch",
+            },
+            timestampISO: {
+              type: "string",
+              description: "ISO 8601 timestamp (e.g. '2026-08-27T09:00:00Z')",
+            },
+            leaveId: {
+              type: "string",
+              description: "Leave request document ID",
+            },
+            decision: {
+              type: "string",
+              enum: ["approved", "rejected"],
+              description: "Decision for leave or overtime approval",
+            },
+            paymentStatus: {
+              type: "string",
+              enum: ["paid", "unpaid"],
+              description: "Payment status for approved leave",
+            },
+            requestId: {
+              type: "string",
+              description: "Overtime request document ID",
+            },
+            reportType: {
+              type: "string",
+              enum: ["sod", "eod"],
+              description: "Report type for list_daily_reports",
+            },
+            title: {
+              type: "string",
+              description: "Notice title",
+            },
+            content: {
+              type: "string",
+              description: "Notice message content",
+            },
+            priority: {
+              type: "string",
+              enum: ["normal", "important", "urgent"],
+              description: "Notice priority",
+            },
             params: {
               type: "object",
               description:
-                "Parameters for the action. Examples:\n• create_company: { name (required), code, timezone: 'Australia/Sydney', defaultShiftHours: 8, workingDays: [1,2,3,4,5], lateGraceMinutes: 5, punchOutGraceMinutes: 30, punchOutReminderMinutes: 20, breakAllowanceMinutes: 30, maxDailyBreaks: 1, holidays: ['2026-12-25'], clientEmail, ownerName, logoUrl, notes, departments: ['Operations', 'Accounts'] }\n• update_company: { id or companyId or name (required), timezone, defaultShiftHours, workingDays, lateGraceMinutes, breakAllowanceMinutes, maxDailyBreaks, logoUrl, clientEmail, notes }\n• list_companies: {}\n• create_department: { name, companyId, code, state }\n• list_departments: { companyId }\n• get_company_summary: {}\n• get_live_attendance: {}\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId or name }\n• update_employee: { id or email or name, role, department, status, shiftStartTime, shiftEndTime }\n• delete_employee: { id or email or name }\n• add_or_fix_punch: { employeeId or name, type: 'in'|'out', timestampISO, date }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• list_overtime: { status: 'pending'|'approved'|'rejected'|'all', employeeId or name }\n• decide_overtime: { requestId, decision: 'approved'|'rejected' }\n• list_daily_reports: { date, reportType: 'sod'|'eod', employeeId or name }\n• create_notice: { title, content, priority, companyId }",
+                "Optional nested parameters object. You may pass parameters either nested here or as top-level fields on the request.",
             },
           },
         },
@@ -323,14 +449,21 @@ export const Route = createFileRoute("/api/mcp-action")({
           );
         }
 
-        let body: { action: string; params?: Record<string, any> };
+        let body: Record<string, any> = {};
         try {
-          body = await request.json();
+          body = (await request.json()) || {};
         } catch {
           return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
         }
 
-        const { action, params = {} } = body;
+        const action = body.action || body.name || body.tool;
+        const rawParams = body.params && typeof body.params === "object" ? body.params : {};
+        const { action: _a, params: _p, ...topLevelFields } = body;
+        const params: Record<string, any> = {
+          ...topLevelFields,
+          ...rawParams,
+        };
+
         const { baseUrl, apiKey } = getFirestoreConfig();
 
         try {
@@ -574,12 +707,24 @@ export const Route = createFileRoute("/api/mcp-action")({
 
           // 4. CREATE COMPANY
           if (action === "create_company") {
-            const companyName = (params.name || params.companyName || params.title || "").trim();
+            const companyName = (
+              params.name ||
+              params.companyName ||
+              params.company_name ||
+              params.company ||
+              params.title ||
+              params.clientName ||
+              params.client_name ||
+              ""
+            ).trim();
             if (!companyName) {
               return Response.json(
                 {
                   ok: false,
-                  error: "Missing required field: 'name' is strictly required to create a company.",
+                  error:
+                    "Missing required field: Company name is strictly required. Please provide 'name' or 'companyName'. (Received keys: " +
+                    Object.keys(params).join(", ") +
+                    ")",
                 },
                 { status: 400 },
               );
