@@ -72,7 +72,7 @@ const MCP_TOOLS = [
   {
     name: "add_employee",
     description:
-      "Add a new employee / Virtual Assistant (V.A.) to SavyTimes with shift schedule, company, and department.",
+      "Add a single employee or Virtual Assistant (V.A.) to SavyTimes with shift schedule, company, and department. Can also accept a list of employees in 'employees' parameter.",
     inputSchema: {
       type: "object",
       properties: {
@@ -84,8 +84,51 @@ const MCP_TOOLS = [
         shiftStartTime: { type: "string", description: "Shift start time e.g. '09:00'" },
         shiftEndTime: { type: "string", description: "Shift end time e.g. '17:00'" },
         shiftTimezone: { type: "string", description: "Timezone e.g. 'Australia/Sydney'" },
+        employees: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              email: { type: "string" },
+              companyId: { type: "string" },
+              jobTitle: { type: "string" },
+              shiftStartTime: { type: "string" },
+              shiftEndTime: { type: "string" },
+              shiftTimezone: { type: "string" },
+            },
+            required: ["name", "email"],
+          },
+          description: "Optional list of multiple employees to create at once in batch",
+        },
       },
-      required: ["name", "email"],
+    },
+  },
+  {
+    name: "batch_add_employees",
+    description: "Add multiple employees / Virtual Assistants to SavyTimes in a single batch call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        employees: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              email: { type: "string" },
+              companyId: { type: "string" },
+              jobTitle: { type: "string" },
+              shiftStartTime: { type: "string" },
+              shiftEndTime: { type: "string" },
+              shiftTimezone: { type: "string" },
+            },
+            required: ["name", "email"],
+          },
+          description: "Array of employee objects to create",
+        },
+      },
+      required: ["employees"],
     },
   },
   {
@@ -177,8 +220,40 @@ const MCP_TOOLS = [
           items: { type: "string" },
           description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
         },
+        companies: {
+          type: "array",
+          description: "Optional list of multiple companies to create at once in batch",
+        },
       },
-      required: ["name"],
+    },
+  },
+  {
+    name: "batch_create_companies",
+    description: "Create multiple client company profiles in SavyTimes in a single batch call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companies: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Company name" },
+              code: { type: "string" },
+              timezone: { type: "string" },
+              defaultShiftHours: { type: "number" },
+              workingDays: { type: "array", items: { type: "number" } },
+              lateGraceMinutes: { type: "number" },
+              breakAllowanceMinutes: { type: "number" },
+              maxDailyBreaks: { type: "number" },
+              departments: { type: "array", items: { type: "string" } },
+            },
+            required: ["name"],
+          },
+          description: "Array of company objects to create",
+        },
+      },
+      required: ["companies"],
     },
   },
   {
@@ -423,6 +498,176 @@ async function resolveEmployee(
   return null;
 }
 
+async function createSingleEmployee(
+  empInput: Record<string, any>,
+  baseUrl: string,
+  apiKey: string,
+): Promise<{ id: string; name: string; email: string; inviteToken: string }> {
+  const empName = (empInput.name || empInput.employeeName || "").trim();
+  const empEmail = (empInput.email || empInput.employeeEmail || "").trim().toLowerCase();
+
+  if (!empName || !empEmail) {
+    throw new Error("Both 'name' and 'email' are required for each employee.");
+  }
+
+  const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const companyId = empInput.companyId || "default";
+
+  const employeeData = {
+    name: empName,
+    email: empEmail,
+    companyId,
+    companyIds: [companyId],
+    jobTitle: empInput.jobTitle || empInput.role || "Virtual Assistant",
+    deptId: empInput.deptId || empInput.department || "",
+    country: empInput.country || "NP",
+    state: empInput.state || "N/A",
+    status: "active",
+    inviteStatus: "pending",
+    inviteToken,
+    shiftStartTime: empInput.shiftStartTime || "09:00",
+    shiftEndTime: empInput.shiftEndTime || "17:00",
+    shiftTimezone: empInput.shiftTimezone || "Asia/Kathmandu",
+    isMultipleShift: false,
+    shifts: empInput.shifts || [
+      {
+        startTime: empInput.shiftStartTime || "09:00",
+        endTime: empInput.shiftEndTime || "17:00",
+      },
+    ],
+    createdAt: new Date().toISOString(),
+  };
+
+  const res = await fetch(`${baseUrl}/employees/${docId}?key=${encodeURIComponent(apiKey)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
+  });
+  if (!res.ok) throw new Error(`Failed to add employee '${empName}'`);
+
+  const inviteData = {
+    token: inviteToken,
+    employeeId: docId,
+    email: empEmail,
+    name: empName,
+    companyId,
+    role: employeeData.jobTitle,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+  await fetch(`${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(inviteData) }),
+  });
+
+  return { id: docId, name: empName, email: empEmail, inviteToken };
+}
+
+async function createSingleCompany(
+  compInput: Record<string, any>,
+  baseUrl: string,
+  apiKey: string,
+): Promise<{ id: string; name: string; company: any; departments: Array<{ id: string; name: string }> }> {
+  const companyName = (
+    compInput.name ||
+    compInput.companyName ||
+    compInput.company_name ||
+    compInput.company ||
+    compInput.title ||
+    compInput.clientName ||
+    ""
+  ).trim();
+
+  if (!companyName) throw new Error("Company name is strictly required.");
+
+  const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  let workingDays = [1, 2, 3, 4, 5];
+  if (Array.isArray(compInput.workingDays)) {
+    workingDays = compInput.workingDays.map((d: any) => {
+      if (typeof d === "number") return d;
+      const lower = String(d).toLowerCase().slice(0, 3);
+      const map: Record<string, number> = {
+        sun: 0,
+        mon: 1,
+        tue: 2,
+        wed: 3,
+        thu: 4,
+        fri: 5,
+        sat: 6,
+      };
+      return map[lower] !== undefined ? map[lower] : 1;
+    });
+  }
+
+  const companyData: Record<string, any> = {
+    name: companyName,
+    code: (compInput.code || companyName.slice(0, 4)).toUpperCase(),
+    timezone: compInput.timezone || "Australia/Sydney",
+    defaultShiftHours:
+      typeof compInput.defaultShiftHours === "number" ? compInput.defaultShiftHours : 8,
+    workingDays,
+    lateGraceMinutes:
+      typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
+    punchOutGraceMinutes:
+      typeof compInput.punchOutGraceMinutes === "number"
+        ? compInput.punchOutGraceMinutes
+        : 30,
+    punchOutReminderMinutes:
+      typeof compInput.punchOutReminderMinutes === "number"
+        ? compInput.punchOutReminderMinutes
+        : 20,
+    breakAllowanceMinutes:
+      compInput.breakAllowanceMinutes !== undefined
+        ? Number(compInput.breakAllowanceMinutes)
+        : 30,
+    maxDailyBreaks:
+      compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
+    holidays: Array.isArray(compInput.holidays) ? compInput.holidays : [],
+    holidayAssignments: Array.isArray(compInput.holidayAssignments)
+      ? compInput.holidayAssignments
+      : [],
+    clientEmail: compInput.clientEmail || compInput.email || "",
+    ownerName: compInput.ownerName || compInput.clientName || "",
+    logoUrl: compInput.logoUrl || "",
+    notes: compInput.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  const res = await fetch(`${baseUrl}/companies/${docId}?key=${encodeURIComponent(apiKey)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
+  });
+  if (!res.ok) throw new Error(`Failed to create company '${companyName}'`);
+
+  const createdDepartments: Array<{ id: string; name: string }> = [];
+  if (Array.isArray(compInput.departments)) {
+    for (const dept of compInput.departments) {
+      const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
+      if (deptName) {
+        const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const deptData = {
+          companyId: docId,
+          name: deptName,
+          state: typeof dept === "object" && dept.state ? dept.state : "N/A",
+          createdAt: new Date().toISOString(),
+        };
+        await fetch(`${baseUrl}/departments/${deptDocId}?key=${encodeURIComponent(apiKey)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+        });
+        createdDepartments.push({ id: deptDocId, name: deptName });
+      }
+    }
+  }
+
+  return { id: docId, name: companyName, company: companyData, departments: createdDepartments };
+}
+
 async function validateAdminAuth(request: Request): Promise<boolean> {
   const auth = request.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : auth.trim();
@@ -509,71 +754,76 @@ export const Route = createFileRoute("/api/mcp")({
           const args = params?.arguments || {};
 
           try {
-            // 1. ADD EMPLOYEE
-            if (toolName === "add_employee") {
-              const empName = (args.name || "").trim();
-              const empEmail = (args.email || "").trim().toLowerCase();
+            // 1. ADD EMPLOYEE / BATCH ADD EMPLOYEES
+            if (toolName === "add_employee" || toolName === "batch_add_employees") {
+              const employeeList = Array.isArray(args.employees)
+                ? args.employees
+                : Array.isArray(args.list)
+                  ? args.list
+                  : Array.isArray(args.items)
+                    ? args.items
+                    : null;
 
-              if (!empName || !empEmail) {
+              if (employeeList && employeeList.length > 0) {
+                const results = [];
+                const errors = [];
+                for (const empItem of employeeList) {
+                  try {
+                    const created = await createSingleEmployee(empItem, baseUrl, apiKey);
+                    results.push(created);
+                  } catch (err: any) {
+                    errors.push({ employee: empItem, error: err.message });
+                  }
+                }
+
                 return Response.json({
                   jsonrpc: "2.0",
                   id,
                   result: {
-                    isError: true,
                     content: [
                       {
                         type: "text",
-                        text: "Error: Both 'name' and 'email' are strictly required to create an employee.",
+                        text: JSON.stringify(
+                          {
+                            message: `Batch added ${results.length} of ${employeeList.length} employees with invites!`,
+                            count: results.length,
+                            employees: results,
+                            errors: errors.length > 0 ? errors : undefined,
+                          },
+                          null,
+                          2,
+                        ),
                       },
                     ],
                   },
                 });
               }
 
-              const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-              const employeeData = {
-                name: empName,
-                email: empEmail,
-                companyId: args.companyId || "default",
-                companyIds: [args.companyId || "default"],
-                jobTitle: args.jobTitle || "Virtual Assistant",
-                deptId: args.deptId || "",
-                country: args.country || "NP",
-                state: args.state || "N/A",
-                status: "active",
-                inviteStatus: "pending",
-                shiftStartTime: args.shiftStartTime || "09:00",
-                shiftEndTime: args.shiftEndTime || "17:00",
-                shiftTimezone: args.shiftTimezone || "Asia/Kathmandu",
-                isMultipleShift: false,
-                shifts: [
-                  {
-                    startTime: args.shiftStartTime || "09:00",
-                    endTime: args.shiftEndTime || "17:00",
+              // Single employee
+              try {
+                const created = await createSingleEmployee(args, baseUrl, apiKey);
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: `Employee '${created.name}' created with ID: ${created.id} (Invite Token: ${created.inviteToken})`,
+                      },
+                    ],
                   },
-                ],
-                createdAt: new Date().toISOString(),
-              };
-
-              const res = await fetch(
-                `${baseUrl}/employees/${docId}?key=${encodeURIComponent(apiKey)}`,
-                {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
-                },
-              );
-              if (!res.ok) throw new Error("Failed to add employee");
-
-              return Response.json({
-                jsonrpc: "2.0",
-                id,
-                result: {
-                  content: [
-                    { type: "text", text: `Employee '${args.name}' created with ID: ${docId}` },
-                  ],
-                },
-              });
+                });
+              } catch (err: any) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: err.message || "Failed to add employee" }],
+                  },
+                });
+              }
             }
 
             // 2. LIST EMPLOYEES
@@ -960,116 +1210,85 @@ export const Route = createFileRoute("/api/mcp")({
               });
             }
 
-            // 10. CREATE COMPANY
-            if (toolName === "create_company") {
-              const companyName = (args.name || args.companyName || "").trim();
-              if (!companyName) {
+            // 10. CREATE COMPANY / BATCH CREATE COMPANIES
+            if (toolName === "create_company" || toolName === "batch_create_companies") {
+              const companyList = Array.isArray(args.companies)
+                ? args.companies
+                : Array.isArray(args.list)
+                  ? args.list
+                  : Array.isArray(args.items)
+                    ? args.items
+                    : null;
+
+              if (companyList && companyList.length > 0) {
+                const results = [];
+                const errors = [];
+                for (const compItem of companyList) {
+                  try {
+                    const created = await createSingleCompany(compItem, baseUrl, apiKey);
+                    results.push(created);
+                  } catch (err: any) {
+                    errors.push({ company: compItem, error: err.message });
+                  }
+                }
+
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: JSON.stringify(
+                          {
+                            message: `Batch created ${results.length} of ${companyList.length} companies!`,
+                            count: results.length,
+                            companies: results,
+                            errors: errors.length > 0 ? errors : undefined,
+                          },
+                          null,
+                          2,
+                        ),
+                      },
+                    ],
+                  },
+                });
+              }
+
+              // Single company creation
+              try {
+                const created = await createSingleCompany(args, baseUrl, apiKey);
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: JSON.stringify(
+                          {
+                            message: `Company '${created.name}' created successfully with ID: ${created.id}`,
+                            companyId: created.id,
+                            company: created.company,
+                            departments: created.departments,
+                          },
+                          null,
+                          2,
+                        ),
+                      },
+                    ],
+                  },
+                });
+              } catch (err: any) {
                 return Response.json({
                   jsonrpc: "2.0",
                   id,
                   result: {
                     isError: true,
-                    content: [{ type: "text", text: "Error: 'name' is strictly required to create a company." }],
+                    content: [{ type: "text", text: err.message || "Failed to create company" }],
                   },
                 });
               }
-
-              const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-
-              let workingDays = [1, 2, 3, 4, 5];
-              if (Array.isArray(args.workingDays)) {
-                workingDays = args.workingDays.map((d: any) => {
-                  if (typeof d === "number") return d;
-                  const lower = String(d).toLowerCase().slice(0, 3);
-                  const map: Record<string, number> = {
-                    sun: 0,
-                    mon: 1,
-                    tue: 2,
-                    wed: 3,
-                    thu: 4,
-                    fri: 5,
-                    sat: 6,
-                  };
-                  return map[lower] !== undefined ? map[lower] : 1;
-                });
-              }
-
-              const companyData: Record<string, any> = {
-                name: companyName,
-                code: (args.code || companyName.slice(0, 4)).toUpperCase(),
-                timezone: args.timezone || "Australia/Sydney",
-                defaultShiftHours: typeof args.defaultShiftHours === "number" ? args.defaultShiftHours : 8,
-                workingDays,
-                lateGraceMinutes: typeof args.lateGraceMinutes === "number" ? args.lateGraceMinutes : 5,
-                punchOutGraceMinutes: typeof args.punchOutGraceMinutes === "number" ? args.punchOutGraceMinutes : 30,
-                punchOutReminderMinutes: typeof args.punchOutReminderMinutes === "number" ? args.punchOutReminderMinutes : 20,
-                breakAllowanceMinutes: args.breakAllowanceMinutes !== undefined ? Number(args.breakAllowanceMinutes) : 30,
-                maxDailyBreaks: args.maxDailyBreaks !== undefined ? Number(args.maxDailyBreaks) : 1,
-                holidays: Array.isArray(args.holidays) ? args.holidays : [],
-                holidayAssignments: Array.isArray(args.holidayAssignments) ? args.holidayAssignments : [],
-                clientEmail: args.clientEmail || args.email || "",
-                ownerName: args.ownerName || args.clientName || "",
-                logoUrl: args.logoUrl || "",
-                notes: args.notes || "",
-                createdAt: new Date().toISOString(),
-              };
-
-              const res = await fetch(
-                `${baseUrl}/companies/${docId}?key=${encodeURIComponent(apiKey)}`,
-                {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
-                },
-              );
-              if (!res.ok) throw new Error("Failed to create company");
-
-              const createdDepartments: Array<{ id: string; name: string }> = [];
-              if (Array.isArray(args.departments)) {
-                for (const dept of args.departments) {
-                  const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
-                  if (deptName) {
-                    const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                    const deptData = {
-                      companyId: docId,
-                      name: deptName,
-                      state: typeof dept === "object" && dept.state ? dept.state : "N/A",
-                      createdAt: new Date().toISOString(),
-                    };
-                    await fetch(
-                      `${baseUrl}/departments/${deptDocId}?key=${encodeURIComponent(apiKey)}`,
-                      {
-                        method: "PATCH",
-                        headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
-                      },
-                    );
-                    createdDepartments.push({ id: deptDocId, name: deptName });
-                  }
-                }
-              }
-
-              return Response.json({
-                jsonrpc: "2.0",
-                id,
-                result: {
-                  content: [
-                    {
-                      type: "text",
-                      text: JSON.stringify(
-                        {
-                          message: `Company '${companyName}' created successfully with ID: ${docId}`,
-                          companyId: docId,
-                          company: companyData,
-                          departments: createdDepartments,
-                        },
-                        null,
-                        2,
-                      ),
-                    },
-                  ],
-                },
-              });
             }
 
             // 11. UPDATE COMPANY

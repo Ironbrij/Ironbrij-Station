@@ -80,7 +80,7 @@ const TOOLS = [
   {
     name: "add_employee",
     description:
-      "Add a new employee / Virtual Assistant (V.A.) to SavyTimes with their shift schedule, company membership, country, and department.",
+      "Add a single employee or Virtual Assistant (V.A.) to SavyTimes with their shift schedule, company membership, country, and department. Can also accept a list in 'employees'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -113,29 +113,38 @@ const TOOLS = [
           type: "string",
           description: "Timezone for shifts (e.g. 'Australia/Sydney', 'Asia/Kathmandu')",
         },
-        isMultipleShift: {
-          type: "boolean",
-          description: "Whether employee works multiple shifts per day",
+        employees: {
+          type: "array",
+          description: "Optional list of employees to add in batch",
         },
-        shifts: {
+      },
+    },
+  },
+  {
+    name: "batch_add_employees",
+    description: "Add multiple employees / Virtual Assistants to SavyTimes in a single batch call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        employees: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              startTime: { type: "string" },
-              endTime: { type: "string" },
-              workingDays: {
-                type: "array",
-                items: { type: "number" },
-                description: "Array of days (0=Sun..6=Sat) for this shift",
-              },
+              name: { type: "string" },
+              email: { type: "string" },
+              companyId: { type: "string" },
+              jobTitle: { type: "string" },
+              shiftStartTime: { type: "string" },
+              shiftEndTime: { type: "string" },
+              shiftTimezone: { type: "string" },
             },
-            required: ["startTime", "endTime"],
+            required: ["name", "email"],
           },
-          description: "List of shift intervals with optional shift-specific working days if isMultipleShift is true",
+          description: "Array of employee objects to create",
         },
       },
-      required: ["name", "email"],
+      required: ["employees"],
     },
   },
   {
@@ -228,8 +237,40 @@ const TOOLS = [
           items: { type: "string" },
           description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
         },
+        companies: {
+          type: "array",
+          description: "Optional list of multiple companies to create in batch",
+        },
       },
-      required: ["name"],
+    },
+  },
+  {
+    name: "batch_create_companies",
+    description: "Create multiple client company profiles in SavyTimes in a single batch call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companies: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Company name" },
+              code: { type: "string" },
+              timezone: { type: "string" },
+              defaultShiftHours: { type: "number" },
+              workingDays: { type: "array", items: { type: "number" } },
+              lateGraceMinutes: { type: "number" },
+              breakAllowanceMinutes: { type: "number" },
+              maxDailyBreaks: { type: "number" },
+              departments: { type: "array", items: { type: "string" } },
+            },
+            required: ["name"],
+          },
+          description: "Array of company objects to create",
+        },
+      },
+      required: ["companies"],
     },
   },
   {
@@ -319,51 +360,188 @@ const TOOLS = [
   },
 ];
 
+// Helper: Create single employee
+async function createSingleEmployee(empInput) {
+  const empName = (empInput.name || empInput.employeeName || "").trim();
+  const empEmail = (empInput.email || empInput.employeeEmail || "").trim().toLowerCase();
+
+  if (!empName || !empEmail) {
+    throw new Error("Both 'name' and 'email' are required for each employee.");
+  }
+
+  const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const companyId = empInput.companyId || "default";
+
+  const employeeData = {
+    name: empName,
+    email: empEmail,
+    companyId,
+    companyIds: [companyId],
+    jobTitle: empInput.jobTitle || "Virtual Assistant",
+    deptId: empInput.deptId || "",
+    country: empInput.country || "NP",
+    state: empInput.state || "N/A",
+    status: "active",
+    inviteStatus: "pending",
+    inviteToken,
+    shiftStartTime: empInput.shiftStartTime || "09:00",
+    shiftEndTime: empInput.shiftEndTime || "17:00",
+    shiftTimezone: empInput.shiftTimezone || "Asia/Kathmandu",
+    isMultipleShift: Boolean(empInput.isMultipleShift),
+    shifts: empInput.shifts || [
+      { startTime: empInput.shiftStartTime || "09:00", endTime: empInput.shiftEndTime || "17:00" },
+    ],
+    createdAt: new Date().toISOString(),
+  };
+
+  const res = await fetch(
+    `${FIRESTORE_BASE_URL}/employees/${docId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Failed to create employee '${empName}'`);
+  }
+
+  return { id: docId, name: empName, email: empEmail, inviteToken, employee: employeeData };
+}
+
+// Helper: Create single company
+async function createSingleCompany(compInput) {
+  const companyName = (
+    compInput.name ||
+    compInput.companyName ||
+    compInput.company_name ||
+    compInput.company ||
+    compInput.title ||
+    compInput.clientName ||
+    ""
+  ).trim();
+
+  if (!companyName) {
+    throw new Error("Company name is strictly required.");
+  }
+
+  const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  let workingDays = [1, 2, 3, 4, 5];
+  if (Array.isArray(compInput.workingDays)) {
+    workingDays = compInput.workingDays.map((d) => {
+      if (typeof d === "number") return d;
+      const lower = String(d).toLowerCase().slice(0, 3);
+      const map = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+      return map[lower] !== undefined ? map[lower] : 1;
+    });
+  }
+
+  const companyData = {
+    name: companyName,
+    code: (compInput.code || companyName.slice(0, 4)).toUpperCase(),
+    timezone: compInput.timezone || "Australia/Sydney",
+    defaultShiftHours: typeof compInput.defaultShiftHours === "number" ? compInput.defaultShiftHours : 8,
+    workingDays,
+    lateGraceMinutes: typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
+    punchOutGraceMinutes: typeof compInput.punchOutGraceMinutes === "number" ? compInput.punchOutGraceMinutes : 30,
+    punchOutReminderMinutes: typeof compInput.punchOutReminderMinutes === "number" ? compInput.punchOutReminderMinutes : 20,
+    breakAllowanceMinutes: compInput.breakAllowanceMinutes !== undefined ? Number(compInput.breakAllowanceMinutes) : 30,
+    maxDailyBreaks: compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
+    holidays: Array.isArray(compInput.holidays) ? compInput.holidays : [],
+    clientEmail: compInput.clientEmail || compInput.email || "",
+    ownerName: compInput.ownerName || compInput.clientName || "",
+    logoUrl: compInput.logoUrl || "",
+    notes: compInput.notes || "",
+    createdAt: new Date().toISOString(),
+  };
+
+  const res = await fetch(
+    `${FIRESTORE_BASE_URL}/companies/${docId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `Failed to create company '${companyName}'`);
+  }
+
+  // Auto-create departments if specified
+  const createdDepartments = [];
+  if (Array.isArray(compInput.departments)) {
+    for (const dept of compInput.departments) {
+      const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
+      if (deptName) {
+        const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const deptData = {
+          companyId: docId,
+          name: deptName,
+          state: typeof dept === "object" && dept.state ? dept.state : "N/A",
+          createdAt: new Date().toISOString(),
+        };
+        await fetch(
+          `${FIRESTORE_BASE_URL}/departments/${deptDocId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+          },
+        );
+        createdDepartments.push({ id: deptDocId, name: deptName });
+      }
+    }
+  }
+
+  return { id: docId, name: companyName, company: companyData, departments: createdDepartments };
+}
+
 // Tool Executors
 async function executeTool(name, args) {
-  // 1. Add Employee
-  if (name === "add_employee") {
-    const docId = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const employeeData = {
-      name: args.name,
-      email: args.email,
-      companyId: args.companyId || "default",
-      companyIds: [args.companyId || "default"],
-      jobTitle: args.jobTitle || "Virtual Assistant",
-      deptId: args.deptId || "",
-      country: args.country || "NP",
-      state: args.state || "N/A",
-      status: "active",
-      inviteStatus: "pending",
-      shiftStartTime: args.shiftStartTime || "09:00",
-      shiftEndTime: args.shiftEndTime || "17:00",
-      shiftTimezone: args.shiftTimezone || "Asia/Kathmandu",
-      isMultipleShift: Boolean(args.isMultipleShift),
-      shifts: args.shifts || [
-        { startTime: args.shiftStartTime || "09:00", endTime: args.shiftEndTime || "17:00" },
-      ],
-      createdAt: new Date().toISOString(),
-    };
+  // 1. Add Employee / Batch Add Employees
+  if (name === "add_employee" || name === "batch_add_employees") {
+    const employeeList = Array.isArray(args.employees)
+      ? args.employees
+      : Array.isArray(args.list)
+        ? args.list
+        : Array.isArray(args.items)
+          ? args.items
+          : null;
 
-    const res = await fetch(
-      `${FIRESTORE_BASE_URL}/employees/${docId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fields: toFirestoreFields(employeeData) }),
-      },
-    );
+    if (employeeList && employeeList.length > 0) {
+      const results = [];
+      const errors = [];
+      for (const empItem of employeeList) {
+        try {
+          const created = await createSingleEmployee(empItem);
+          results.push(created);
+        } catch (err) {
+          errors.push({ employee: empItem, error: err.message });
+        }
+      }
 
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || "Failed to create employee");
+      return {
+        success: errors.length === 0 || results.length > 0,
+        message: `Batch added ${results.length} of ${employeeList.length} employees with invites!`,
+        count: results.length,
+        employees: results,
+        errors: errors.length > 0 ? errors : undefined,
+      };
     }
 
+    const created = await createSingleEmployee(args);
     return {
       success: true,
-      message: `Employee '${args.name}' successfully added to SavyTimes!`,
-      employeeId: docId,
-      data: employeeData,
+      message: `Employee '${created.name}' successfully added to SavyTimes!`,
+      employeeId: created.id,
+      inviteToken: created.inviteToken,
+      data: created.employee,
     };
   }
 
@@ -452,90 +630,44 @@ async function executeTool(name, args) {
     return { success: true, count: list.length, companies: list };
   }
 
-  // 6. Create Company
-  if (name === "create_company") {
-    const companyName = (args.name || args.companyName || "").trim();
-    if (!companyName) {
-      return { success: false, error: "'name' is strictly required to create a company." };
-    }
+  // 6. Create Company / Batch Create Companies
+  if (name === "create_company" || name === "batch_create_companies") {
+    const companyList = Array.isArray(args.companies)
+      ? args.companies
+      : Array.isArray(args.list)
+        ? args.list
+        : Array.isArray(args.items)
+          ? args.items
+          : null;
 
-    const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-
-    let workingDays = [1, 2, 3, 4, 5];
-    if (Array.isArray(args.workingDays)) {
-      workingDays = args.workingDays.map((d) => {
-        if (typeof d === "number") return d;
-        const lower = String(d).toLowerCase().slice(0, 3);
-        const map = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-        return map[lower] !== undefined ? map[lower] : 1;
-      });
-    }
-
-    const companyData = {
-      name: companyName,
-      code: (args.code || companyName.slice(0, 4)).toUpperCase(),
-      timezone: args.timezone || "Australia/Sydney",
-      defaultShiftHours: typeof args.defaultShiftHours === "number" ? args.defaultShiftHours : 8,
-      workingDays,
-      lateGraceMinutes: typeof args.lateGraceMinutes === "number" ? args.lateGraceMinutes : 5,
-      punchOutGraceMinutes: typeof args.punchOutGraceMinutes === "number" ? args.punchOutGraceMinutes : 30,
-      punchOutReminderMinutes: typeof args.punchOutReminderMinutes === "number" ? args.punchOutReminderMinutes : 20,
-      breakAllowanceMinutes: args.breakAllowanceMinutes !== undefined ? Number(args.breakAllowanceMinutes) : 30,
-      maxDailyBreaks: args.maxDailyBreaks !== undefined ? Number(args.maxDailyBreaks) : 1,
-      holidays: Array.isArray(args.holidays) ? args.holidays : [],
-      clientEmail: args.clientEmail || args.email || "",
-      ownerName: args.ownerName || args.clientName || "",
-      logoUrl: args.logoUrl || "",
-      notes: args.notes || "",
-      createdAt: new Date().toISOString(),
-    };
-
-    const res = await fetch(
-      `${FIRESTORE_BASE_URL}/companies/${docId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
-      },
-    );
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || "Failed to create company");
-    }
-
-    // Auto-create departments if specified
-    const createdDepartments = [];
-    if (Array.isArray(args.departments)) {
-      for (const dept of args.departments) {
-        const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
-        if (deptName) {
-          const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const deptData = {
-            companyId: docId,
-            name: deptName,
-            state: typeof dept === "object" && dept.state ? dept.state : "N/A",
-            createdAt: new Date().toISOString(),
-          };
-          await fetch(
-            `${FIRESTORE_BASE_URL}/departments/${deptDocId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
-            },
-          );
-          createdDepartments.push({ id: deptDocId, name: deptName });
+    if (companyList && companyList.length > 0) {
+      const results = [];
+      const errors = [];
+      for (const compItem of companyList) {
+        try {
+          const created = await createSingleCompany(compItem);
+          results.push(created);
+        } catch (err) {
+          errors.push({ company: compItem, error: err.message });
         }
       }
+
+      return {
+        success: errors.length === 0 || results.length > 0,
+        message: `Batch created ${results.length} of ${companyList.length} companies!`,
+        count: results.length,
+        companies: results,
+        errors: errors.length > 0 ? errors : undefined,
+      };
     }
 
+    const created = await createSingleCompany(args);
     return {
       success: true,
-      message: `Company '${companyName}' created with ID: ${docId}`,
-      companyId: docId,
-      company: companyData,
-      departments: createdDepartments,
+      message: `Company '${created.name}' created successfully with ID: ${created.id}`,
+      companyId: created.id,
+      company: created.company,
+      departments: created.departments,
     };
   }
 
