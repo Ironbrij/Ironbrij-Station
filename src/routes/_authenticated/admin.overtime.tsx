@@ -166,6 +166,32 @@ function AdminOvertimePage() {
     }
   }
 
+  async function handleRejectAllPending() {
+    const pendingItems = filteredRequests.filter((r) => r.status === "pending");
+    if (pendingItems.length === 0) {
+      toast.info("No pending overtime requests to reject.");
+      return;
+    }
+
+    setBulkProcessing(true);
+    try {
+      const batch = writeBatch(db());
+      pendingItems.forEach((item) => {
+        batch.update(doc(db(), "overtimeRequests", item.id), {
+          status: "rejected",
+          decidedBy: user?.email || "Admin",
+          decidedAt: new Date().toISOString(),
+        });
+      });
+      await batch.commit();
+      toast.success(`Rejected ${pendingItems.length} overtime requests.`);
+    } catch (err) {
+      toast.error("Bulk rejection failed: " + (err as Error).message);
+    } finally {
+      setBulkProcessing(false);
+    }
+  }
+
   async function handleApproveAllPending() {
     const pendingItems = filteredRequests.filter((r) => r.status === "pending");
     if (pendingItems.length === 0) {
@@ -367,14 +393,26 @@ function AdminOvertimePage() {
           </button>
 
           {counts.pending > 0 && (
-            <button
-              onClick={handleApproveAllPending}
-              disabled={bulkProcessing}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all disabled:opacity-50"
-            >
-              <Sparkles className="h-4 w-4" />
-              {bulkProcessing ? "Approving..." : `Approve All Pending (${counts.pending})`}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRejectAllPending}
+                disabled={bulkProcessing}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition-all disabled:opacity-50"
+                title="Reject all pending overtime requests"
+              >
+                <UserX className="h-3.5 w-3.5" />
+                {bulkProcessing ? "Rejecting..." : `Reject All (${counts.pending})`}
+              </button>
+              <button
+                onClick={handleApproveAllPending}
+                disabled={bulkProcessing}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
+                title="Approve all pending overtime requests"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                {bulkProcessing ? "Accepting..." : `Accept All (${counts.pending})`}
+              </button>
+            </div>
           )}
         </div>
       </div>
