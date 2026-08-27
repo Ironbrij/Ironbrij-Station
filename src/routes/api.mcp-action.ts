@@ -225,6 +225,9 @@ function getOpenApiSchema(appUrl: string) {
                 "create_company",
                 "batch_create_companies",
                 "update_company",
+                "rename_company",
+                "archive_company",
+                "unarchive_company",
                 "list_companies",
                 "create_department",
                 "list_departments",
@@ -250,6 +253,26 @@ function getOpenApiSchema(appUrl: string) {
             companyName: {
               type: "string",
               description: "Company name when creating or updating a company",
+            },
+            oldName: {
+              type: "string",
+              description: "Previous or current company name to look up when renaming or updating",
+            },
+            newName: {
+              type: "string",
+              description: "New company name when renaming or updating a company",
+            },
+            logoUrl: {
+              type: "string",
+              description: "Company logo image URL (e.g. 'https://example.com/logo.png')",
+            },
+            logo: {
+              type: "string",
+              description: "Alternative alias for company logo image URL",
+            },
+            archived: {
+              type: "boolean",
+              description: "Whether the company is archived (true) or active (false)",
             },
             companyId: {
               type: "string",
@@ -608,7 +631,17 @@ async function createSingleCompany(
       : [],
     clientEmail: compInput.clientEmail || compInput.email || "",
     ownerName: compInput.ownerName || compInput.clientName || "",
-    logoUrl: compInput.logoUrl || "",
+    logoUrl:
+      compInput.logoUrl ||
+      compInput.logo ||
+      compInput.logo_url ||
+      compInput.imageUrl ||
+      compInput.image ||
+      compInput.logoImage ||
+      compInput.iconUrl ||
+      "",
+    archived: Boolean(compInput.archived || compInput.status === "archived"),
+    status: compInput.archived || compInput.status === "archived" ? "archived" : "active",
     notes: compInput.notes || "",
     createdAt: new Date().toISOString(),
   };
@@ -929,20 +962,69 @@ export const Route = createFileRoute("/api/mcp-action")({
           // 5. UPDATE COMPANY
           if (action === "update_company") {
             let targetId = params.id || params.companyId;
-            if (!targetId && (params.name || params.companyName)) {
-              const searchName = (params.name || params.companyName).trim().toLowerCase();
-              const listRes = await fetch(
-                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
-              );
-              const listData = await listRes.json();
-              const matchedDoc = (listData.documents || []).find((doc: any) => {
-                const fields = fromFirestoreFields(doc.fields);
+            let currentCompanyName = "";
+            let matchedFields: Record<string, any> = {};
+
+            const searchLookupName = (
+              params.oldName ||
+              params.from ||
+              params.fromName ||
+              params.currentName ||
+              params.lookupName ||
+              params.companyName ||
+              params.company ||
+              (params.newName ? params.name : "") ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+
+            const listRes = await fetch(
+              `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+            );
+            const listData = await listRes.json();
+            const allDocs = listData.documents || [];
+
+            if (targetId) {
+              const docById = allDocs.find((d: any) => d.name.split("/").pop() === targetId);
+              if (docById) {
+                matchedFields = fromFirestoreFields(docById.fields);
+                currentCompanyName = matchedFields.name || targetId;
+              }
+            } else if (searchLookupName) {
+              const docByName = allDocs.find((d: any) => {
+                const id = d.name.split("/").pop();
+                const fields = fromFirestoreFields(d.fields);
                 return (
-                  (fields.name || "").toLowerCase() === searchName ||
-                  (fields.code || "").toLowerCase() === searchName
+                  id?.toLowerCase() === searchLookupName ||
+                  (fields.name || "").toLowerCase() === searchLookupName ||
+                  (fields.code || "").toLowerCase() === searchLookupName
                 );
               });
-              if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+              if (docByName) {
+                targetId = docByName.name.split("/").pop();
+                matchedFields = fromFirestoreFields(docByName.fields);
+                currentCompanyName = matchedFields.name || targetId;
+              }
+            }
+
+            // Fallback: if user provided just 'name' without newName/id, search by name
+            if (!targetId && params.name) {
+              const nameLower = params.name.trim().toLowerCase();
+              const docByName = allDocs.find((d: any) => {
+                const id = d.name.split("/").pop();
+                const fields = fromFirestoreFields(d.fields);
+                return (
+                  id?.toLowerCase() === nameLower ||
+                  (fields.name || "").toLowerCase() === nameLower ||
+                  (fields.code || "").toLowerCase() === nameLower
+                );
+              });
+              if (docByName) {
+                targetId = docByName.name.split("/").pop();
+                matchedFields = fromFirestoreFields(docByName.fields);
+                currentCompanyName = matchedFields.name || targetId;
+              }
             }
 
             if (!targetId) {
@@ -950,14 +1032,30 @@ export const Route = createFileRoute("/api/mcp-action")({
                 {
                   ok: false,
                   error:
-                    "Company not found. Please provide a valid 'id', 'companyId', or 'name'.",
+                    "Company not found. Please provide a valid 'id', 'companyId', 'name', or 'oldName'.",
                 },
                 { status: 404 },
               );
             }
 
             const fieldsToUpdate: Record<string, any> = {};
-            if (params.name) fieldsToUpdate.name = params.name.trim();
+
+            // Renaming support in update_company
+            const newName = (
+              params.newName ||
+              params.to ||
+              params.renameTo ||
+              (params.oldName ? params.name : undefined) ||
+              (params.id && params.name && params.name !== currentCompanyName ? params.name : undefined) ||
+              ""
+            ).trim();
+
+            if (newName) {
+              fieldsToUpdate.name = newName;
+            } else if (params.name && (!params.oldName || params.oldName === params.name)) {
+              fieldsToUpdate.name = params.name.trim();
+            }
+
             if (params.code) fieldsToUpdate.code = params.code.trim().toUpperCase();
             if (params.timezone) fieldsToUpdate.timezone = params.timezone;
             if (params.defaultShiftHours !== undefined)
@@ -981,7 +1079,24 @@ export const Route = createFileRoute("/api/mcp-action")({
               fieldsToUpdate.holidayAssignments = params.holidayAssignments;
             if (params.clientEmail !== undefined) fieldsToUpdate.clientEmail = params.clientEmail;
             if (params.ownerName !== undefined) fieldsToUpdate.ownerName = params.ownerName;
-            if (params.logoUrl !== undefined) fieldsToUpdate.logoUrl = params.logoUrl;
+
+            const logoVal =
+              params.logoUrl ||
+              params.logo ||
+              params.logo_url ||
+              params.imageUrl ||
+              params.image ||
+              params.logoImage;
+            if (logoVal !== undefined) fieldsToUpdate.logoUrl = logoVal;
+
+            if (params.archived !== undefined) {
+              fieldsToUpdate.archived = Boolean(params.archived);
+              fieldsToUpdate.status = params.archived ? "archived" : "active";
+            } else if (params.status !== undefined) {
+              fieldsToUpdate.status = params.status;
+              fieldsToUpdate.archived = params.status === "archived";
+            }
+
             if (params.notes !== undefined) fieldsToUpdate.notes = params.notes;
 
             const updateMask = Object.keys(fieldsToUpdate)
@@ -1004,9 +1119,239 @@ export const Route = createFileRoute("/api/mcp-action")({
             return Response.json({
               ok: true,
               result: {
-                message: `Company '${targetId}' updated successfully.`,
+                message: `Company '${fieldsToUpdate.name || currentCompanyName || targetId}' updated successfully.`,
                 companyId: targetId,
                 updatedFields: fieldsToUpdate,
+              },
+            });
+          }
+
+          // 5b. RENAME COMPANY
+          if (action === "rename_company") {
+            const listRes = await fetch(
+              `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+            );
+            const listData = await listRes.json();
+            const allDocs = listData.documents || [];
+
+            let targetId = params.id || params.companyId;
+            let currentName = "";
+
+            const searchLookupName = (
+              params.oldName ||
+              params.from ||
+              params.fromName ||
+              params.currentName ||
+              params.name ||
+              params.companyName ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+
+            if (targetId) {
+              const docById = allDocs.find((d: any) => d.name.split("/").pop() === targetId);
+              if (docById) {
+                const fields = fromFirestoreFields(docById.fields);
+                currentName = fields.name || targetId;
+              }
+            } else if (searchLookupName) {
+              const docByName = allDocs.find((d: any) => {
+                const id = d.name.split("/").pop();
+                const fields = fromFirestoreFields(d.fields);
+                return (
+                  id?.toLowerCase() === searchLookupName ||
+                  (fields.name || "").toLowerCase() === searchLookupName ||
+                  (fields.code || "").toLowerCase() === searchLookupName
+                );
+              });
+              if (docByName) {
+                targetId = docByName.name.split("/").pop();
+                const fields = fromFirestoreFields(docByName.fields);
+                currentName = fields.name || targetId;
+              }
+            }
+
+            if (!targetId) {
+              return Response.json(
+                {
+                  ok: false,
+                  error:
+                    "Company not found. Provide 'oldName', 'name', 'id', or 'companyId' of the company to rename.",
+                },
+                { status: 404 },
+              );
+            }
+
+            const newName = (
+              params.newName ||
+              params.to ||
+              params.renameTo ||
+              (params.oldName ? params.name : "") ||
+              ""
+            ).trim();
+
+            if (!newName) {
+              return Response.json(
+                {
+                  ok: false,
+                  error: "Missing required parameter: 'newName' is required to rename the company.",
+                },
+                { status: 400 },
+              );
+            }
+
+            const res = await fetch(
+              `${baseUrl}/companies/${targetId}?updateMask.fieldPaths=name&key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ fields: toFirestoreFields({ name: newName }) }),
+              },
+            );
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error?.message || "Failed to rename company");
+            }
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Company successfully renamed from '${currentName}' to '${newName}' (ID: ${targetId})!`,
+                companyId: targetId,
+                previousName: currentName,
+                name: newName,
+              },
+            });
+          }
+
+          // 5c. ARCHIVE COMPANY
+          if (action === "archive_company") {
+            const listRes = await fetch(
+              `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+            );
+            const listData = await listRes.json();
+            const allDocs = listData.documents || [];
+
+            let targetId = params.id || params.companyId;
+            let currentName = "";
+            let isMain = false;
+
+            const searchLookupName = (params.name || params.companyName || "").trim().toLowerCase();
+
+            if (targetId) {
+              const docById = allDocs.find((d: any) => d.name.split("/").pop() === targetId);
+              if (docById) {
+                const fields = fromFirestoreFields(docById.fields);
+                currentName = fields.name || targetId;
+                isMain = Boolean(fields.isMain || targetId === "default");
+              }
+            } else if (searchLookupName) {
+              const docByName = allDocs.find((d: any) => {
+                const id = d.name.split("/").pop();
+                const fields = fromFirestoreFields(d.fields);
+                return (
+                  id?.toLowerCase() === searchLookupName ||
+                  (fields.name || "").toLowerCase() === searchLookupName ||
+                  (fields.code || "").toLowerCase() === searchLookupName
+                );
+              });
+              if (docByName) {
+                targetId = docByName.name.split("/").pop();
+                const fields = fromFirestoreFields(docByName.fields);
+                currentName = fields.name || targetId;
+                isMain = Boolean(fields.isMain || targetId === "default");
+              }
+            }
+
+            if (!targetId) {
+              return Response.json({ ok: false, error: "Company not found." }, { status: 404 });
+            }
+            if (isMain || targetId === "default") {
+              return Response.json(
+                { ok: false, error: "The main company cannot be archived." },
+                { status: 400 },
+              );
+            }
+
+            await fetch(
+              `${baseUrl}/companies/${targetId}?updateMask.fieldPaths=archived&updateMask.fieldPaths=status&key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  fields: toFirestoreFields({ archived: true, status: "archived" }),
+                }),
+              },
+            );
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Company '${currentName}' (ID: ${targetId}) has been archived.`,
+                companyId: targetId,
+                archived: true,
+              },
+            });
+          }
+
+          // 5d. UNARCHIVE COMPANY
+          if (action === "unarchive_company") {
+            const listRes = await fetch(
+              `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+            );
+            const listData = await listRes.json();
+            const allDocs = listData.documents || [];
+
+            let targetId = params.id || params.companyId;
+            let currentName = "";
+
+            const searchLookupName = (params.name || params.companyName || "").trim().toLowerCase();
+
+            if (targetId) {
+              const docById = allDocs.find((d: any) => d.name.split("/").pop() === targetId);
+              if (docById) {
+                const fields = fromFirestoreFields(docById.fields);
+                currentName = fields.name || targetId;
+              }
+            } else if (searchLookupName) {
+              const docByName = allDocs.find((d: any) => {
+                const id = d.name.split("/").pop();
+                const fields = fromFirestoreFields(d.fields);
+                return (
+                  id?.toLowerCase() === searchLookupName ||
+                  (fields.name || "").toLowerCase() === searchLookupName ||
+                  (fields.code || "").toLowerCase() === searchLookupName
+                );
+              });
+              if (docByName) {
+                targetId = docByName.name.split("/").pop();
+                const fields = fromFirestoreFields(docByName.fields);
+                currentName = fields.name || targetId;
+              }
+            }
+
+            if (!targetId) {
+              return Response.json({ ok: false, error: "Company not found." }, { status: 404 });
+            }
+
+            await fetch(
+              `${baseUrl}/companies/${targetId}?updateMask.fieldPaths=archived&updateMask.fieldPaths=status&key=${encodeURIComponent(apiKey)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  fields: toFirestoreFields({ archived: false, status: "active" }),
+                }),
+              },
+            );
+
+            return Response.json({
+              ok: true,
+              result: {
+                message: `Company '${currentName}' (ID: ${targetId}) has been restored and unarchived.`,
+                companyId: targetId,
+                archived: false,
               },
             });
           }

@@ -31,6 +31,10 @@ export interface Company {
   punchOutGraceMinutes?: number;
   punchOutReminderMinutes?: number;
   timezone?: string;
+  breakAllowanceMinutes?: number;
+  maxDailyBreaks?: number;
+  archived?: boolean;
+  status?: "active" | "archived";
   isMain?: boolean;
   createdAt?: string;
 }

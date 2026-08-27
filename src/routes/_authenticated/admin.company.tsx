@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import {
+  Archive,
+  ArchiveRestore,
   Building2,
   Calendar,
   Check,
@@ -61,6 +63,7 @@ function CompanyPage() {
   const [busy, setBusy] = useState(false);
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [companyFilterTab, setCompanyFilterTab] = useState<"active" | "archived" | "all">("active");
 
   const [newHoliday, setNewHoliday] = useState("");
   const [holidayName, setHolidayName] = useState("");
@@ -172,6 +175,29 @@ function CompanyPage() {
       toast.error((error as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toggleArchiveCompany(c: Company) {
+    if (c.id === COMPANY_ID || c.isMain) {
+      toast.error("The main company cannot be archived.");
+      return;
+    }
+    if (!c.id) return;
+    const isArchived = Boolean(c.archived || c.status === "archived");
+    const nextArchived = !isArchived;
+    try {
+      await updateDoc(doc(db(), "companies", c.id), {
+        archived: nextArchived,
+        status: nextArchived ? "archived" : "active",
+      });
+      toast.success(
+        nextArchived
+          ? `Company '${c.name}' has been archived.`
+          : `Company '${c.name}' has been unarchived and restored!`,
+      );
+    } catch (err: any) {
+      toast.error("Failed to update company: " + err.message);
     }
   }
 
@@ -447,67 +473,173 @@ function CompanyPage() {
 
       {/* Companies List */}
       <div className="rounded-xl border bg-card p-5 space-y-4">
-        <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-muted-foreground" /> Active Companies (
-          {companies.length})
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+          <div>
+            <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-muted-foreground" /> Registered Companies (
+              {companies.length})
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Manage client companies, logos, working days, and status.
+            </p>
+          </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {companies.map((c) => {
-            const compDepts = departments.filter(
-              (d) => d.companyId === c.id || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
-            ).length;
-            const compEmps = employees.filter(
-              (e) =>
-                e.companyId === c.id ||
-                e.companyIds?.includes(c.id || "") ||
-                (!e.companyId && (c.id === COMPANY_ID || c.isMain)),
-            ).length;
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setCompanyFilterTab("active")}
+              className={`px-3 py-1 rounded-md transition-colors ${
+                companyFilterTab === "active"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Active ({companies.filter((c) => !c.archived && c.status !== "archived").length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCompanyFilterTab("archived")}
+              className={`px-3 py-1 rounded-md transition-colors ${
+                companyFilterTab === "archived"
+                  ? "bg-background text-amber-600 dark:text-amber-400 font-bold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Archived ({companies.filter((c) => Boolean(c.archived || c.status === "archived")).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCompanyFilterTab("all")}
+              className={`px-3 py-1 rounded-md transition-colors ${
+                companyFilterTab === "all"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All ({companies.length})
+            </button>
+          </div>
+        </div>
 
-            return (
-              <div
-                key={c.id || c.name}
-                className="flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/40"
-              >
-                <div className="min-w-0">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-foreground truncate block">
-                        {c.name}
-                      </span>
-                      {(c.id === COMPANY_ID || c.isMain) && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-primary/15 text-primary border border-primary/20 shrink-0">
-                          Main
-                        </span>
+        {companies.filter((c) => {
+          const isArchived = Boolean(c.archived || c.status === "archived");
+          if (companyFilterTab === "active") return !isArchived;
+          if (companyFilterTab === "archived") return isArchived;
+          return true;
+        }).length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            No {companyFilterTab === "archived" ? "archived" : "active"} companies found.
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {companies
+              .filter((c) => {
+                const isArchived = Boolean(c.archived || c.status === "archived");
+                if (companyFilterTab === "active") return !isArchived;
+                if (companyFilterTab === "archived") return isArchived;
+                return true;
+              })
+              .map((c) => {
+                const compDepts = departments.filter(
+                  (d) =>
+                    d.companyId === c.id || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
+                ).length;
+                const compEmps = employees.filter(
+                  (e) =>
+                    e.companyId === c.id ||
+                    e.companyIds?.includes(c.id || "") ||
+                    (!e.companyId && (c.id === COMPANY_ID || c.isMain)),
+                ).length;
+                const isArchived = Boolean(c.archived || c.status === "archived");
+                const isMainCompany = c.id === COMPANY_ID || c.isMain;
+
+                return (
+                  <div
+                    key={c.id || c.name}
+                    className={`flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors ${
+                      isArchived
+                        ? "bg-muted/20 border-dashed opacity-80"
+                        : "hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <img
+                        src={c.logoUrl || DEFAULT_LOGO}
+                        alt={c.name}
+                        className="h-9 w-9 rounded-lg border bg-background object-contain shrink-0 mt-0.5"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = DEFAULT_LOGO;
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-sm text-foreground truncate block">
+                            {c.name}
+                          </span>
+                          {isMainCompany && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-primary/15 text-primary border border-primary/20 shrink-0">
+                              Main
+                            </span>
+                          )}
+                          {isArchived && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 shrink-0">
+                              Archived
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {compEmps} Employees · {compDepts} Departments
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                          Shift: {c.defaultShiftHours || 8}h · Grace: {c.lateGraceMinutes || 5}m
+                        </div>
+                        <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
+                          <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCompany(c);
+                          setShowAddCompanyModal(true);
+                        }}
+                        className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors"
+                      >
+                        Edit
+                      </button>
+
+                      {!isMainCompany && (
+                        <button
+                          type="button"
+                          onClick={() => toggleArchiveCompany(c)}
+                          className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors flex items-center gap-1 ${
+                            isArchived
+                              ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                              : "text-muted-foreground hover:text-amber-600 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
+                          }`}
+                          title={isArchived ? "Restore / Unarchive Company" : "Archive Company"}
+                        >
+                          {isArchived ? (
+                            <>
+                              <ArchiveRestore className="h-3 w-3" /> Unarchive
+                            </>
+                          ) : (
+                            <>
+                              <Archive className="h-3 w-3" /> Archive
+                            </>
+                          )}
+                        </button>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {compEmps} Employees · {compDepts} Departments
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-                      Shift: {c.defaultShiftHours || 8}h · Late grace: {c.lateGraceMinutes || 5}m ·
-                      Punch-out grace: {c.punchOutGraceMinutes ?? 20}m
-                    </div>
-                    <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
-                      <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
-                    </div>
                   </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingCompany(c);
-                    setShowAddCompanyModal(true);
-                  }}
-                  className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors shrink-0"
-                >
-                  Edit
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
@@ -1071,7 +1203,11 @@ function CompanyModal({
   const [workingDays, setWorkingDays] = useState<number[]>(
     companyToEdit?.workingDays ?? [0, 1, 2, 3, 4, 5],
   );
+  const [archived, setArchived] = useState<boolean>(
+    Boolean(companyToEdit?.archived || companyToEdit?.status === "archived"),
+  );
   const [busy, setBusy] = useState(false);
+  const isMain = companyToEdit?.id === COMPANY_ID || companyToEdit?.isMain;
 
   async function handleSaveCompany(e: React.FormEvent) {
     e.preventDefault();
@@ -1091,6 +1227,8 @@ function CompanyModal({
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
+          archived: isMain ? false : archived,
+          status: isMain || !archived ? "active" : "archived",
         });
         toast.success(`Updated ${name}`);
       } else {
@@ -1106,6 +1244,8 @@ function CompanyModal({
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           holidays: [],
           isMain: false,
+          archived: false,
+          status: "active",
           createdAt: new Date().toISOString(),
         });
         toast.success(`Created company ${name}`);
@@ -1169,6 +1309,9 @@ function CompanyModal({
                 src={logoUrl}
                 alt="Preview"
                 className="h-8 w-8 rounded-full border object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = DEFAULT_LOGO;
+                }}
               />
             </div>
           )}
@@ -1226,6 +1369,25 @@ function CompanyModal({
             compact
           />
         </div>
+
+        {companyToEdit && !isMain && (
+          <div className="rounded-lg border bg-muted/30 p-3 pt-2">
+            <label className="flex items-center justify-between cursor-pointer">
+              <div>
+                <span className="text-xs font-bold text-foreground block">Archive Company</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Hide this company from active dropdowns and company switcher
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={archived}
+                onChange={(e) => setArchived(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary"
+              />
+            </label>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-3 border-t">
           <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
