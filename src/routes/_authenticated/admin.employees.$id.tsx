@@ -902,9 +902,9 @@ function EmployeeDetail() {
                   <td className="p-3.5 font-mono text-xs">
                     {row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—"}
                   </td>
-                  <td className="p-3.5 font-black text-amber-700">{row.minutesLate} min</td>
+                  <td className="p-3.5 font-black text-rose-600 dark:text-rose-400">{row.minutesLate} min</td>
                   <td className="p-3.5">
-                    <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
+                    <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
                       {row.isAutoPunchOut ? "Late · auto out" : "Late arrival"}
                     </span>
                   </td>
@@ -1045,14 +1045,14 @@ function EmployeeDetail() {
                   <td className="p-3.5">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold shadow-2xs ${
                           row.status === "Missing punch out"
-                            ? "bg-rose-500/10 text-rose-700"
+                            ? "bg-rose-600 text-white"
                             : row.minutesLate
-                              ? "bg-amber-500/10 text-amber-700"
+                              ? "bg-rose-600 text-white"
                               : row.isAutoPunchOut
-                                ? "bg-sky-500/10 text-sky-700"
-                                : "bg-emerald-500/10 text-emerald-700"
+                                ? "bg-sky-600 text-white"
+                                : "bg-emerald-600 text-white"
                         }`}
                       >
                         {row.minutesLate ? `Late ${row.minutesLate} min` : row.status}

@@ -110,11 +110,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const matchDoc = querySnap.docs[0];
           const empData = matchDoc.data();
           const updatedEmp = {
+            id: matchDoc.id,
             ...empData,
             email: userEmail,
             authUid: u.uid,
             photoUrl: authPhotoUrl || resolveProfilePhoto(empData as Omit<Employee, "id">) || "",
           };
+          setEmployee(updatedEmp as Employee);
         } else {
           setEmployee(null);
         }
@@ -126,6 +128,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAdmin(isEmailAdmin);
     }
   }
+
+  // Real-time synchronization of employee document (instant settings updates)
+  useEffect(() => {
+    if (!user || !employee?.id) return;
+    const unsub = onSnapshot(doc(db(), "employees", employee.id), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Omit<Employee, "id">;
+        setEmployee((prev) => (prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data }));
+      }
+    });
+    return unsub;
+  }, [user?.uid, employee?.id]);
 
   useEffect(() => {
     if (!firebaseConfigured) {

@@ -1,4 +1,4 @@
-export type Status = "in" | "out" | "leave" | "holiday";
+export type Status = "in" | "out" | "leave" | "holiday" | "break";
 
 export function StatusDot({ status }: { status: Status }) {
   const map = {
@@ -6,6 +6,7 @@ export function StatusDot({ status }: { status: Status }) {
     out: { color: "var(--status-out)", label: "Punched out" },
     leave: { color: "var(--status-leave)", label: "On leave" },
     holiday: { color: "#9333ea", label: "Holiday" },
+    break: { color: "#f59e0b", label: "On break" },
   }[status];
   return (
     <span

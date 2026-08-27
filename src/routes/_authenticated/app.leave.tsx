@@ -793,9 +793,9 @@ function LeavePage() {
 
 function StatusIcon({ status }: { status: LeaveRequest["status"] }) {
   const style = {
-    pending: "bg-amber-500/10 text-amber-700",
-    approved: "bg-emerald-500/10 text-emerald-700",
-    rejected: "bg-rose-500/10 text-rose-700",
+    pending: "bg-amber-500 text-slate-950 shadow-2xs",
+    approved: "bg-emerald-600 text-white shadow-2xs",
+    rejected: "bg-rose-600 text-white shadow-2xs",
   }[status];
   const Icon = status === "approved" ? CheckCircle2 : status === "rejected" ? XCircle : Clock3;
   return (
@@ -815,12 +815,12 @@ function ActivityCount({
   tone: "amber" | "emerald" | "rose";
 }) {
   const style = {
-    amber: "border-amber-500/20 bg-amber-500/10 text-amber-700",
-    emerald: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700",
-    rose: "border-rose-500/20 bg-rose-500/10 text-rose-700",
+    amber: "bg-amber-500 text-slate-950 font-bold shadow-2xs",
+    emerald: "bg-emerald-600 text-white font-bold shadow-2xs",
+    rose: "bg-rose-600 text-white font-bold shadow-2xs",
   }[tone];
   return (
-    <span className={`rounded-full border px-2.5 py-1 ${style}`}>
+    <span className={`rounded-full px-2.5 py-0.5 text-xs ${style}`}>
       {count} {label}
     </span>
   );

@@ -3,7 +3,7 @@ import type { Timestamp } from "firebase/firestore";
 export const DEFAULT_LOGO =
   "https://ironbrij.com.au/wp-content/uploads/2024/11/ironbrij-logo-circle-blue.jpg";
 
-export type PunchType = "in" | "out" | "extra_in" | "extra_out";
+export type PunchType = "in" | "out" | "extra_in" | "extra_out" | "lunch_start" | "lunch_end";
 
 export type HolidayTargetType = "all" | "companies" | "departments" | "states" | "employees";
 
@@ -84,6 +84,8 @@ export interface Employee {
   reportingRequirement?: ReportingRequirement;
   workingDays?: number[]; // Custom per-employee working days 0=Sun..6=Sat
   requiredWorkMinutes?: number; // Legacy/default requirement; company membership overrides this
+  breakAllowanceMinutes?: number; // Break duration in minutes (e.g., 30, 40, 60, 90; default 30)
+  maxDailyBreaks?: number; // Number of breaks allowed per day (e.g., 1, 2, 3; default 1)
 }
 
 export interface CompanyMembership {
@@ -99,6 +101,8 @@ export interface CompanyMembership {
   shiftTimezone?: string;
   workingDays?: number[];
   departmentId?: string;
+  breakAllowanceMinutes?: number;
+  maxDailyBreaks?: number;
   joinedAt?: string;
   updatedAt?: string;
 }

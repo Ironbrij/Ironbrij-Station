@@ -167,11 +167,26 @@ function EmployeesListPage() {
     };
   }, []);
 
-  function getPunchStatus(empId: string): "in" | "out" {
-    const userPunches = punches.filter((p) => p.employeeId === empId && p.timestamp);
-    if (userPunches.length === 0) return "out";
-    userPunches.sort((a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0));
-    return userPunches[userPunches.length - 1].type === "in" ? "in" : "out";
+  function getPunchStatus(empId: string, authUid?: string): { status: "in" | "out" | "break"; elapsedMinutes: number } {
+    const userPunches = punches.filter(
+      (p) =>
+        (p.employeeId === empId ||
+          (authUid && p.employeeId === authUid) ||
+          p.userId === empId ||
+          (authUid && p.userId === authUid)) &&
+        p.timestamp,
+    );
+    if (userPunches.length === 0) return { status: "out", elapsedMinutes: 0 };
+    userPunches.sort((a, b) => toMillis(a.timestamp || 0) - toMillis(b.timestamp || 0));
+    const last = userPunches[userPunches.length - 1];
+    const lastType = last.type;
+    const lastTime = toMillis(last.timestamp || 0);
+    const elapsedMinutes = Math.max(1, Math.floor((Date.now() - lastTime) / 60000));
+    if (lastType === "lunch_start") return { status: "break", elapsedMinutes };
+    return {
+      status: lastType === "in" || lastType === "extra_in" || lastType === "lunch_end" ? "in" : "out",
+      elapsedMinutes,
+    };
   }
 
   async function handleCopyInviteLink(emp: Employee) {
@@ -376,28 +391,48 @@ function EmployeesListPage() {
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap">
-                      {e.inviteStatus === "pending" ? (
-                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                          Pending Invite
-                        </span>
-                      ) : e.status === "inactive" ? (
-                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                          Suspended
-                        </span>
-                      ) : getPunchStatus(e.id) === "in" ? (
-                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Active (Punched In)
-                        </span>
-                      ) : (
-                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          Off Shift (Punched Out)
-                        </span>
-                      )}
+                      {(() => {
+                        const punchInfo = getPunchStatus(e.id, e.authUid);
+                        if (e.inviteStatus === "pending") {
+                          return (
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-2xs">
+                              Pending Invite
+                            </span>
+                          );
+                        }
+                        if (e.status === "inactive") {
+                          return (
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-600 text-white shadow-2xs">
+                              Suspended
+                            </span>
+                          );
+                        }
+                        if (punchInfo.status === "break") {
+                          return (
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-2xs inline-flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-950 animate-pulse" />
+                              On Break ({punchInfo.elapsedMinutes}m)
+                            </span>
+                          );
+                        }
+                        if (punchInfo.status === "in") {
+                          return (
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs inline-flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                              Active (Punched In)
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600">
+                            Off Shift (Punched Out)
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-xs whitespace-nowrap">
                       {e.inviteStatus === "accepted" ? (
-                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">Accepted</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">Accepted</span>
                       ) : (
                         <button
                           onClick={() => handleCopyInviteLink(e)}
@@ -412,14 +447,14 @@ function EmployeesListPage() {
                         <button
                           type="button"
                           onClick={() => setEmpToPromote(e)}
-                          className="btn-lift text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-600 hover:text-white font-bold transition-colors shadow-2xs"
+                          className="btn-lift text-xs px-3 py-1 rounded-md border border-border bg-card hover:bg-accent text-foreground font-semibold transition-colors shadow-2xs"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => setEmpToDelete(e)}
-                          className="btn-lift text-xs px-2.5 py-1 rounded-md border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white font-bold transition-colors shadow-2xs"
+                          className="btn-lift text-xs px-3 py-1 rounded-md border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white font-semibold transition-colors shadow-2xs"
                         >
                           Remove
                         </button>
@@ -999,6 +1034,49 @@ function CompanyMembershipSettings({
                   compact
                 />
               )}
+            </div>
+
+            {/* Break Allowance & Limits */}
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t mt-2">
+              <div>
+                <label className="text-xs font-semibold text-foreground">
+                  Break Allowance
+                </label>
+                <select
+                  value={membership.breakAllowanceMinutes ?? 30}
+                  onChange={(e) =>
+                    update(companyId, { breakAllowanceMinutes: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
+                >
+                  <option value={0}>N/A (No Lunch Break)</option>
+                  <option value={15}>15 Minutes</option>
+                  <option value={30}>30 Minutes (Standard Default)</option>
+                  <option value={40}>40 Minutes</option>
+                  <option value={45}>45 Minutes</option>
+                  <option value={60}>60 Minutes (1 Hour)</option>
+                  <option value={90}>90 Minutes (1.5 Hours)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-foreground">
+                  Daily Break Limit
+                </label>
+                <select
+                  value={membership.maxDailyBreaks ?? 1}
+                  onChange={(e) =>
+                    update(companyId, { maxDailyBreaks: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
+                >
+                  <option value={0}>0 (No Breaks Allowed / N/A)</option>
+                  <option value={1}>1 Break / Shift (Default)</option>
+                  <option value={2}>2 Breaks / Shift</option>
+                  <option value={3}>3 Breaks / Shift</option>
+                  <option value={5}>Flexible / Multiple (5 Max)</option>
+                </select>
+              </div>
             </div>
           </div>
         );

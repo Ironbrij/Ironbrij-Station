@@ -206,9 +206,39 @@ export function buildCompanyMembership(
     shiftEndTime,
     shiftTimezone: input.shiftTimezone || "Australia/Sydney",
     workingDays: resolvedWorkingDays,
-    departmentId: input.departmentId || "",
+    breakAllowanceMinutes: input.breakAllowanceMinutes ?? 30,
+    maxDailyBreaks: input.maxDailyBreaks ?? 1,
     joinedAt: input.joinedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  };
+}
+
+export function getEmployeeBreakSettings(
+  employee: Employee | null | undefined,
+  companyId?: string,
+): { allowanceMinutes: number; maxDailyBreaks: number } {
+  if (!employee) return { allowanceMinutes: 30, maxDailyBreaks: 1 };
+  const membership = companyId ? employee.companyMemberships?.[companyId] : undefined;
+  const rawAllowance =
+    membership?.breakAllowanceMinutes !== undefined
+      ? membership.breakAllowanceMinutes
+      : employee.breakAllowanceMinutes !== undefined
+        ? employee.breakAllowanceMinutes
+        : 30;
+  const rawMaxBreaks =
+    membership?.maxDailyBreaks !== undefined
+      ? membership.maxDailyBreaks
+      : employee.maxDailyBreaks !== undefined
+        ? employee.maxDailyBreaks
+        : 1;
+
+  if (rawAllowance === 0 || rawMaxBreaks === 0) {
+    return { allowanceMinutes: 0, maxDailyBreaks: 0 };
+  }
+
+  return {
+    allowanceMinutes: Math.max(5, rawAllowance),
+    maxDailyBreaks: Math.max(1, rawMaxBreaks),
   };
 }
 

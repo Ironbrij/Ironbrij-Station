@@ -283,6 +283,20 @@ function AdminHome() {
           })} (${targetTz.code})`
         : timeStr;
 
+    if (status.isOnLunch) {
+      const elapsedBreakMinutes = latestDate
+        ? Math.max(0, Math.floor((now.getTime() - latestDate.getTime()) / 60000))
+        : 0;
+      return {
+        type: "break" as const,
+        label: elapsedBreakMinutes > 0 ? `On break (${elapsedBreakMinutes}m)` : "On break (1m)",
+        isLate: false,
+        minutesLate: 0,
+        punchTimeStr: timeStr,
+        isAutoPunchOut: false,
+      };
+    }
+
     if (status.isPunchedIn) {
       return {
         type: "in" as const,
@@ -320,9 +334,37 @@ function AdminHome() {
               companies.find((c) => c.id === filterCompanyId)?.isMain));
         if (!matchesComp) return false;
       }
+      if (filterStatus !== "all") {
+        const allMembers = employees.filter(
+          (e) => e.deptId === d.id && e.status === "active" && e.inviteStatus === "accepted",
+        );
+        const matchingMembers = allMembers.filter((m) => {
+          const status = getEmpTodayStatus(m);
+          if (filterStatus === "in") return status.type === "in";
+          if (filterStatus === "break") return status.type === "break";
+          if (filterStatus === "out") return status.type === "out";
+          if (filterStatus === "holiday") return status.type === "holiday";
+          if (filterStatus === "leave") return status.type === "leave";
+          if (filterStatus === "late") return status.isLate;
+          return true;
+        });
+        if (matchingMembers.length === 0) return false;
+      }
       return true;
     });
-  }, [departments, filterDeptId, filterCompanyId, companies]);
+  }, [
+    departments,
+    filterDeptId,
+    filterCompanyId,
+    companies,
+    filterStatus,
+    employees,
+    empTodayPunches,
+    now,
+    leaves,
+    company,
+    timezoneMode,
+  ]);
 
   const todayActivityFeed = useMemo(() => {
     return todayPunches
@@ -406,10 +448,11 @@ function AdminHome() {
               className="bg-transparent outline-none font-bold text-primary cursor-pointer"
             >
               <option value="all">All Statuses</option>
+              <option value="in">🟢 Punched In / Working</option>
+              <option value="break">🟡 On Break / Lunch</option>
+              <option value="out">🔴 Punched Out / Off</option>
               <option value="holiday">Holiday</option>
-              <option value="leave">Leave / Half-day / Break</option>
-              <option value="in">🟢 Punched In Today</option>
-              <option value="out">🔴 Punched Out Today</option>
+              <option value="leave">On Leave</option>
               <option value="late">⚠️ Late Arrivals Today</option>
             </select>
           </div>
@@ -454,12 +497,8 @@ function AdminHome() {
 
         <div className="grid gap-5 grid-cols-1 md:grid-cols-2 lg:grid-cols-2">
           {filteredDepartments.length === 0 && (
-            <div className="col-span-full rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground font-medium">
-              No departments found.{" "}
-              <Link to="/admin/departments" className="text-primary underline font-bold">
-                Create Departments
-              </Link>
-              .
+            <div className="col-span-full rounded-2xl border border-dashed bg-card/60 p-10 text-center text-sm text-muted-foreground font-medium">
+              No departments or team members match the selected filter.
             </div>
           )}
 
@@ -472,6 +511,7 @@ function AdminHome() {
             const filteredMembers = allMembers.filter((m) => {
               const status = getEmpTodayStatus(m);
               if (filterStatus === "in") return status.type === "in";
+              if (filterStatus === "break") return status.type === "break";
               if (filterStatus === "out") return status.type === "out";
               if (filterStatus === "holiday") return status.type === "holiday";
               if (filterStatus === "leave") return status.type === "leave";
@@ -481,6 +521,9 @@ function AdminHome() {
 
             const punchedInCount = allMembers.filter(
               (m) => getEmpTodayStatus(m).type === "in",
+            ).length;
+            const onBreakCount = allMembers.filter(
+              (m) => getEmpTodayStatus(m).type === "break",
             ).length;
             const lateCount = allMembers.filter((m) => getEmpTodayStatus(m).isLate).length;
             const isExpanded = expandedDeptMap[dept.id] ?? false;
@@ -503,11 +546,18 @@ function AdminHome() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                      {punchedInCount} Active In
-                    </span>
+                    {punchedInCount > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-2xs">
+                        {punchedInCount} Active In
+                      </span>
+                    )}
+                    {onBreakCount > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-slate-950 shadow-2xs">
+                        {onBreakCount} On Break
+                      </span>
+                    )}
                     {lateCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white shadow-2xs">
                         {lateCount} Late
                       </span>
                     )}
@@ -649,20 +699,26 @@ function AdminHome() {
                           </div>
 
                           <div className="text-right shrink-0">
-                            <span className="font-medium text-xs block text-slate-700 dark:text-slate-300">
+                            <span
+                              className={`text-xs block ${
+                                status.type === "break"
+                                  ? "font-bold text-amber-600 dark:text-amber-400"
+                                  : "font-medium text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
                               {status.label}
                             </span>
                             {status.isAutoPunchOut && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-sky-700 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-sky-700 dark:text-sky-300 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded mt-0.5">
                                 <Clock className="h-3 w-3" /> Automatic
                               </span>
                             )}
                             {status.isLate && (
                               <span
-                                className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded-full shadow-2xs mt-0.5"
                                 title={`Shift started at ${shiftSummary.localStart} ${shiftSummary.localCode}`}
                               >
-                                <AlertTriangle className="h-3 w-3" /> {status.minutesLate}m Late
+                                <AlertTriangle className="h-3 w-3 text-white" /> {status.minutesLate}m Late
                               </span>
                             )}
                           </div>
@@ -772,7 +828,26 @@ function AdminHome() {
                   year: "numeric",
                 }).format(toDate(p.timestamp) ?? new Date())
               : "";
+            const isLunchStart = p.type === "lunch_start";
+            const isLunchEnd = p.type === "lunch_end";
             const isPunchIn = p.type === "in" || p.type === "extra_in";
+            const dotStatus: "in" | "out" | "leave" | "holiday" | "break" = isLunchStart
+              ? "break"
+              : isLunchEnd
+                ? "in"
+                : isPunchIn
+                  ? "in"
+                  : "out";
+
+            const punchTypeLabel = isLunchStart
+              ? "Started Break"
+              : isLunchEnd
+                ? "Returned from Break"
+                : isPunchIn
+                  ? "Punched IN"
+                  : p.isAuto
+                    ? "AUTO PUNCHED OUT"
+                    : "Punched OUT";
 
             return (
               <li
@@ -780,7 +855,7 @@ function AdminHome() {
                 className="p-3.5 flex items-center justify-between hover:bg-secondary/30 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <StatusDot status={isPunchIn ? "in" : "out"} />
+                  <StatusDot status={dotStatus} />
                   <div>
                     <div className="font-bold text-sm text-foreground flex items-center gap-1.5">
                       {emp ? (
@@ -799,10 +874,18 @@ function AdminHome() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        {isPunchIn ? "Punched IN" : p.isAuto ? "AUTO PUNCHED OUT" : "Punched OUT"}
+                      <span
+                        className={`text-xs font-semibold ${
+                          isLunchStart
+                            ? "text-amber-700 dark:text-amber-300 font-bold"
+                            : isLunchEnd
+                              ? "text-emerald-700 dark:text-emerald-300 font-bold"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {punchTypeLabel}
                       </span>
-                      {p.isAuto && !isPunchIn && (
+                      {p.isAuto && !isPunchIn && !isLunchStart && !isLunchEnd && (
                         <span className="rounded border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-sky-700">
                           Automatic
                         </span>

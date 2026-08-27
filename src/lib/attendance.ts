@@ -415,9 +415,12 @@ export function computeRegularWorkedMsForDay(
   for (const punch of sorted) {
     const timestamp = toMillis(punch.timestamp);
     if (!timestamp) continue;
-    if (punch.type === "in" || punch.type === "extra_in") {
+    if (punch.type === "in" || punch.type === "extra_in" || punch.type === "lunch_end") {
       openIn = timestamp;
-    } else if ((punch.type === "out" || punch.type === "extra_out") && openIn !== null) {
+    } else if (
+      (punch.type === "out" || punch.type === "extra_out" || punch.type === "lunch_start") &&
+      openIn !== null
+    ) {
       workedMs += Math.max(0, timestamp - openIn);
       openIn = null;
     }
@@ -578,7 +581,12 @@ export function getLiveAttendanceStatus(
     .filter((punch) => punch.timestamp)
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   const latest = sorted.at(-1);
-  const isPunchedIn = latest?.type === "in" || latest?.type === "extra_in";
+  const isPunchedIn =
+    latest?.type === "in" ||
+    latest?.type === "extra_in" ||
+    latest?.type === "lunch_start" ||
+    latest?.type === "lunch_end";
+  const isOnLunch = latest?.type === "lunch_start";
   const firstIn = getFirstRegularPunchInForShift(employee, sorted, now);
   const shift = getEmployeeShiftWindow(employee, now);
   const [shiftYear, shiftMonth, shiftDay] = shift.dateKey.split("-").map(Number);
@@ -609,6 +617,7 @@ export function getLiveAttendanceStatus(
     latest,
     firstIn,
     isPunchedIn,
+    isOnLunch,
     isLate: lateness?.isLate ?? isMissingLate,
     minutesLate: lateness?.minutes ?? (isMissingLate ? missingMinutes : 0),
     isEarly,

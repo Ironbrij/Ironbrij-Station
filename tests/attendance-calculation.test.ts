@@ -5,6 +5,7 @@ import {
   isPunchOutReminderDue,
 } from "../src/lib/attendance-calculation.ts";
 import {
+  computeRegularWorkedMsForDay,
   getEffectiveEmployeeWorkingDays,
   getEmployeeShiftWindow,
   getShiftTimeout,
@@ -270,4 +271,44 @@ test("post-shift overtime sessions count 100% of duration as overtime", () => {
   assert.equal(oneMinSession.overtimeMinutes, 1);
   assert.equal(oneMinSession.status, "complete");
 });
+
+test("lunch break punches pause shift timer and exclude lunch duration from regular worked hours", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+
+  const punches: Punch[] = [
+    {
+      id: "p1",
+      employeeId: emp.id,
+      type: "in",
+      timestamp: { seconds: at("09:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+    },
+    {
+      id: "p2",
+      employeeId: emp.id,
+      type: "lunch_start",
+      timestamp: { seconds: at("12:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+    },
+    {
+      id: "p3",
+      employeeId: emp.id,
+      type: "lunch_end",
+      timestamp: { seconds: at("12:30").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+    },
+  ];
+
+  // At 12:15 (while currently on lunch break): 3 hours (180 mins) worked from 09:00 to 12:00
+  const duringLunchMs = computeRegularWorkedMsForDay(emp, punches, at("12:15"), at("12:15"));
+  assert.equal(duringLunchMs, 3 * 60 * 60 * 1000);
+
+  // At 13:30 (after returning from lunch): 3 hours (09:00-12:00) + 1 hour (12:30-13:30) = 4 hours (240 mins)
+  const afterLunchMs = computeRegularWorkedMsForDay(emp, punches, at("13:30"), at("13:30"));
+  assert.equal(afterLunchMs, 4 * 60 * 60 * 1000);
+});
+
 

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateTotalShiftMinutes,
+  getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
@@ -94,5 +95,36 @@ test("calculateTotalShiftMinutes and getRequiredWorkMinutes respect shift-specif
   assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 1), 180); // Monday
   assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 2), 0); // Tuesday (off day)
   assert.equal(getRequiredWorkMinutes(multiShiftEmployee, null, 4), 180); // Thursday
+});
+
+test("getEmployeeBreakSettings defaults to 30 minutes and 1 break", () => {
+  const defaultSettings = getEmployeeBreakSettings({} as Employee);
+  assert.deepEqual(defaultSettings, { allowanceMinutes: 30, maxDailyBreaks: 1 });
+});
+
+test("getEmployeeBreakSettings handles N/A (0 breaks / 0 minutes)", () => {
+  const noBreakEmp: Employee = {
+    ...employee,
+    breakAllowanceMinutes: 0,
+    maxDailyBreaks: 0,
+  };
+  assert.deepEqual(getEmployeeBreakSettings(noBreakEmp), { allowanceMinutes: 0, maxDailyBreaks: 0 });
+
+  const membershipNoBreakEmp: Employee = {
+    ...employee,
+    companyMemberships: {
+      alpha: { companyId: "alpha", breakAllowanceMinutes: 0, maxDailyBreaks: 0 },
+    },
+  };
+  assert.deepEqual(getEmployeeBreakSettings(membershipNoBreakEmp, "alpha"), { allowanceMinutes: 0, maxDailyBreaks: 0 });
+});
+
+test("getEmployeeBreakSettings handles custom break allowances", () => {
+  const customEmp: Employee = {
+    ...employee,
+    breakAllowanceMinutes: 45,
+    maxDailyBreaks: 2,
+  };
+  assert.deepEqual(getEmployeeBreakSettings(customEmp), { allowanceMinutes: 45, maxDailyBreaks: 2 });
 });
 

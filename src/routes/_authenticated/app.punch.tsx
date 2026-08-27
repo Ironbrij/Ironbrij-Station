@@ -59,16 +59,21 @@ import {
   Send,
   CheckCircle2,
   Sparkles,
+  Utensils,
+  Coffee,
+  Play,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 import {
+  getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getPunchCompanyId,
   getRequiredWorkMinutes,
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
+import { LunchBreakCard } from "@/components/lunch/LunchBreakCard";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -221,6 +226,16 @@ function PunchPage() {
     [employee, companyLeaves, now],
   );
 
+  const todayStr = useMemo(() => {
+    return employee ? zonedDateKey(new Date(now), getEmployeeTimezone(employee)) : "";
+  }, [employee, now]);
+
+  const holiday = useMemo(() => {
+    return employee && todayStr ? getEmployeeHoliday(company, employee, todayStr) : null;
+  }, [company, employee, todayStr]);
+
+  const isHoliday = Boolean(holiday);
+
   // Resolve department name
   const deptName = useMemo(() => {
     if (!employee?.deptId) return "General";
@@ -228,17 +243,74 @@ function PunchPage() {
   }, [depts, employee]);
 
   // Determine punch status strictly based on the latest punch
-  const isPunchedIn = useMemo(() => {
-    if (companyPunches.length === 0) return false;
-    const latest = companyPunches[companyPunches.length - 1];
-    return latest?.type === "in" || latest?.type === "extra_in";
+  const latestCompanyPunch = useMemo(() => {
+    if (companyPunches.length === 0) return null;
+    return companyPunches[companyPunches.length - 1];
   }, [companyPunches]);
+
+  const isPunchedIn = useMemo(() => {
+    return (
+      latestCompanyPunch?.type === "in" ||
+      latestCompanyPunch?.type === "extra_in" ||
+      latestCompanyPunch?.type === "lunch_start" ||
+      latestCompanyPunch?.type === "lunch_end"
+    );
+  }, [latestCompanyPunch]);
+
+  const isOnLunch = useMemo(() => {
+    return latestCompanyPunch?.type === "lunch_start";
+  }, [latestCompanyPunch]);
+
+  const lunchStartTime = useMemo(() => {
+    if (!isOnLunch || !latestCompanyPunch?.timestamp) return null;
+    return toDate(latestCompanyPunch.timestamp);
+  }, [isOnLunch, latestCompanyPunch]);
 
   const lastIn = useMemo(() => {
     if (!isPunchedIn) return null;
-    const latest = companyPunches[companyPunches.length - 1];
-    return toDate(latest?.timestamp);
+    const latestInPunch = [...companyPunches]
+      .reverse()
+      .find((p) => p.type === "in" || p.type === "extra_in");
+    return toDate(latestInPunch?.timestamp);
   }, [companyPunches, isPunchedIn]);
+
+  const breakSettings = useMemo(() => {
+    return getEmployeeBreakSettings(employee, activeCompanyId);
+  }, [employee, activeCompanyId]);
+
+  const todayBreaksCount = useMemo(() => {
+    if (!employee) return 0;
+    const timezone = getShiftTimezone(employee);
+    const todayKey = zonedDateKey(new Date(now), timezone);
+    const todayPunches = companyPunches.filter((p) => {
+      const pDate =
+        p.attendanceDate ||
+        p.date ||
+        (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? new Date(), timezone) : "");
+      return pDate === todayKey;
+    });
+    return todayPunches.filter((p) => p.type === "lunch_start").length;
+  }, [companyPunches, employee, now]);
+
+  const canTakeBreak = useMemo(() => {
+    return (
+      Boolean(isPunchedIn) &&
+      !isOnLunch &&
+      !onLeaveToday &&
+      !isHoliday &&
+      breakSettings.maxDailyBreaks > 0 &&
+      breakSettings.allowanceMinutes > 0 &&
+      todayBreaksCount < breakSettings.maxDailyBreaks
+    );
+  }, [
+    isPunchedIn,
+    isOnLunch,
+    onLeaveToday,
+    isHoliday,
+    todayBreaksCount,
+    breakSettings.maxDailyBreaks,
+    breakSettings.allowanceMinutes,
+  ]);
 
   const attendanceStatus = useMemo(
     () =>
@@ -532,6 +604,73 @@ function PunchPage() {
     }
   }
 
+  async function doLunchPunch(targetType: "lunch_start" | "lunch_end") {
+    if (!employee || !user) return;
+    const latestPunch = companyPunches[companyPunches.length - 1];
+
+    if (
+      targetType === "lunch_start" &&
+      latestPunch?.type !== "in" &&
+      latestPunch?.type !== "extra_in" &&
+      latestPunch?.type !== "lunch_end"
+    ) {
+      toast.error("You must be actively working to start a lunch break.");
+      return;
+    }
+    if (targetType === "lunch_end" && latestPunch?.type !== "lunch_start") {
+      toast.error("You are not currently on a lunch break.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const punchTime = new Date();
+      const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
+      const inPunchDate =
+        latestPunch?.attendanceDate ||
+        latestPunch?.date ||
+        zonedDateKey(toDate(latestPunch?.timestamp) ?? punchTime, getShiftTimezone(employee));
+      const targetAttendanceDate = inPunchDate || punchDate;
+      const schedule = getLiveAttendanceStatus(
+        employee,
+        companyPunches,
+        punchTime,
+        company?.lateGraceMinutes ?? 5,
+        company?.workingDays,
+        getEmployeeHolidayDates(company, employee),
+      );
+
+      await addDoc(collection(db(), "punches"), {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        companyId: activeCompanyId,
+        companyName: company?.name || "Company",
+        date: targetAttendanceDate,
+        attendanceDate: targetAttendanceDate,
+        type: targetType,
+        timestamp: serverTimestamp(),
+        source: "app",
+        scheduledShiftStart: schedule.shift.start.toISOString(),
+        scheduledShiftEnd: schedule.shift.end.toISOString(),
+        shiftTimezone: schedule.shift.timezone,
+        requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+        attendanceStatus: "in_progress",
+        createdAt: new Date().toISOString(),
+      });
+
+      if (targetType === "lunch_start") {
+        toast.success("Break started. Shift timer paused.");
+      } else {
+        toast.success("Returned from break. Shift timer resumed.");
+      }
+    } catch (err) {
+      console.error("Lunch punch failed:", err);
+      toast.error("Failed to update lunch status: " + (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const [showNotepadModal, setShowNotepadModal] = useState<"sod" | "eod" | null>(null);
   const [sodAnswers, setSodAnswers] = useState<Record<string, string>>({});
   const [eodAnswers, setEodAnswers] = useState<Record<string, string>>({});
@@ -706,12 +845,7 @@ function PunchPage() {
     );
   }
 
-  const todayStr = zonedDateKey(new Date(), getEmployeeTimezone(employee));
-  const holiday = getEmployeeHoliday(company, employee, todayStr);
-  const isHoliday = Boolean(holiday);
-
   // Allow viewing page & activities even on holiday
-
   // Allow viewing page & activities even while on leave
 
   return (
@@ -889,20 +1023,36 @@ function PunchPage() {
               <tbody className="divide-y divide-border/60">
                 {recentPunchesList.map((p, idx) => {
                   const dateObj = toDate(p.timestamp) ?? new Date();
+                  const isLunchStart = p.type === "lunch_start";
+                  const isLunchEnd = p.type === "lunch_end";
                   const isPunchIn = p.type === "in" || p.type === "extra_in";
                   const timeStr = formatInTimezone(dateObj, getEmployeeTimezone(employee));
                   const dateStr = format(dateObj, "dd/MM/yyyy");
 
+                  const label = isLunchStart
+                    ? "Break Started"
+                    : isLunchEnd
+                      ? "Break Ended"
+                      : isPunchIn
+                        ? "In"
+                        : "Out";
+
+                  const dotColor = isLunchStart
+                    ? "bg-amber-500"
+                    : isLunchEnd
+                      ? "bg-sky-500"
+                      : isPunchIn
+                        ? "bg-emerald-500"
+                        : "bg-rose-500";
+
                   return (
                     <tr key={p.id || idx} className="hover:bg-accent/40 transition-colors">
                       <td className="py-3 px-2 flex items-center gap-2">
-                        {isPunchIn ? (
-                          <span className="h-3 w-3 rounded-full bg-emerald-500 shrink-0 inline-block shadow-sm" />
-                        ) : (
-                          <span className="h-3 w-3 rounded-full bg-rose-500 shrink-0 inline-block shadow-sm" />
-                        )}
+                        <span
+                          className={`h-3 w-3 rounded-full shrink-0 inline-block shadow-sm ${dotColor}`}
+                        />
                         <span className="text-slate-800 font-semibold text-xs">
-                          {isPunchIn ? "In" : "Out"} at {timeStr} On {dateStr}
+                          {label} at {timeStr} On {dateStr}
                         </span>
                       </td>
                       <td className="py-3 px-2 text-right text-slate-700 font-semibold text-xs">
@@ -929,83 +1079,147 @@ function PunchPage() {
 
         {/* Right Column: Web Punch Card (5 cols) */}
         <div className="order-1 flex flex-col justify-between overflow-hidden rounded-xl border bg-card md:order-2 md:col-span-5">
-          <div className="border-b bg-muted/40 px-5 py-3 text-base font-semibold text-foreground">
-            Web Punch
+          <div className="border-b bg-muted/40 px-5 py-3 text-base font-semibold text-foreground flex items-center justify-between">
+            <span>Web Punch</span>
+            {isOnLunch && (
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1.5 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Break Active
+              </span>
+            )}
           </div>
 
           <div className="p-6 space-y-6 flex-1 flex flex-col justify-center">
-            {/* ----- Current Status ----- */}
-            <div className="space-y-3 text-center">
-              <div className="text-xs font-medium text-muted-foreground">Current status</div>
+            {/* ----- Lunch Break Card when on Lunch ----- */}
+            {isOnLunch && lunchStartTime ? (
+              <div className="my-1">
+                <LunchBreakCard
+                  lunchStartTime={lunchStartTime}
+                  allowedMinutes={breakSettings.allowanceMinutes}
+                  breakNumber={todayBreaksCount}
+                  maxBreaks={breakSettings.maxDailyBreaks}
+                  onEndLunch={() => doLunchPunch("lunch_end")}
+                  loading={busy}
+                />
+              </div>
+            ) : (
+              /* ----- Current Status ----- */
+              <div className="space-y-3 text-center">
+                <div className="text-xs font-medium text-muted-foreground">Current status</div>
 
-              {isHoliday ? (
-                <div className="rounded-lg border bg-muted/40 p-5 text-foreground">
-                  <div className="text-lg font-semibold">Holiday</div>
-                  <div className="text-xs mt-1">{holiday?.name || "Company Holiday"}</div>
-                </div>
-              ) : isPunchedIn && lastIn ? (
-                <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
-                  <div className="text-lg font-semibold">
-                    {lastIn && attendanceStatus?.shift?.start && lastIn.getTime() < attendanceStatus.shift.start.getTime() && new Date().getTime() < attendanceStatus.shift.start.getTime()
-                      ? `Early start · Working since ${format(lastIn, "h:mm a")}`
-                      : currentSessionCalculation?.missingPunchOut
-                        ? "Shift completed"
-                        : `Working since ${format(lastIn, "h:mm a")}`}
+                {isHoliday ? (
+                  <div className="rounded-lg border bg-muted/40 p-5 text-foreground">
+                    <div className="text-lg font-semibold">Holiday</div>
+                    <div className="text-xs mt-1">{holiday?.name || "Company Holiday"}</div>
                   </div>
-                  <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
-                  <div className="mt-1 text-sm font-medium text-emerald-900">
-                    {company?.name || "Company"} · {deptName}
+                ) : isPunchedIn && lastIn ? (
+                  <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
+                    <div className="text-lg font-semibold">
+                      {lastIn &&
+                      attendanceStatus?.shift?.start &&
+                      lastIn.getTime() < attendanceStatus.shift.start.getTime() &&
+                      new Date().getTime() < attendanceStatus.shift.start.getTime()
+                        ? `Early start · Working since ${format(lastIn, "h:mm a")}`
+                        : currentSessionCalculation?.missingPunchOut
+                          ? "Shift completed"
+                          : `Working since ${format(lastIn, "h:mm a")}`}
+                    </div>
+                    <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
+                    <div className="mt-1 text-sm font-medium text-emerald-900">
+                      {company?.name || "Company"} · {deptName}
+                    </div>
+                    {lastIn &&
+                      attendanceStatus?.shift?.start &&
+                      lastIn.getTime() < attendanceStatus.shift.start.getTime() && (
+                        <div className="mt-2 text-xs font-semibold text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded">
+                          Early Clock-In: Started {format(lastIn, "h:mm a")} before scheduled shift (
+                          {format(attendanceStatus.shift.start, "h:mm a")}). Early start overtime
+                          request is submitted for admin review.
+                        </div>
+                      )}
+                    {currentSessionCalculation?.missingPunchOut && (
+                      <div className="mt-2 text-xs font-semibold text-sky-800 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded">
+                        Scheduled shift duration has completed. SavyTimes automatically preserves
+                        regular scheduled hours. Overtime worked is tracked for admin approval.
+                      </div>
+                    )}
                   </div>
-                  {lastIn && attendanceStatus?.shift?.start && lastIn.getTime() < attendanceStatus.shift.start.getTime() && (
-                    <div className="mt-2 text-xs font-semibold text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded">
-                      Early Clock-In: Started {format(lastIn, "h:mm a")} before scheduled shift ({format(attendanceStatus.shift.start, "h:mm a")}). Early start overtime request is submitted for admin review.
-                    </div>
-                  )}
-                  {currentSessionCalculation?.missingPunchOut && (
-                    <div className="mt-2 text-xs font-semibold text-sky-800 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded">
-                      Scheduled shift duration has completed. SavyTimes automatically preserves regular scheduled hours. Overtime worked is tracked for admin approval.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
-                  <div className="text-lg font-semibold">Not working</div>
-                  <div className="text-sm text-muted-foreground">Ready to start shift</div>
-                  <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
+                ) : (
+                  <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
+                    <div className="text-lg font-semibold">Not working</div>
+                    <div className="text-sm text-muted-foreground">Ready to start shift</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ----- Punch Action Buttons ----- */}
+            <div className="space-y-3">
+              {!isOnLunch && (
+                <div className="text-xs font-medium text-muted-foreground">
+                  {isPunchedIn
+                    ? "End the current shift or take break"
+                    : "Begin today’s shift"}
                 </div>
               )}
-            </div>
 
-            {/* ----- Punch Action Button ----- */}
-            <div className="space-y-3">
-              <div className="text-xs font-medium text-muted-foreground">
-                {isPunchedIn ? "End the current shift" : "Begin today’s shift"}
-              </div>
+              {isOnLunch ? (
+                <button
+                  disabled={busy}
+                  onClick={handlePunchClick}
+                  className="w-full rounded-xl border border-rose-500/25 bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 font-bold py-2.5 text-xs transition-colors"
+                >
+                  Stop Work (End Shift Directly)
+                </button>
+              ) : (
+                <div className="space-y-2.5">
+                  <button
+                    disabled={busy || (!isPunchedIn && (onLeaveToday || isHoliday))}
+                    onClick={handlePunchClick}
+                    className={`w-full rounded-xl px-5 py-3 text-base font-bold text-white shadow-md transition-all ${
+                      !isPunchedIn && (onLeaveToday || isHoliday)
+                        ? "cursor-not-allowed bg-slate-400 opacity-70"
+                        : isPunchedIn
+                          ? "bg-rose-600 hover:bg-rose-700"
+                          : "bg-primary hover:bg-primary/90"
+                    }`}
+                  >
+                    {isPunchedIn
+                      ? "Stop Work"
+                      : isHoliday
+                        ? "Company Holiday (Shift Off)"
+                        : onLeaveToday
+                          ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
+                          : "Start Work"}
+                  </button>
 
-              <button
-                disabled={busy || (!isPunchedIn && (onLeaveToday || isHoliday))}
-                onClick={handlePunchClick}
-                className={`w-full rounded-md px-5 py-3 text-base font-semibold text-white transition-colors ${
-                  !isPunchedIn && (onLeaveToday || isHoliday)
-                    ? "cursor-not-allowed bg-slate-400 opacity-70"
-                    : isPunchedIn
-                      ? "bg-rose-600 hover:bg-rose-700"
-                      : "bg-primary hover:bg-primary/90"
-                }`}
-              >
-                {isPunchedIn
-                  ? "Stop Work"
-                  : isHoliday
-                    ? "Company Holiday (Shift Off)"
-                    : onLeaveToday
-                      ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
-                      : "Start Work"}
-              </button>
+                  {/* Optional Break Trigger Button - disappears when daily break limit is reached */}
+                  {canTakeBreak && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => doLunchPunch("lunch_start")}
+                      className="btn-lift w-full rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold py-2.5 px-4 text-xs shadow-xs flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Coffee className="h-4 w-4 text-amber-500" />
+                      {breakSettings.maxDailyBreaks > 1
+                        ? `Take Break #${todayBreaksCount + 1} (${breakSettings.allowanceMinutes}m)`
+                        : `Take Break (${breakSettings.allowanceMinutes}m)`}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Ticker Below Button */}
               <div className="text-center pt-2">
-                <div className="text-2xl font-mono font-semibold text-foreground tabular-nums">
-                  {formatDurationHMS(totalWorkedMs)}
+                <div className="text-2xl font-mono font-semibold text-foreground tabular-nums flex items-center justify-center gap-2">
+                  <span>{formatDurationHMS(totalWorkedMs)}</span>
+                  {isOnLunch && (
+                    <span className="text-xs font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                      ⏸ Paused
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground font-medium mt-0.5">
                   ({(totalWorkedMs / 3600000).toFixed(2)} hours today)

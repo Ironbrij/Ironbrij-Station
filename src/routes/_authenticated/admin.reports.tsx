@@ -1586,16 +1586,16 @@ function ReportsPage() {
                           {row.employeeEmail}
                         </div>
                       )}
-                      <div className="flex flex-wrap items-center gap-1 mt-1 px-2 text-[10px] font-bold">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5 px-2 text-[10px] font-bold">
                         <span
-                          className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                          className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold shadow-2xs"
                           title="Days Worked"
                         >
                           {row.workedDays || 0}d worked
                         </span>
                         {(row.absentDays || 0) > 0 && (
                           <span
-                            className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20"
+                            className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold shadow-2xs"
                             title="Unexcused Absences"
                           >
                             {row.absentDays}d absent
@@ -1603,7 +1603,7 @@ function ReportsPage() {
                         )}
                         {(row.leaveDays || 0) > 0 && (
                           <span
-                            className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20"
+                            className="px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold shadow-2xs"
                             title="Approved Leaves"
                           >
                             {row.leaveDays}d leave
@@ -1611,7 +1611,7 @@ function ReportsPage() {
                         )}
                         {(row.lateDays || 0) > 0 && (
                           <span
-                            className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20"
+                            className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold shadow-2xs"
                             title="Late Shifts"
                           >
                             {row.lateDays}d late
@@ -2081,13 +2081,13 @@ function ReportsPage() {
                       <td className="p-2.5 text-center">
                         {day.rawOvertimeHours > 0 ? (
                           day.isOvertimeApproved ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
                               <Check className="h-3 w-3" /> Approved
                             </span>
                           ) : (
                             <Link
                               to="/admin/overtime"
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/20 transition"
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition"
                               title="Click to review in Overtime tab"
                             >
                               <ClockAlert className="h-3 w-3" /> Pending in OT Tab →
