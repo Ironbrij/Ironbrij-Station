@@ -52,7 +52,23 @@ function generateSecureToken(): string {
 }
 
 const GPT_SYSTEM_INSTRUCTIONS = `You are the executive AI Admin Assistant for SavyTimes (https://station.savykids.com).
-You have full real-time access via MCP tools to manage attendance, employees, punches, leaves, overtime approvals, SOD/EOD daily reports, and notices.
+You have full real-time access via MCP / Actions to manage companies, departments, attendance, employees, punches, leaves, overtime approvals, SOD/EOD daily reports, and notices.
+
+### 🏢 COMPANY & CLIENT MANAGEMENT
+You can create and fully configure client companies using the \`create_company\` and \`update_company\` tools:
+- **Parameters supported**:
+  - \`name\`: Full company name (e.g. "Ironbrij", "SavyKids")
+  - \`code\`: 3-4 letter uppercase identifier (e.g. "IRON", "SAVY")
+  - \`timezone\`: Primary timezone (e.g. "Australia/Sydney", "Asia/Kathmandu", "Asia/Manila")
+  - \`defaultShiftHours\`: Daily shift hours (default: 8)
+  - \`workingDays\`: Days of the week (e.g. [1, 2, 3, 4, 5] for Mon-Fri; 0=Sun..6=Sat)
+  - \`breakAllowanceMinutes\`: Break duration in minutes (e.g. 30, or 0 for N/A)
+  - \`maxDailyBreaks\`: Allowed breaks per shift (e.g. 1, or 0 for N/A)
+  - \`lateGraceMinutes\`: Allowed late grace before marking late (default: 5)
+  - \`punchOutGraceMinutes\`: Grace minutes after shift end before auto punch-out (default: 30)
+  - \`punchOutReminderMinutes\`: Minutes before shift end to send reminder email (default: 20)
+  - \`departments\`: List of initial department names to automatically create under the company (e.g. ["Operations", "Accounts", "Engineering"])
+  - \`clientEmail\`, \`ownerName\`, \`logoUrl\`, \`notes\`
 
 ### 👥 TEAM PERSONALIZATION & COMMUNICATION RULES
 Always identify who is speaking with you and adapt your tone accordingly:
@@ -66,12 +82,13 @@ Always identify who is speaking with you and adapt your tone accordingly:
 
 ### 📊 DATA PRESENTATION & FORMATTING (STRICT RULES)
 1. **Always use Markdown Tables**:
+   - For Companies: | Company Name | Code | Timezone | Work Hours | Break Limit | Departments |
    - For Attendance: | Employee | Department | Status | Shift / Time | Details |
    - For Punches: | Date | Time | Type | Employee | Source |
    - For Leaves: | Employee | Dates | Reason | Status | Action |
    - For Overtime: | Employee | Date | Duration | Reason | Status |
 2. **Be 100% Precise**: Never guess or invent employee IDs, shift times, or punch timestamps. Use tool outputs directly.
-3. **Smart Lookups**: You can look up employees by first name, full name, or email directly.
+3. **Smart Lookups**: You can look up employees and companies by first name, full name, or email directly.
 4. **Confirmation**: Always ask for confirmation before destructive actions (deleting employees, rejecting leaves/overtime).
 5. **Proactive Insights**: When reporting attendance, highlight who is currently punched in, who is off-shift, and any missed punch-outs from previous days.`;
 
@@ -576,6 +593,30 @@ export function McpConnectPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Company & Client Management */}
+              <div className="p-4 rounded-xl border bg-card space-y-3 md:col-span-2">
+                <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
+                  <Bot className="h-4 w-4 text-blue-600" /> 5. Company &amp; Client Setup with Full Details
+                </div>
+                <div className="grid md:grid-cols-2 gap-2">
+                  {[
+                    'Create company: "Ironbrij", Code: "IRON", Timezone: "Australia/Sydney", Work Hours: 8, Break: 30 min, Grace: 5 min, Departments: ["Operations", "Accounts", "IT"]',
+                    'Create company: "SavyKids", Code: "SAVY", Timezone: "Asia/Kathmandu", Work Hours: 8, Working Days: Mon to Fri, Break: 30 min, Grace: 5 min',
+                    'List all client companies',
+                    'Update company "Ironbrij" timezone to Australia/Sydney and break to 30 min',
+                  ].map((cmd) => (
+                    <button
+                      key={cmd}
+                      onClick={() => copyToClipboard(cmd, `Copied: "${cmd}"`)}
+                      className="w-full text-left p-2.5 rounded-lg border bg-muted/30 hover:bg-muted font-medium text-xs text-foreground flex items-center justify-between group transition"
+                    >
+                      <span className="truncate">&quot;{cmd}&quot;</span>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -657,7 +698,15 @@ export function McpConnectPage() {
                   value={selectedAction}
                   onChange={(e) => {
                     setSelectedAction(e.target.value);
-                    if (e.target.value === "add_employee") {
+                    if (e.target.value === "create_company") {
+                      setTestPayload(
+                        '{\n  "name": "Ironbrij",\n  "code": "IRON",\n  "timezone": "Australia/Sydney",\n  "defaultShiftHours": 8,\n  "workingDays": [1, 2, 3, 4, 5],\n  "lateGraceMinutes": 5,\n  "breakAllowanceMinutes": 30,\n  "maxDailyBreaks": 1,\n  "departments": ["Operations", "Accounts", "Engineering"]\n}',
+                      );
+                    } else if (e.target.value === "update_company") {
+                      setTestPayload(
+                        '{\n  "name": "Ironbrij",\n  "timezone": "Australia/Sydney",\n  "breakAllowanceMinutes": 30\n}',
+                      );
+                    } else if (e.target.value === "add_employee") {
                       setTestPayload(
                         '{\n  "name": "Alex Test",\n  "email": "alex.test@example.com",\n  "jobTitle": "Virtual Assistant",\n  "shiftStartTime": "09:00",\n  "shiftEndTime": "17:00"\n}',
                       );
@@ -679,6 +728,10 @@ export function McpConnectPage() {
                 >
                   <option value="get_company_summary">get_company_summary (Overview)</option>
                   <option value="get_live_attendance">get_live_attendance (Real-time)</option>
+                  <option value="create_company">create_company (Create with full details)</option>
+                  <option value="update_company">update_company (Update rules / timezone)</option>
+                  <option value="list_companies">list_companies</option>
+                  <option value="list_departments">list_departments</option>
                   <option value="list_employees">list_employees</option>
                   <option value="add_employee">add_employee (Auto-add person)</option>
                   <option value="add_or_fix_punch">add_or_fix_punch (Fix missed clocks)</option>
@@ -688,8 +741,6 @@ export function McpConnectPage() {
                   <option value="list_leaves">list_leaves</option>
                   <option value="decide_leave">decide_leave</option>
                   <option value="list_daily_reports">list_daily_reports (SOD / EOD)</option>
-                  <option value="list_companies">list_companies</option>
-                  <option value="list_departments">list_departments</option>
                   <option value="list_notices">list_notices</option>
                 </select>
 

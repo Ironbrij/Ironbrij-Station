@@ -199,28 +199,61 @@ const TOOLS = [
   },
   {
     name: "create_company",
-    description: "Create a new client company profile in SavyTimes.",
+    description:
+      "Create a new client company profile in SavyTimes with full configuration (timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments).",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Company name" },
-        code: { type: "string", description: "Short identifier or code" },
-        timezone: { type: "string", description: "Primary company timezone" },
+        name: { type: "string", description: "Company name (e.g. 'Ironbrij', 'Acme Corp')" },
+        code: { type: "string", description: "Short identifier or code (e.g. 'IRON')" },
+        timezone: { type: "string", description: "Primary company timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu')" },
         defaultShiftHours: { type: "number", description: "Default daily shift hours (e.g. 8)" },
+        workingDays: {
+          type: "array",
+          items: { type: "number" },
+          description: "Working days array where 0=Sun, 1=Mon..6=Sat (defaults to [1, 2, 3, 4, 5])",
+        },
+        lateGraceMinutes: { type: "number", description: "Grace minutes allowed before lateness starts (default 5)" },
+        punchOutGraceMinutes: { type: "number", description: "Grace period in minutes after shift end before auto punch-out (default 30)" },
+        punchOutReminderMinutes: { type: "number", description: "Minutes before shift end to send reminder email (default 20)" },
+        breakAllowanceMinutes: { type: "number", description: "Break duration in minutes (e.g. 30, or 0 for N/A / no break)" },
+        maxDailyBreaks: { type: "number", description: "Maximum breaks per shift (default 1, or 0 for N/A / no breaks)" },
+        holidays: { type: "array", items: { type: "string" }, description: "Array of holiday dates in YYYY-MM-DD format" },
+        clientEmail: { type: "string", description: "Client contact email" },
+        ownerName: { type: "string", description: "Owner or manager name" },
+        logoUrl: { type: "string", description: "Company logo URL" },
+        notes: { type: "string", description: "Internal notes" },
+        departments: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
+        },
       },
       required: ["name"],
     },
   },
   {
     name: "update_company",
-    description: "Update company details, logo, timezone, or shift rules.",
+    description: "Update company details, logo, timezone, working days, break rules, or grace minutes.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Company ID" },
+        id: { type: "string", description: "Company ID or name" },
         name: { type: "string" },
+        code: { type: "string" },
         timezone: { type: "string" },
         defaultShiftHours: { type: "number" },
+        workingDays: { type: "array", items: { type: "number" } },
+        lateGraceMinutes: { type: "number" },
+        punchOutGraceMinutes: { type: "number" },
+        punchOutReminderMinutes: { type: "number" },
+        breakAllowanceMinutes: { type: "number" },
+        maxDailyBreaks: { type: "number" },
+        holidays: { type: "array", items: { type: "string" } },
+        clientEmail: { type: "string" },
+        ownerName: { type: "string" },
+        logoUrl: { type: "string" },
+        notes: { type: "string" },
       },
       required: ["id"],
     },
@@ -421,14 +454,39 @@ async function executeTool(name, args) {
 
   // 6. Create Company
   if (name === "create_company") {
+    const companyName = (args.name || args.companyName || "").trim();
+    if (!companyName) {
+      return { success: false, error: "'name' is strictly required to create a company." };
+    }
+
     const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    let workingDays = [1, 2, 3, 4, 5];
+    if (Array.isArray(args.workingDays)) {
+      workingDays = args.workingDays.map((d) => {
+        if (typeof d === "number") return d;
+        const lower = String(d).toLowerCase().slice(0, 3);
+        const map = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+        return map[lower] !== undefined ? map[lower] : 1;
+      });
+    }
+
     const companyData = {
-      name: args.name,
-      code: args.code || args.name.slice(0, 4).toUpperCase(),
+      name: companyName,
+      code: (args.code || companyName.slice(0, 4)).toUpperCase(),
       timezone: args.timezone || "Australia/Sydney",
-      defaultShiftHours: args.defaultShiftHours || 8,
-      workingDays: [1, 2, 3, 4, 5],
-      holidays: [],
+      defaultShiftHours: typeof args.defaultShiftHours === "number" ? args.defaultShiftHours : 8,
+      workingDays,
+      lateGraceMinutes: typeof args.lateGraceMinutes === "number" ? args.lateGraceMinutes : 5,
+      punchOutGraceMinutes: typeof args.punchOutGraceMinutes === "number" ? args.punchOutGraceMinutes : 30,
+      punchOutReminderMinutes: typeof args.punchOutReminderMinutes === "number" ? args.punchOutReminderMinutes : 20,
+      breakAllowanceMinutes: args.breakAllowanceMinutes !== undefined ? Number(args.breakAllowanceMinutes) : 30,
+      maxDailyBreaks: args.maxDailyBreaks !== undefined ? Number(args.maxDailyBreaks) : 1,
+      holidays: Array.isArray(args.holidays) ? args.holidays : [],
+      clientEmail: args.clientEmail || args.email || "",
+      ownerName: args.ownerName || args.clientName || "",
+      logoUrl: args.logoUrl || "",
+      notes: args.notes || "",
       createdAt: new Date().toISOString(),
     };
 
@@ -446,22 +504,69 @@ async function executeTool(name, args) {
       throw new Error(err.error?.message || "Failed to create company");
     }
 
+    // Auto-create departments if specified
+    const createdDepartments = [];
+    if (Array.isArray(args.departments)) {
+      for (const dept of args.departments) {
+        const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
+        if (deptName) {
+          const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const deptData = {
+            companyId: docId,
+            name: deptName,
+            state: typeof dept === "object" && dept.state ? dept.state : "N/A",
+            createdAt: new Date().toISOString(),
+          };
+          await fetch(
+            `${FIRESTORE_BASE_URL}/departments/${deptDocId}?key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+            },
+          );
+          createdDepartments.push({ id: deptDocId, name: deptName });
+        }
+      }
+    }
+
     return {
       success: true,
-      message: `Company '${args.name}' created with ID: ${docId}`,
+      message: `Company '${companyName}' created with ID: ${docId}`,
       companyId: docId,
+      company: companyData,
+      departments: createdDepartments,
     };
   }
 
   // 7. Update Company
   if (name === "update_company") {
-    const { id, ...fieldsToUpdate } = args;
+    let targetId = args.id || args.companyId;
+    if (!targetId && (args.name || args.companyName)) {
+      const searchName = (args.name || args.companyName).trim().toLowerCase();
+      const listRes = await fetch(`${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+      const listData = await listRes.json();
+      const matchedDoc = (listData.documents || []).find((doc) => {
+        const fields = fromFirestoreFields(doc.fields);
+        return (
+          (fields.name || "").toLowerCase() === searchName ||
+          (fields.code || "").toLowerCase() === searchName
+        );
+      });
+      if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+    }
+
+    if (!targetId) {
+      return { success: false, error: "Company not found. Provide a valid 'id' or 'name'." };
+    }
+
+    const { id, companyId, ...fieldsToUpdate } = args;
     const updateMask = Object.keys(fieldsToUpdate)
       .map((k) => `updateMask.fieldPaths=${k}`)
       .join("&");
 
     const res = await fetch(
-      `${FIRESTORE_BASE_URL}/companies/${id}?${updateMask}&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+      `${FIRESTORE_BASE_URL}/companies/${targetId}?${updateMask}&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
       {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -472,7 +577,7 @@ async function executeTool(name, args) {
       const err = await res.json();
       throw new Error(err.error?.message || "Failed to update company");
     }
-    return { success: true, message: `Company '${id}' updated.` };
+    return { success: true, message: `Company '${targetId}' updated.`, updatedFields: fieldsToUpdate };
   }
 
   // 8. List Punches

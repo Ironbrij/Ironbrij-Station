@@ -122,6 +122,164 @@ const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "create_company",
+    description:
+      "Create a new client company in SavyTimes with complete configuration: timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Company name (e.g. 'Ironbrij', 'Acme Corp')" },
+        code: { type: "string", description: "Short company code (e.g. 'IRON')" },
+        timezone: {
+          type: "string",
+          description: "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
+        },
+        defaultShiftHours: {
+          type: "number",
+          description: "Default daily required shift hours (e.g. 8)",
+        },
+        workingDays: {
+          type: "array",
+          items: { type: "number" },
+          description: "Working days array where 0=Sun, 1=Mon..6=Sat (defaults to [1, 2, 3, 4, 5])",
+        },
+        lateGraceMinutes: {
+          type: "number",
+          description: "Grace minutes allowed before lateness starts (default 5)",
+        },
+        punchOutGraceMinutes: {
+          type: "number",
+          description: "Grace period in minutes after shift end before auto punch-out (default 30)",
+        },
+        punchOutReminderMinutes: {
+          type: "number",
+          description: "Minutes before shift end to send reminder email (default 20)",
+        },
+        breakAllowanceMinutes: {
+          type: "number",
+          description: "Default break duration in minutes (e.g. 30, or 0 for N/A / no break)",
+        },
+        maxDailyBreaks: {
+          type: "number",
+          description: "Maximum breaks allowed per shift (default 1, or 0 for N/A / no breaks)",
+        },
+        holidays: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of holiday dates in YYYY-MM-DD format",
+        },
+        clientEmail: { type: "string", description: "Client contact email" },
+        ownerName: { type: "string", description: "Owner or manager name" },
+        logoUrl: { type: "string", description: "Company logo URL" },
+        notes: { type: "string", description: "Internal company notes" },
+        departments: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "update_company",
+    description:
+      "Update company details, timezone, shift hours, working days, break rules, or grace minutes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Company document ID or name to look up" },
+        name: { type: "string", description: "Company name" },
+        code: { type: "string", description: "Short code" },
+        timezone: { type: "string", description: "Timezone" },
+        defaultShiftHours: { type: "number", description: "Default shift hours" },
+        workingDays: { type: "array", items: { type: "number" } },
+        lateGraceMinutes: { type: "number" },
+        punchOutGraceMinutes: { type: "number" },
+        punchOutReminderMinutes: { type: "number" },
+        breakAllowanceMinutes: { type: "number" },
+        maxDailyBreaks: { type: "number" },
+        holidays: { type: "array", items: { type: "string" } },
+        clientEmail: { type: "string" },
+        ownerName: { type: "string" },
+        logoUrl: { type: "string" },
+        notes: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "create_department",
+    description: "Create a new department under a company in SavyTimes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Department name (e.g. 'Accounting', 'Engineering')" },
+        companyId: { type: "string", description: "Company ID to associate with" },
+        code: { type: "string", description: "Short department code" },
+        state: { type: "string", description: "State or location (e.g. 'NSW', 'Bagmati', 'N/A')" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "list_departments",
+    description: "List all departments in SavyTimes, optionally filtered by company ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyId: { type: "string", description: "Optional filter by company ID" },
+      },
+    },
+  },
+  {
+    name: "send_employee_invite",
+    description: "Send or resend email invitation link to an employee / V.A. to join SavyTimes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        employeeId: { type: "string", description: "Employee document ID" },
+        email: { type: "string", description: "Employee email address" },
+        name: { type: "string", description: "Employee full name" },
+      },
+    },
+  },
+  {
+    name: "delete_employee",
+    description: "Remove or deactivate an employee from SavyTimes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Employee ID or email" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "create_notice",
+    description: "Post a team announcement / notice in SavyTimes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Notice title" },
+        content: { type: "string", description: "Notice content / message" },
+        priority: { type: "string", enum: ["normal", "important", "urgent"] },
+        companyId: { type: "string", description: "Optional company ID" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "list_notices",
+    description: "List team notices and announcements.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyId: { type: "string", description: "Optional filter by company ID" },
+      },
+    },
+  },
+  {
     name: "list_punches",
     description: "Fetch punch logs for an employee or company.",
     inputSchema: {
@@ -801,6 +959,374 @@ export const Route = createFileRoute("/api/mcp")({
                 },
               });
             }
+
+            // 10. CREATE COMPANY
+            if (toolName === "create_company") {
+              const companyName = (args.name || args.companyName || "").trim();
+              if (!companyName) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: 'name' is strictly required to create a company." }],
+                  },
+                });
+              }
+
+              const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+              let workingDays = [1, 2, 3, 4, 5];
+              if (Array.isArray(args.workingDays)) {
+                workingDays = args.workingDays.map((d: any) => {
+                  if (typeof d === "number") return d;
+                  const lower = String(d).toLowerCase().slice(0, 3);
+                  const map: Record<string, number> = {
+                    sun: 0,
+                    mon: 1,
+                    tue: 2,
+                    wed: 3,
+                    thu: 4,
+                    fri: 5,
+                    sat: 6,
+                  };
+                  return map[lower] !== undefined ? map[lower] : 1;
+                });
+              }
+
+              const companyData: Record<string, any> = {
+                name: companyName,
+                code: (args.code || companyName.slice(0, 4)).toUpperCase(),
+                timezone: args.timezone || "Australia/Sydney",
+                defaultShiftHours: typeof args.defaultShiftHours === "number" ? args.defaultShiftHours : 8,
+                workingDays,
+                lateGraceMinutes: typeof args.lateGraceMinutes === "number" ? args.lateGraceMinutes : 5,
+                punchOutGraceMinutes: typeof args.punchOutGraceMinutes === "number" ? args.punchOutGraceMinutes : 30,
+                punchOutReminderMinutes: typeof args.punchOutReminderMinutes === "number" ? args.punchOutReminderMinutes : 20,
+                breakAllowanceMinutes: args.breakAllowanceMinutes !== undefined ? Number(args.breakAllowanceMinutes) : 30,
+                maxDailyBreaks: args.maxDailyBreaks !== undefined ? Number(args.maxDailyBreaks) : 1,
+                holidays: Array.isArray(args.holidays) ? args.holidays : [],
+                holidayAssignments: Array.isArray(args.holidayAssignments) ? args.holidayAssignments : [],
+                clientEmail: args.clientEmail || args.email || "",
+                ownerName: args.ownerName || args.clientName || "",
+                logoUrl: args.logoUrl || "",
+                notes: args.notes || "",
+                createdAt: new Date().toISOString(),
+              };
+
+              const res = await fetch(
+                `${baseUrl}/companies/${docId}?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(companyData) }),
+                },
+              );
+              if (!res.ok) throw new Error("Failed to create company");
+
+              const createdDepartments: Array<{ id: string; name: string }> = [];
+              if (Array.isArray(args.departments)) {
+                for (const dept of args.departments) {
+                  const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
+                  if (deptName) {
+                    const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                    const deptData = {
+                      companyId: docId,
+                      name: deptName,
+                      state: typeof dept === "object" && dept.state ? dept.state : "N/A",
+                      createdAt: new Date().toISOString(),
+                    };
+                    await fetch(
+                      `${baseUrl}/departments/${deptDocId}?key=${encodeURIComponent(apiKey)}`,
+                      {
+                        method: "PATCH",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+                      },
+                    );
+                    createdDepartments.push({ id: deptDocId, name: deptName });
+                  }
+                }
+              }
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(
+                        {
+                          message: `Company '${companyName}' created successfully with ID: ${docId}`,
+                          companyId: docId,
+                          company: companyData,
+                          departments: createdDepartments,
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
+                },
+              });
+            }
+
+            // 11. UPDATE COMPANY
+            if (toolName === "update_company") {
+              let targetId = args.id || args.companyId;
+              if (!targetId && (args.name || args.companyName)) {
+                const searchName = (args.name || args.companyName).trim().toLowerCase();
+                const listRes = await fetch(`${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+                const listData = await listRes.json();
+                const matchedDoc = (listData.documents || []).find((doc: any) => {
+                  const fields = fromFirestoreFields(doc.fields);
+                  return (
+                    (fields.name || "").toLowerCase() === searchName ||
+                    (fields.code || "").toLowerCase() === searchName
+                  );
+                });
+                if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
+              }
+
+              if (!targetId) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: Company not found. Provide a valid 'id' or 'name'." }],
+                  },
+                });
+              }
+
+              const fieldsToUpdate: Record<string, any> = {};
+              if (args.name) fieldsToUpdate.name = args.name.trim();
+              if (args.code) fieldsToUpdate.code = args.code.trim().toUpperCase();
+              if (args.timezone) fieldsToUpdate.timezone = args.timezone;
+              if (args.defaultShiftHours !== undefined) fieldsToUpdate.defaultShiftHours = Number(args.defaultShiftHours);
+              if (args.workingDays !== undefined && Array.isArray(args.workingDays)) fieldsToUpdate.workingDays = args.workingDays;
+              if (args.lateGraceMinutes !== undefined) fieldsToUpdate.lateGraceMinutes = Number(args.lateGraceMinutes);
+              if (args.punchOutGraceMinutes !== undefined) fieldsToUpdate.punchOutGraceMinutes = Number(args.punchOutGraceMinutes);
+              if (args.punchOutReminderMinutes !== undefined) fieldsToUpdate.punchOutReminderMinutes = Number(args.punchOutReminderMinutes);
+              if (args.breakAllowanceMinutes !== undefined) fieldsToUpdate.breakAllowanceMinutes = Number(args.breakAllowanceMinutes);
+              if (args.maxDailyBreaks !== undefined) fieldsToUpdate.maxDailyBreaks = Number(args.maxDailyBreaks);
+              if (args.holidays !== undefined && Array.isArray(args.holidays)) fieldsToUpdate.holidays = args.holidays;
+              if (args.clientEmail !== undefined) fieldsToUpdate.clientEmail = args.clientEmail;
+              if (args.ownerName !== undefined) fieldsToUpdate.ownerName = args.ownerName;
+              if (args.logoUrl !== undefined) fieldsToUpdate.logoUrl = args.logoUrl;
+              if (args.notes !== undefined) fieldsToUpdate.notes = args.notes;
+
+              const updateMask = Object.keys(fieldsToUpdate).map((k) => `updateMask.fieldPaths=${k}`).join("&");
+              const res = await fetch(
+                `${baseUrl}/companies/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+                },
+              );
+              if (!res.ok) throw new Error("Failed to update company");
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Company '${targetId}' updated successfully.` }],
+                },
+              });
+            }
+
+            // 12. CREATE DEPARTMENT
+            if (toolName === "create_department") {
+              const docId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+              const deptData = {
+                name: args.name,
+                code: args.code || args.name.slice(0, 3).toUpperCase(),
+                companyId: args.companyId || "default",
+                state: args.state || "N/A",
+                createdAt: new Date().toISOString(),
+              };
+              const res = await fetch(
+                `${baseUrl}/departments/${docId}?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+                },
+              );
+              if (!res.ok) throw new Error("Failed to create department");
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Department '${args.name}' created with ID: ${docId}` }],
+                },
+              });
+            }
+
+            // 13. LIST DEPARTMENTS
+            if (toolName === "list_departments") {
+              const res = await fetch(`${baseUrl}/departments?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const data = await res.json();
+              const list = (data.documents || []).map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              }));
+              const filtered = args.companyId ? list.filter((d: any) => d.companyId === args.companyId) : list;
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
+                },
+              });
+            }
+
+            // 14. SEND EMPLOYEE INVITE
+            if (toolName === "send_employee_invite") {
+              const matchedEmp = await resolveEmployee(args.employeeId || args.email || args.name, baseUrl, apiKey);
+              if (!matchedEmp) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: Employee not found." }],
+                  },
+                });
+              }
+
+              const inviteToken = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              const appUrl = "https://station.savykids.com";
+              const inviteUrl = `${appUrl}/invite/${inviteToken}`;
+
+              await fetch(`${baseUrl}/invites/${inviteToken}?key=${encodeURIComponent(apiKey)}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  fields: toFirestoreFields({
+                    token: inviteToken,
+                    employeeId: matchedEmp.id,
+                    email: matchedEmp.email,
+                    name: matchedEmp.name,
+                    companyId: matchedEmp.companyId || "default",
+                    role: matchedEmp.jobTitle || "Virtual Assistant",
+                    status: "pending",
+                    createdAt: new Date().toISOString(),
+                  }),
+                }),
+              });
+
+              await fetch(
+                `${baseUrl}/employees/${matchedEmp.id}?updateMask.fieldPaths=inviteToken&updateMask.fieldPaths=inviteStatus&key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    fields: toFirestoreFields({ inviteToken, inviteStatus: "pending" }),
+                  }),
+                },
+              );
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify(
+                        {
+                          message: `Invitation generated for ${matchedEmp.name} (${matchedEmp.email})!`,
+                          employeeId: matchedEmp.id,
+                          inviteUrl,
+                          inviteToken,
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
+                },
+              });
+            }
+
+            // 15. DELETE EMPLOYEE
+            if (toolName === "delete_employee") {
+              const matchedEmp = await resolveEmployee(args.id || args.email || args.name, baseUrl, apiKey);
+              if (!matchedEmp) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: Employee not found." }],
+                  },
+                });
+              }
+
+              await fetch(`${baseUrl}/employees/${matchedEmp.id}?key=${encodeURIComponent(apiKey)}`, {
+                method: "DELETE",
+              });
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Employee '${matchedEmp.name}' (${matchedEmp.id}) removed.` }],
+                },
+              });
+            }
+
+            // 16. CREATE NOTICE
+            if (toolName === "create_notice") {
+              const docId = `not_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+              const noticeData = {
+                title: args.title,
+                content: args.content,
+                priority: args.priority || "normal",
+                companyId: args.companyId || "",
+                createdAt: new Date().toISOString(),
+              };
+              const res = await fetch(
+                `${baseUrl}/notices/${docId}?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ fields: toFirestoreFields(noticeData) }),
+                },
+              );
+              if (!res.ok) throw new Error("Failed to post notice");
+
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: `Notice '${args.title}' published successfully.` }],
+                },
+              });
+            }
+
+            // 17. LIST NOTICES
+            if (toolName === "list_notices") {
+              const res = await fetch(`${baseUrl}/notices?pageSize=50&key=${encodeURIComponent(apiKey)}`);
+              const data = await res.json();
+              const list = (data.documents || []).map((doc: any) => ({
+                id: doc.name.split("/").pop(),
+                ...fromFirestoreFields(doc.fields),
+              }));
+              const filtered = args.companyId ? list.filter((n: any) => !n.companyId || n.companyId === args.companyId) : list;
+              return Response.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                  content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
+                },
+              });
+            }
+
             return Response.json({
               jsonrpc: "2.0",
               id,

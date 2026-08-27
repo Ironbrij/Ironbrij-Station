@@ -247,7 +247,7 @@ function getOpenApiSchema(appUrl: string) {
             params: {
               type: "object",
               description:
-                "Parameters for the action. Examples:\n• get_company_summary: {}\n• get_live_attendance: {}\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId or name }\n• update_employee: { id or email or name, role, department, status, shiftStartTime, shiftEndTime }\n• add_or_fix_punch: { employeeId or name, type: 'in'|'out', timestampISO, date }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• list_overtime: { status: 'pending'|'approved'|'rejected'|'all', employeeId or name }\n• decide_overtime: { requestId, decision: 'approved'|'rejected' }\n• list_daily_reports: { date, reportType: 'sod'|'eod', employeeId or name }\n• create_notice: { title, content, priority, companyId }",
+                "Parameters for the action. Examples:\n• create_company: { name (required), code, timezone: 'Australia/Sydney', defaultShiftHours: 8, workingDays: [1,2,3,4,5], lateGraceMinutes: 5, punchOutGraceMinutes: 30, punchOutReminderMinutes: 20, breakAllowanceMinutes: 30, maxDailyBreaks: 1, holidays: ['2026-12-25'], clientEmail, ownerName, logoUrl, notes, departments: ['Operations', 'Accounts'] }\n• update_company: { id or companyId or name (required), timezone, defaultShiftHours, workingDays, lateGraceMinutes, breakAllowanceMinutes, maxDailyBreaks, logoUrl, clientEmail, notes }\n• list_companies: {}\n• create_department: { name, companyId, code, state }\n• list_departments: { companyId }\n• get_company_summary: {}\n• get_live_attendance: {}\n• add_employee: { name, email, jobTitle, companyId, deptId, country, shiftStartTime, shiftEndTime, shiftTimezone, isMultipleShift, shifts }\n• send_employee_invite: { email or employeeId or name }\n• update_employee: { id or email or name, role, department, status, shiftStartTime, shiftEndTime }\n• delete_employee: { id or email or name }\n• add_or_fix_punch: { employeeId or name, type: 'in'|'out', timestampISO, date }\n• decide_leave: { leaveId, decision: 'approved'|'rejected', paymentStatus: 'paid'|'unpaid' }\n• list_overtime: { status: 'pending'|'approved'|'rejected'|'all', employeeId or name }\n• decide_overtime: { requestId, decision: 'approved'|'rejected' }\n• list_daily_reports: { date, reportType: 'sod'|'eod', employeeId or name }\n• create_notice: { title, content, priority, companyId }",
             },
           },
         },
@@ -574,14 +574,65 @@ export const Route = createFileRoute("/api/mcp-action")({
 
           // 4. CREATE COMPANY
           if (action === "create_company") {
+            const companyName = (params.name || params.companyName || params.title || "").trim();
+            if (!companyName) {
+              return Response.json(
+                {
+                  ok: false,
+                  error: "Missing required field: 'name' is strictly required to create a company.",
+                },
+                { status: 400 },
+              );
+            }
+
             const docId = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            const companyData = {
-              name: params.name,
-              code: params.code || params.name.slice(0, 4).toUpperCase(),
+
+            // Parse working days: supports [1, 2, 3, 4, 5] or ["Monday", "Tuesday", ...]
+            let workingDays = [1, 2, 3, 4, 5];
+            if (Array.isArray(params.workingDays)) {
+              workingDays = params.workingDays.map((d: any) => {
+                if (typeof d === "number") return d;
+                const lower = String(d).toLowerCase().slice(0, 3);
+                const map: Record<string, number> = {
+                  sun: 0,
+                  mon: 1,
+                  tue: 2,
+                  wed: 3,
+                  thu: 4,
+                  fri: 5,
+                  sat: 6,
+                };
+                return map[lower] !== undefined ? map[lower] : 1;
+              });
+            }
+
+            const companyData: Record<string, any> = {
+              name: companyName,
+              code: (params.code || companyName.slice(0, 4)).toUpperCase(),
               timezone: params.timezone || "Australia/Sydney",
-              defaultShiftHours: params.defaultShiftHours || 8,
-              workingDays: params.workingDays || [1, 2, 3, 4, 5],
-              holidays: params.holidays || [],
+              defaultShiftHours:
+                typeof params.defaultShiftHours === "number" ? params.defaultShiftHours : 8,
+              workingDays,
+              lateGraceMinutes:
+                typeof params.lateGraceMinutes === "number" ? params.lateGraceMinutes : 5,
+              punchOutGraceMinutes:
+                typeof params.punchOutGraceMinutes === "number"
+                  ? params.punchOutGraceMinutes
+                  : 30,
+              punchOutReminderMinutes:
+                typeof params.punchOutReminderMinutes === "number"
+                  ? params.punchOutReminderMinutes
+                  : 20,
+              breakAllowanceMinutes:
+                params.breakAllowanceMinutes !== undefined
+                  ? Number(params.breakAllowanceMinutes)
+                  : 30,
+              maxDailyBreaks:
+                params.maxDailyBreaks !== undefined ? Number(params.maxDailyBreaks) : 1,
+              holidays: Array.isArray(params.holidays) ? params.holidays : [],
+              holidayAssignments: Array.isArray(params.holidayAssignments)
+                ? params.holidayAssignments
+                : [],
               clientEmail: params.clientEmail || params.email || "",
               ownerName: params.ownerName || params.clientName || "",
               logoUrl: params.logoUrl || "",
@@ -602,12 +653,39 @@ export const Route = createFileRoute("/api/mcp-action")({
               throw new Error(err.error?.message || "Failed to create company");
             }
 
+            // Auto-create initial departments if provided
+            const createdDepartments: Array<{ id: string; name: string }> = [];
+            if (Array.isArray(params.departments)) {
+              for (const dept of params.departments) {
+                const deptName = typeof dept === "string" ? dept.trim() : dept?.name?.trim();
+                if (deptName) {
+                  const deptDocId = `dept_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                  const deptData = {
+                    companyId: docId,
+                    name: deptName,
+                    state: typeof dept === "object" && dept.state ? dept.state : "N/A",
+                    createdAt: new Date().toISOString(),
+                  };
+                  await fetch(
+                    `${baseUrl}/departments/${deptDocId}?key=${encodeURIComponent(apiKey)}`,
+                    {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ fields: toFirestoreFields(deptData) }),
+                    },
+                  );
+                  createdDepartments.push({ id: deptDocId, name: deptName });
+                }
+              }
+            }
+
             return Response.json({
               ok: true,
               result: {
-                message: `Client company '${params.name}' created successfully with ID: ${docId}`,
+                message: `Client company '${companyName}' created successfully with ID: ${docId}`,
                 companyId: docId,
                 company: companyData,
+                departments: createdDepartments,
               },
             });
           }
@@ -615,31 +693,60 @@ export const Route = createFileRoute("/api/mcp-action")({
           // 5. UPDATE COMPANY
           if (action === "update_company") {
             let targetId = params.id || params.companyId;
-            if (!targetId && params.name) {
-              const listRes = await fetch(`${baseUrl}/companies?key=${encodeURIComponent(apiKey)}`);
+            if (!targetId && (params.name || params.companyName)) {
+              const searchName = (params.name || params.companyName).trim().toLowerCase();
+              const listRes = await fetch(
+                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const matchedDoc = (listData.documents || []).find((doc: any) => {
                 const fields = fromFirestoreFields(doc.fields);
-                return (fields.name || "").toLowerCase() === (params.name || "").toLowerCase();
+                return (
+                  (fields.name || "").toLowerCase() === searchName ||
+                  (fields.code || "").toLowerCase() === searchName
+                );
               });
               if (matchedDoc) targetId = matchedDoc.name.split("/").pop();
             }
 
             if (!targetId) {
-              return Response.json({ ok: false, error: "Company not found." }, { status: 404 });
+              return Response.json(
+                {
+                  ok: false,
+                  error:
+                    "Company not found. Please provide a valid 'id', 'companyId', or 'name'.",
+                },
+                { status: 404 },
+              );
             }
 
             const fieldsToUpdate: Record<string, any> = {};
-            if (params.name) fieldsToUpdate.name = params.name;
-            if (params.code) fieldsToUpdate.code = params.code;
+            if (params.name) fieldsToUpdate.name = params.name.trim();
+            if (params.code) fieldsToUpdate.code = params.code.trim().toUpperCase();
             if (params.timezone) fieldsToUpdate.timezone = params.timezone;
-            if (params.defaultShiftHours)
-              fieldsToUpdate.defaultShiftHours = params.defaultShiftHours;
-            if (params.workingDays) fieldsToUpdate.workingDays = params.workingDays;
-            if (params.holidays) fieldsToUpdate.holidays = params.holidays;
-            if (params.clientEmail) fieldsToUpdate.clientEmail = params.clientEmail;
-            if (params.ownerName) fieldsToUpdate.ownerName = params.ownerName;
-            if (params.logoUrl) fieldsToUpdate.logoUrl = params.logoUrl;
+            if (params.defaultShiftHours !== undefined)
+              fieldsToUpdate.defaultShiftHours = Number(params.defaultShiftHours);
+            if (params.workingDays !== undefined && Array.isArray(params.workingDays)) {
+              fieldsToUpdate.workingDays = params.workingDays;
+            }
+            if (params.lateGraceMinutes !== undefined)
+              fieldsToUpdate.lateGraceMinutes = Number(params.lateGraceMinutes);
+            if (params.punchOutGraceMinutes !== undefined)
+              fieldsToUpdate.punchOutGraceMinutes = Number(params.punchOutGraceMinutes);
+            if (params.punchOutReminderMinutes !== undefined)
+              fieldsToUpdate.punchOutReminderMinutes = Number(params.punchOutReminderMinutes);
+            if (params.breakAllowanceMinutes !== undefined)
+              fieldsToUpdate.breakAllowanceMinutes = Number(params.breakAllowanceMinutes);
+            if (params.maxDailyBreaks !== undefined)
+              fieldsToUpdate.maxDailyBreaks = Number(params.maxDailyBreaks);
+            if (params.holidays !== undefined && Array.isArray(params.holidays))
+              fieldsToUpdate.holidays = params.holidays;
+            if (params.holidayAssignments !== undefined)
+              fieldsToUpdate.holidayAssignments = params.holidayAssignments;
+            if (params.clientEmail !== undefined) fieldsToUpdate.clientEmail = params.clientEmail;
+            if (params.ownerName !== undefined) fieldsToUpdate.ownerName = params.ownerName;
+            if (params.logoUrl !== undefined) fieldsToUpdate.logoUrl = params.logoUrl;
+            if (params.notes !== undefined) fieldsToUpdate.notes = params.notes;
 
             const updateMask = Object.keys(fieldsToUpdate)
               .map((k) => `updateMask.fieldPaths=${k}`)
@@ -653,12 +760,16 @@ export const Route = createFileRoute("/api/mcp-action")({
                 body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
               },
             );
-            if (!res.ok) throw new Error("Failed to update company");
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.error?.message || "Failed to update company");
+            }
 
             return Response.json({
               ok: true,
               result: {
                 message: `Company '${targetId}' updated successfully.`,
+                companyId: targetId,
                 updatedFields: fieldsToUpdate,
               },
             });
