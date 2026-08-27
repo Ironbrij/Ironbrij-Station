@@ -41,7 +41,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { computeDay, toDate, toMillis } from "@/lib/time";
-import { calculateAttendanceSession } from "@/lib/attendance-calculation";
+import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -55,6 +55,7 @@ import {
   getShiftTimezone,
   getLeaveLabel,
   zonedDateKey,
+  zonedDateTimeToDate,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -64,6 +65,15 @@ import {
 } from "@/lib/company-context";
 import { companyEmailBranding } from "@/lib/email-branding";
 
+export interface PunchSessionRecord {
+  inTime: string;
+  outTime?: string;
+  durationMinutes: number;
+  isOvertime: boolean;
+  isAuto: boolean;
+  type: string;
+}
+
 export interface DailyIntervalRecord {
   date: string;
   dayOfWeek: string;
@@ -72,6 +82,7 @@ export interface DailyIntervalRecord {
   punchOutTime?: string; // HH:mm
   firstInPunchId?: string;
   lastOutPunchId?: string;
+  sessions?: PunchSessionRecord[];
   isMissingPunchOut: boolean;
   isAutoPunchOut: boolean;
   minutesLate: number;
@@ -85,12 +96,17 @@ export interface DailyIntervalRecord {
 export interface ReportRow {
   id: string;
   isCustom?: boolean;
+  isAdjusted?: boolean;
   worked: boolean; // toggle if the person worked or not
   employeeId?: string;
   employeeName: string;
   employeeEmail?: string;
   department: string;
   role: string;
+  workedDays: number;
+  absentDays: number;
+  lateDays: number;
+  leaveDays: number;
   regularHours: number;
   overtimeHours: number;
   pendingOvertimeHours: number;
@@ -173,6 +189,10 @@ function ReportsPage() {
     worked: true,
     department: "General",
     role: "V.A.",
+    workedDays: 0,
+    absentDays: 0,
+    lateDays: 0,
+    leaveDays: 0,
     regularHours: 0,
     overtimeHours: 0,
     pendingOvertimeHours: 0,
@@ -433,6 +453,9 @@ function ReportsPage() {
       let totalPendingOvertimeHours = 0;
       const approvedOvertimeDatesList: string[] = [];
       let totalLateDays = 0;
+      let workedDaysCount = 0;
+      let absentDaysCount = 0;
+      let leaveDaysCount = 0;
 
       const dailyIntervals: DailyIntervalRecord[] = [];
 
@@ -454,6 +477,55 @@ function ReportsPage() {
         const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
         const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
         const isOffShiftDay = !isScheduledDay;
+
+        if (firstIn) {
+          workedDaysCount++;
+        } else if (isScheduledDay && !approvedLeave) {
+          absentDaysCount++;
+        }
+        if (approvedLeave) {
+          leaveDaysCount++;
+        }
+
+        // Build individual punch sessions breakdown for the day
+        const sessions: PunchSessionRecord[] = [];
+        let currentIn: Punch | null = null;
+        for (const p of sorted) {
+          if (p.type === "in" || p.type === "extra_in") {
+            currentIn = p;
+          } else if ((p.type === "out" || p.type === "extra_out") && currentIn) {
+            const inDate = toDate(currentIn.timestamp);
+            const outDate = toDate(p.timestamp);
+            if (inDate && outDate) {
+              const durMins = Math.max(0, Math.floor((outDate.getTime() - inDate.getTime()) / 60_000));
+              const inTimeStr = formatInTimezone(inDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
+              const outTimeStr = formatInTimezone(outDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
+              const isOt = p.type === "extra_out" || (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0);
+              sessions.push({
+                inTime: inTimeStr,
+                outTime: outTimeStr,
+                durationMinutes: durMins,
+                isOvertime: isOt,
+                isAuto: Boolean(p.isAuto),
+                type: p.type === "extra_out" ? "Extra / OT" : "Regular",
+              });
+            }
+            currentIn = null;
+          }
+        }
+        if (currentIn) {
+          const inDate = toDate(currentIn.timestamp);
+          if (inDate) {
+            const inTimeStr = formatInTimezone(inDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
+            sessions.push({
+              inTime: inTimeStr,
+              durationMinutes: Math.max(0, Math.floor((Date.now() - inDate.getTime()) / 60_000)),
+              isOvertime: currentIn.type === "extra_in",
+              isAuto: false,
+              type: "In Progress",
+            });
+          }
+        }
 
         const sessionCalc = firstIn
           ? calculateAttendanceSession({
@@ -499,19 +571,23 @@ function ReportsPage() {
 
         const approvedOtHours = approvedDayOtMinutes / 60;
         const pendingOtHours = pendingDayOtMinutes / 60;
-        const fallbackOtHours = dayOtRequests.length === 0 ? otHours : 0;
 
         totalRegularHours += regHours;
         if (approvedOtHours > 0) {
           totalApprovedOvertimeHours += approvedOtHours;
-          approvedOvertimeDatesList.push(`${date} (+${approvedOtHours.toFixed(1)}h)`);
+          const displayOtText =
+            approvedOtHours >= 0.1
+              ? `+${approvedOtHours.toFixed(1)}h`
+              : `+${Math.round(approvedDayOtMinutes)}m`;
+          approvedOvertimeDatesList.push(`${date} (${displayOtText})`);
         }
-        if (pendingOtHours > 0 || fallbackOtHours > 0) {
-          totalPendingOvertimeHours += (pendingOtHours + fallbackOtHours);
+        if (pendingOtHours > 0) {
+          totalPendingOvertimeHours += pendingOtHours;
         }
 
         const isOvertimeApproved = approvedOtHours > 0;
-        const displayOtHours = approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : otHours;
+        const displayOtHours =
+          approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : 0;
 
         const scheduledShiftStr =
           employee.shiftStartTime && employee.shiftEndTime
@@ -542,6 +618,7 @@ function ReportsPage() {
           punchOutTime: punchOutTimeStr,
           firstInPunchId: firstIn?.id,
           lastOutPunchId: lastOut?.id,
+          sessions,
           isMissingPunchOut,
           isAutoPunchOut,
           minutesLate: lateness?.isLate ? lateness.minutes : 0,
@@ -587,17 +664,27 @@ function ReportsPage() {
 
       const reg = Math.round(totalRegularHours * 10) / 10;
       const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
-      const hasWork = reg > 0 || ot > 0;
+      const hasWork =
+        reg > 0 || ot > 0 || paidLeaveDays > 0 || unpaidLeaveDays > 0 || workedDaysCount > 0;
+
+      // If the employee did not work and had no active leave during this period, exclude them from report
+      if (!hasWork) {
+        continue;
+      }
 
       rows.push({
         id: employee.id,
         isCustom: false,
-        worked: hasWork,
+        worked: true,
         employeeId: employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
         department: departments.find((d) => d.id === employee.deptId)?.name || "General",
         role: employee.jobTitle || "V.A.",
+        workedDays: workedDaysCount,
+        absentDays: absentDaysCount,
+        lateDays: totalLateDays,
+        leaveDays: leaveDaysCount,
         regularHours: reg,
         overtimeHours: ot,
         pendingOvertimeHours: Math.round(totalPendingOvertimeHours * 10) / 10,
@@ -692,6 +779,10 @@ function ReportsPage() {
       id: `custom-${Date.now()}`,
       isCustom: true,
       worked: true,
+      workedDays: Number(newRowData.workedDays) || 0,
+      absentDays: Number(newRowData.absentDays) || 0,
+      lateDays: Number(newRowData.lateDays) || 0,
+      leaveDays: Number(newRowData.leaveDays) || 0,
       regularHours: Number(newRowData.regularHours) || 0,
       overtimeHours: Number(newRowData.overtimeHours) || 0,
       pendingOvertimeHours: 0,
@@ -708,6 +799,10 @@ function ReportsPage() {
       worked: true,
       department: "General",
       role: "V.A.",
+      workedDays: 0,
+      absentDays: 0,
+      lateDays: 0,
+      leaveDays: 0,
       regularHours: 0,
       overtimeHours: 0,
       pendingOvertimeHours: 0,
@@ -717,6 +812,13 @@ function ReportsPage() {
       remarks: "",
     });
     toast.success("Added new person to report.");
+  }
+
+  // Reset custom edits to computed real-time calculations
+  function handleResetToCalculated() {
+    setReportRows(computedSummaryRows);
+    setHasCustomEdits(false);
+    toast.success("Reset table to real-time calculated hours.");
   }
 
   // --------------------------------------------------------------------------
@@ -781,7 +883,7 @@ function ReportsPage() {
     const emp = filteredEmployees.find((e) => e.id === employeeRowId || e.authUid === employeeRowId);
     const defaultEndTime = emp?.shiftEndTime || "17:00";
     const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
-    const fixedOutDate = new Date(`${date}T${defaultEndTime}:00`);
+    const fixedOutDate = zonedDateTimeToDate(date, defaultEndTime, empTz);
 
     try {
       const fixedPunchRef = await addDoc(collection(db(), "punches"), {
@@ -892,18 +994,32 @@ function ReportsPage() {
           clientName: clientName.trim(),
           periodLabel,
           summary: reportTotals,
-          rows: reportRows.map((r) => ({
-            employeeName: r.employeeName,
-            employeeEmail: r.employeeEmail,
-            role: r.role,
-            department: r.department,
-            regularHours: Number(r.regularHours) || 0,
-            overtimeHours: Number(r.overtimeHours) || 0,
-            overtimeDates: r.overtimeDates,
-            paidLeaveDays: Number(r.paidLeaveDays) || 0,
-            unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
-            remarks: r.remarks,
-          })),
+          rows: reportRows.map((r) => {
+            const leaveDates = (r.dailyIntervals || [])
+              .filter(
+                (d) =>
+                  d.status &&
+                  (d.status.toLowerCase().includes("leave") ||
+                    d.status.toLowerCase().includes("vacation") ||
+                    d.status.toLowerCase().includes("sick")),
+              )
+              .map((d) => `${d.date} (${d.status})`);
+
+            return {
+              employeeName: r.employeeName,
+              employeeEmail: r.employeeEmail,
+              role: r.role,
+              department: r.department,
+              workedDays: r.workedDays || 0,
+              regularHours: Number(r.regularHours) || 0,
+              overtimeHours: Number(r.overtimeHours) || 0,
+              overtimeDates: r.overtimeDates || [],
+              paidLeaveDays: Number(r.paidLeaveDays) || 0,
+              unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
+              leaveDates,
+              remarks: r.remarks,
+            };
+          }),
         }),
       });
 
@@ -939,6 +1055,10 @@ function ReportsPage() {
       Email: row.employeeEmail || "",
       Role: row.role,
       Department: row.department,
+      "Worked Days": row.workedDays || 0,
+      "Absent Days": row.absentDays || 0,
+      "Leave Days": row.leaveDays || 0,
+      "Late Days": row.lateDays || 0,
       "Regular Hours": Number(row.regularHours).toFixed(1),
       "Accepted Overtime Hours": Number(row.overtimeHours).toFixed(1),
       "Overtime Dates": (row.overtimeDates || []).join("; "),
@@ -1378,14 +1498,24 @@ function ReportsPage() {
               <span>
                 <strong>Spreadsheet & Interval Inspection:</strong> Click on{" "}
                 <span className="font-bold text-primary underline">Inspect Daily Intervals</span> on
-                any employee to see day-by-day hours, fix missed punch-outs, and accept/approve
+                any employee to see day-by-day hours, fix missed punch-outs, and review
                 overtimes.
               </span>
             </div>
             {hasCustomEdits && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                Custom Edits Active
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                  Custom Edits Active
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetToCalculated}
+                  className="px-2 py-0.5 rounded bg-secondary hover:bg-muted text-foreground text-[11px] font-bold border transition"
+                  title="Discard manual edits and recalculate from raw attendance punches"
+                >
+                  Reset to Calculated
+                </button>
+              </div>
             )}
           </div>
 
@@ -1440,7 +1570,7 @@ function ReportsPage() {
                       </button>
                     </td>
 
-                    {/* Employee Name & Email */}
+                    {/* Employee Name, Email & Attendance Tallies */}
                     <td className="p-3">
                       <input
                         type="text"
@@ -1449,13 +1579,45 @@ function ReportsPage() {
                           handleUpdateRowField(row.id, "employeeName", e.target.value)
                         }
                         placeholder="Employee Name"
-                        className="w-full font-bold text-foreground text-xs px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full font-bold text-foreground text-xs px-2 py-1 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
                       />
                       {row.employeeEmail && (
                         <div className="text-[11px] text-muted-foreground px-2">
                           {row.employeeEmail}
                         </div>
                       )}
+                      <div className="flex flex-wrap items-center gap-1 mt-1 px-2 text-[10px] font-bold">
+                        <span
+                          className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                          title="Days Worked"
+                        >
+                          {row.workedDays || 0}d worked
+                        </span>
+                        {(row.absentDays || 0) > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20"
+                            title="Unexcused Absences"
+                          >
+                            {row.absentDays}d absent
+                          </span>
+                        )}
+                        {(row.leaveDays || 0) > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20"
+                            title="Approved Leaves"
+                          >
+                            {row.leaveDays}d leave
+                          </span>
+                        )}
+                        {(row.lateDays || 0) > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20"
+                            title="Late Shifts"
+                          >
+                            {row.lateDays}d late
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Role / Job Title */}
@@ -1492,51 +1654,39 @@ function ReportsPage() {
                       </div>
                     </td>
 
-                    {/* Overtime Hours Display */}
+                    {/* Overtime Hours Input */}
                     <td className="p-3 text-right">
-                      {row.isCustom ? (
-                        <div className="relative inline-flex items-center w-full">
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={row.overtimeHours}
-                            onChange={(e) =>
-                              handleUpdateRowField(
-                                row.id,
-                                "overtimeHours",
-                                parseFloat(e.target.value) || 0,
-                              )
-                            }
-                            className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
-                              row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
-                            }`}
-                          />
-                          <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
-                            h
-                          </span>
-                        </div>
-                      ) : row.overtimeHours > 0 ? (
-                        <div className="text-right">
-                          <span className="font-bold text-xs text-amber-600 block">
-                            +{row.overtimeHours.toFixed(1)}h
-                          </span>
-                          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-0.5">
-                            <Check className="h-3 w-3" /> Approved
-                          </span>
-                        </div>
-                      ) : row.pendingOvertimeHours > 0 ? (
-                        <div className="text-right">
+                      <div className="relative inline-flex items-center w-full">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={row.overtimeHours}
+                          onChange={(e) =>
+                            handleUpdateRowField(
+                              row.id,
+                              "overtimeHours",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                            row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
+                          }`}
+                        />
+                        <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
+                          h
+                        </span>
+                      </div>
+                      {row.pendingOvertimeHours > 0 && (
+                        <div className="text-right mt-0.5">
                           <Link
                             to="/admin/overtime"
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-2 py-0.5 rounded transition"
+                            className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:underline"
                             title="Click to review in Overtime tab"
                           >
-                            <ClockAlert className="h-3 w-3" /> +{row.pendingOvertimeHours.toFixed(1)}h Pending →
+                            <ClockAlert className="h-2.5 w-2.5" /> +{row.pendingOvertimeHours.toFixed(1)}h in OT tab →
                           </Link>
                         </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground font-medium">—</span>
                       )}
                     </td>
 
@@ -1844,6 +1994,19 @@ function ReportsPage() {
                           }
                           className="px-2 py-1 rounded border bg-background font-mono text-xs w-[85px]"
                         />
+                        {day.sessions && day.sessions.length > 1 && (
+                          <div className="mt-1 space-y-0.5">
+                            {day.sessions.map((s, sIdx) => (
+                              <div
+                                key={sIdx}
+                                className="text-[10px] text-muted-foreground font-mono truncate"
+                                title={`Session ${sIdx + 1}: ${s.inTime} - ${s.outTime || "..."} (${formatWorkMinutes(s.durationMinutes)})`}
+                              >
+                                <span className="font-bold text-foreground">#{sIdx + 1}:</span> {s.inTime}–{s.outTime || "..."} ({formatWorkMinutes(s.durationMinutes)}{s.isOvertime ? " OT" : ""})
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       {/* Punch Out / Fix Missed Punch Out */}

@@ -7,11 +7,13 @@ export interface ReportEmployeeRowPayload {
   employeeEmail?: string;
   role?: string;
   department?: string;
+  workedDays?: number;
   regularHours: number;
   overtimeHours: number;
   overtimeDates?: string[];
   paidLeaveDays: number;
   unpaidLeaveDays: number;
+  leaveDates?: string[];
   remarks?: string;
 }
 
@@ -48,6 +50,18 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
             )}</div>`
           : "";
 
+      const leaveDatesStr =
+        row.leaveDates && row.leaveDates.length > 0
+          ? `<div style="font-size: 10px; color: #7c3aed; margin-top: 2px;">Dates: ${escapeEmailHtml(
+              row.leaveDates.join(", "),
+            )}</div>`
+          : "";
+
+      const workedDaysStr =
+        typeof row.workedDays === "number" && row.workedDays > 0
+          ? `<div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: bold;">${row.workedDays} days worked</div>`
+          : "";
+
       const remarksHtml = row.remarks?.trim()
         ? `<div style="font-size: 11px; color: #475569; font-style: italic;">${escapeEmailHtml(
             row.remarks,
@@ -64,6 +78,7 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
                 )}</div>`
               : ""
           }
+          ${workedDaysStr}
         </td>
         <td style="padding: 10px 12px; text-align: right; font-weight: 600; color: #0f172a; font-size: 13px;">
           ${row.regularHours.toFixed(1)}h
@@ -76,6 +91,7 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         </td>
         <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
           ${row.paidLeaveDays > 0 ? `${row.paidLeaveDays}d` : "0d"}
+          ${leaveDatesStr}
         </td>
         <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
           ${row.unpaidLeaveDays > 0 ? `${row.unpaidLeaveDays}d` : "0d"}

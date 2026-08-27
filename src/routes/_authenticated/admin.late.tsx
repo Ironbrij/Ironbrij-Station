@@ -22,6 +22,7 @@ import {
   getLiveAttendanceStatus,
   getShiftTimezone,
   zonedDateKey,
+  zonedDateTimeToDate,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import { toDate, toMillis } from "@/lib/time";
@@ -62,6 +63,7 @@ function LateArrivalsPage() {
   // Manual Clock-In Modal States
   const [showManualModal, setShowManualModal] = useState(false);
   const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [manualTimezone, setManualTimezone] = useState("Australia/Sydney");
   const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Manila"));
   const [manualTime, setManualTime] = useState("09:00");
   const [manualNotes, setManualNotes] = useState("");
@@ -255,8 +257,7 @@ function LateArrivalsPage() {
     setSubmittingManual(true);
     try {
       const shiftTz = getShiftTimezone(targetEmp);
-      const dateTimeStr = `${manualDate}T${manualTime}:00`;
-      const punchDateObj = new Date(dateTimeStr);
+      const punchDateObj = zonedDateTimeToDate(manualDate, manualTime, manualTimezone);
       const dateKey = zonedDateKey(punchDateObj, shiftTz);
 
       await addDoc(collection(db(), "punches"), {
@@ -269,7 +270,9 @@ function LateArrivalsPage() {
         timestamp: Timestamp.fromDate(punchDateObj),
         source: "app",
         attendanceStatus: "in_progress",
-        manualNote: manualNotes.trim() || "Manual clock-in by admin",
+        shiftTimezone: shiftTz,
+        manualTimezoneUsed: manualTimezone,
+        manualNote: manualNotes.trim() || `Manual clock-in (${manualTimezone}) by admin`,
         addedByAdmin: user?.email || "admin",
         createdAt: new Date().toISOString(),
       });
@@ -524,7 +527,11 @@ function LateArrivalsPage() {
                 </label>
                 <select
                   value={selectedEmpId}
-                  onChange={(e) => setSelectedEmpId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedEmpId(e.target.value);
+                    const emp = employees.find((x) => x.id === e.target.value);
+                    if (emp) setManualTimezone(getShiftTimezone(emp));
+                  }}
                   className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
                 >
                   {employees.map((emp) => (
@@ -535,7 +542,7 @@ function LateArrivalsPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-foreground mb-1">
                     Shift Date <span className="text-rose-500">*</span>
@@ -544,22 +551,89 @@ function LateArrivalsPage() {
                     type="date"
                     value={manualDate}
                     onChange={(e) => setManualDate(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-foreground mb-1">
-                    Actual Clock-In Time <span className="text-rose-500">*</span>
+                    Clock-In Time <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="time"
                     value={manualTime}
                     onChange={(e) => setManualTime(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-foreground mb-1">
+                    Timezone <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={manualTimezone}
+                    onChange={(e) => setManualTimezone(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-2 py-2 text-xs font-medium"
+                  >
+                    <option value="Australia/Sydney">🇦🇺 Sydney (AU)</option>
+                    <option value="Asia/Manila">🇵🇭 Philippines (PHT)</option>
+                    <option value="Asia/Kathmandu">🇳🇵 Nepal (NPT)</option>
+                  </select>
+                </div>
               </div>
+
+              {/* Live 3-Country Time Comparison Helper */}
+              {manualTime && manualDate && (
+                <div className="rounded-xl bg-secondary/60 border p-3 text-xs space-y-1.5 animate-in fade-in">
+                  <div className="font-bold text-foreground flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-wider">
+                      <Clock3 className="h-3.5 w-3.5 text-primary" /> Timezone Conversion Preview
+                    </span>
+                    <span className="text-[10px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10">
+                      Input Time: {manualTime} in {manualTimezone.split("/")[1]}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 font-mono text-[11px] pt-1">
+                    <div className="p-2 rounded-lg border bg-card/60">
+                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                        🇦🇺 Sydney (AU)
+                      </span>
+                      <span className="font-bold text-foreground">
+                        {formatInTimezone(
+                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                          "Australia/Sydney",
+                          { hour: "numeric", minute: "2-digit", hour12: true },
+                        )}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg border bg-card/60">
+                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                        🇵🇭 Philippines (PHT)
+                      </span>
+                      <span className="font-bold text-foreground">
+                        {formatInTimezone(
+                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                          "Asia/Manila",
+                          { hour: "numeric", minute: "2-digit", hour12: true },
+                        )}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg border bg-card/60">
+                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                        🇳🇵 Nepal (NPT)
+                      </span>
+                      <span className="font-bold text-foreground">
+                        {formatInTimezone(
+                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                          "Asia/Kathmandu",
+                          { hour: "numeric", minute: "2-digit", hour12: true },
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-foreground mb-1">

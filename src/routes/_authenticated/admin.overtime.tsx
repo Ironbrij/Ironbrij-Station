@@ -564,18 +564,18 @@ function AdminOvertimePage() {
                         {req.status === "pending" ? (
                           <div className="inline-flex items-center gap-1.5">
                             <button
-                              onClick={() => handleDecision(req.id, "approved")}
-                              disabled={processingId === req.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
-                            >
-                              <UserCheck className="h-3.5 w-3.5" /> Approve
-                            </button>
-                            <button
                               onClick={() => handleDecision(req.id, "rejected")}
                               disabled={processingId === req.id}
                               className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition-all disabled:opacity-50"
                             >
                               <UserX className="h-3.5 w-3.5" /> Reject
+                            </button>
+                            <button
+                              onClick={() => handleDecision(req.id, "approved")}
+                              disabled={processingId === req.id}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
+                            >
+                              <UserCheck className="h-3.5 w-3.5" /> Accept
                             </button>
                           </div>
                         ) : (
