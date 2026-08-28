@@ -7,6 +7,7 @@ import {
   type Punch,
 } from "./types.ts";
 import { toDate, toMillis } from "./time.ts";
+import { getEmployeeForCompany, getPunchCompanyId } from "./company-context.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -373,14 +374,11 @@ export function getShiftTimeout(
   employee: Employee,
   punchedInAt: Date,
   now = new Date(),
-  graceMinutes = 20,
+  graceMinutes = 0,
 ) {
   const completion = getShiftCompletion(employee, punchedInAt);
-  // Auto punch-out triggers after scheduled shift end + grace period
-  const timeoutThreshold = Math.max(
-    completion.shift.end.getTime() + graceMinutes * 60_000,
-    completion.punchOutAt.getTime() + graceMinutes * 60_000,
-  );
+  // Auto punch-out triggers as soon as scheduled shift end is reached
+  const timeoutThreshold = completion.shift.end.getTime();
 
   if (now.getTime() < timeoutThreshold) return null;
 
@@ -395,6 +393,7 @@ export function computeRegularWorkedMsForDay(
 ) {
   const timezone = getShiftTimezone(employee);
   const targetDateKey = zonedDateKey(day, timezone);
+  const shift = getEmployeeShiftWindow(employee, day);
 
   // Filter punches belonging to targetDateKey's shift session
   const dayPunches = punches.filter((punch) => {
@@ -410,6 +409,7 @@ export function computeRegularWorkedMsForDay(
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
 
   let openIn: number | null = null;
+  let openType: string = "in";
   let workedMs = 0;
 
   for (const punch of sorted) {
@@ -417,17 +417,35 @@ export function computeRegularWorkedMsForDay(
     if (!timestamp) continue;
     if (punch.type === "in" || punch.type === "extra_in" || punch.type === "lunch_end") {
       openIn = timestamp;
+      openType = punch.type;
     } else if (
       (punch.type === "out" || punch.type === "extra_out" || punch.type === "lunch_start") &&
       openIn !== null
     ) {
-      workedMs += Math.max(0, timestamp - openIn);
+      if (openType === "in" || openType === "lunch_end") {
+        // Clamp regular shift worked ms to [shift.start, shift.end]
+        const effectiveStart = Math.max(openIn, shift.start.getTime());
+        const effectiveEnd = Math.min(timestamp, shift.end.getTime());
+        if (effectiveEnd > effectiveStart) {
+          workedMs += effectiveEnd - effectiveStart;
+        }
+      } else {
+        workedMs += Math.max(0, timestamp - openIn);
+      }
       openIn = null;
     }
   }
 
   if (openIn !== null) {
-    workedMs += Math.max(0, now.getTime() - openIn);
+    if (openType === "in" || openType === "lunch_end") {
+      const effectiveStart = Math.max(openIn, shift.start.getTime());
+      const effectiveEnd = Math.min(now.getTime(), shift.end.getTime());
+      if (effectiveEnd > effectiveStart) {
+        workedMs += effectiveEnd - effectiveStart;
+      }
+    } else {
+      workedMs += Math.max(0, now.getTime() - openIn);
+    }
   }
 
   return workedMs;
@@ -581,14 +599,25 @@ export function getLiveAttendanceStatus(
     .filter((punch) => punch.timestamp)
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   const latest = sorted.at(-1);
-  const isPunchedIn =
-    latest?.type === "in" ||
-    latest?.type === "extra_in" ||
-    latest?.type === "lunch_start" ||
-    latest?.type === "lunch_end";
-  const isOnLunch = latest?.type === "lunch_start";
-  const firstIn = getFirstRegularPunchInForShift(employee, sorted, now);
+  const shiftTimezone = getShiftTimezone(employee);
+  const todayDateKey = zonedDateKey(now, shiftTimezone);
   const shift = getEmployeeShiftWindow(employee, now);
+
+  const latestPunchDate = latest?.attendanceDate || latest?.date || (latest?.timestamp ? zonedDateKey(toDate(latest?.timestamp) ?? now, shiftTimezone) : "");
+  const isStaleFromPastDay = latestPunchDate ? latestPunchDate < todayDateKey : false;
+  const isPastShiftEnd = now.getTime() >= shift.end.getTime();
+
+  // If latest punch is regular 'in' or 'lunch_start' but shift is already finished or from a previous day, consider shift auto-completed
+  const isRegularActive =
+    (latest?.type === "in" || latest?.type === "lunch_start" || latest?.type === "lunch_end") &&
+    !isStaleFromPastDay &&
+    !isPastShiftEnd;
+
+  const isExtraActive = latest?.type === "extra_in";
+  const isPunchedIn = Boolean(isRegularActive || isExtraActive);
+  const isOnLunch = isRegularActive && latest?.type === "lunch_start";
+
+  const firstIn = getFirstRegularPunchInForShift(employee, sorted, now);
   const [shiftYear, shiftMonth, shiftDay] = shift.dateKey.split("-").map(Number);
   const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
   const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, workingDays);
@@ -613,11 +642,16 @@ export function getLiveAttendanceStatus(
         )
       : 0;
 
+  const isShiftCompleted = isPastShiftEnd;
+
   return {
     latest,
     firstIn,
     isPunchedIn,
     isOnLunch,
+    isOvertimeSession: isExtraActive,
+    isShiftCompleted,
+    isPastShiftEnd,
     isLate: lateness?.isLate ?? isMissingLate,
     minutesLate: lateness?.minutes ?? (isMissingLate ? missingMinutes : 0),
     isEarly,
@@ -626,5 +660,72 @@ export function getLiveAttendanceStatus(
     isMissingLate,
     isScheduledDay,
     shift,
+  };
+}
+
+/**
+ * Resolves the single active working session for an employee across ALL company memberships.
+ * An employee can only be clocked in at ONE company at any given time.
+ * Returns the companyId, latest punch, and live status of that single active session (or null if none).
+ */
+export function getActiveWorkingSession(
+  allPunches: Punch[],
+  employee: Employee | null | undefined,
+  now: Date = new Date(),
+  companies: Company[] = [],
+): {
+  activeCompanyId: string | null;
+  activePunch: Punch | null;
+  status: LiveAttendanceStatus | null;
+  activeCompanyName: string | null;
+} {
+  if (!employee || !allPunches || allPunches.length === 0) {
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+  }
+
+  // Sort punches chronologically ascending
+  const sorted = [...allPunches]
+    .filter((p) => p.timestamp)
+    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+
+  if (sorted.length === 0) {
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+  }
+
+  const latestGlobal = sorted[sorted.length - 1];
+  const isGlobalIn =
+    latestGlobal.type === "in" ||
+    latestGlobal.type === "extra_in" ||
+    latestGlobal.type === "lunch_start" ||
+    latestGlobal.type === "lunch_end";
+
+  if (!isGlobalIn) {
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+  }
+
+  const activeCompanyId = getPunchCompanyId(latestGlobal, employee);
+  const companyEmployee = getEmployeeForCompany(employee, activeCompanyId);
+  const companyPunches = sorted.filter((p) => getPunchCompanyId(p, employee) === activeCompanyId);
+  const comp = companies.find((c) => (c.id || COMPANY_ID) === activeCompanyId);
+  const activeCompanyName = comp?.name || (activeCompanyId === COMPANY_ID ? "Main Company" : activeCompanyId);
+
+  const status = getLiveAttendanceStatus(
+    companyEmployee,
+    companyPunches,
+    now,
+    comp?.lateGraceMinutes ?? 5,
+    comp?.workingDays,
+    getEmployeeHolidayDates(comp, companyEmployee),
+  );
+
+  if (!status.isPunchedIn) {
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+  }
+
+  return {
+    activeCompanyId,
+    activePunch: latestGlobal,
+    status,
+    activeCompanyName,
   };
 }

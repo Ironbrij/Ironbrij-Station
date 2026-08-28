@@ -37,6 +37,8 @@ import {
   getCompanyMembership,
   getEmployeeCompanyIds,
 } from "@/lib/company-context";
+import { findShiftConflicts, type ShiftDefinition } from "@/lib/shift-conflict";
+import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -137,9 +139,14 @@ function EmployeesListPage() {
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [empToPromote, setEmpToPromote] = useState<Employee | null>(null);
 
+  const { activeCompanyId } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterCompany, setFilterCompany] = useState<string>("all");
+  const [filterCompany, setFilterCompany] = useState<string>(activeCompanyId);
   const [filterDept, setFilterDept] = useState<string>("");
+
+  useEffect(() => {
+    setFilterCompany(activeCompanyId);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     const unsubCompanies = onSnapshot(collection(db(), "companies"), (snap) =>
@@ -573,11 +580,13 @@ function CompanyMembershipSettings({
   selectedCompanyIds,
   value,
   onChange,
+  departments = [],
 }: {
   companies: Company[];
   selectedCompanyIds: string[];
   value: Record<string, CompanyMembership>;
   onChange: (memberships: Record<string, CompanyMembership>) => void;
+  departments?: Department[];
 }) {
   if (selectedCompanyIds.length === 0) return null;
 
@@ -734,9 +743,43 @@ function CompanyMembershipSettings({
     });
   }
 
+  const currentShifts = selectedCompanyIds.flatMap((cId) => {
+    const list: ShiftDefinition[] = [];
+    const m = value[cId] || buildCompanyMembership(cId, {});
+    const cName = companies.find((c) => (c.id || COMPANY_ID) === cId)?.name || "Company";
+    const isMulti = Boolean(m.isMultipleShift);
+    if (isMulti && Array.isArray(m.shifts) && m.shifts.length > 0) {
+      m.shifts.forEach((s, idx) => {
+        list.push({
+          id: `${cId}-shift-${idx}`,
+          name: s.name || `Shift ${idx + 1}`,
+          startTime: s.startTime || "09:00",
+          endTime: s.endTime || "17:00",
+          workingDays: Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : (m.workingDays || [0, 1, 2, 3, 4, 5]),
+          companyId: cId,
+          companyName: cName,
+        });
+      });
+    } else if (m.shiftStartTime && m.shiftEndTime) {
+      list.push({
+        id: `${cId}-single`,
+        name: `${cName} Shift`,
+        startTime: m.shiftStartTime,
+        endTime: m.shiftEndTime,
+        workingDays: m.workingDays || [0, 1, 2, 3, 4, 5],
+        companyId: cId,
+        companyName: cName,
+      });
+    }
+    return list;
+  });
+
+  const conflicts = findShiftConflicts(currentShifts);
+
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium">Company-specific work settings</div>
+      {conflicts.length > 0 && <ShiftConflictAlert conflicts={conflicts} />}
       {selectedCompanyIds.map((companyId) => {
         const membership = value[companyId] || buildCompanyMembership(companyId, {});
         const companyName =
@@ -1078,6 +1121,25 @@ function CompanyMembershipSettings({
                 </select>
               </div>
             </div>
+
+            {/* Department for this company */}
+            <div className="pt-2 border-t mt-2">
+              <label className="text-xs font-semibold text-foreground">
+                Department for {companyName}
+              </label>
+              <select
+                value={membership.departmentId || ""}
+                onChange={(e) => update(companyId, { departmentId: e.target.value })}
+                className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
+              >
+                <option value="">No department / General</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         );
       })}
@@ -1130,7 +1192,7 @@ export function PromoteModal({
           companyId,
           buildCompanyMembership(companyId, {
             ...(companyMemberships[companyId] || {}),
-            departmentId: deptId,
+            departmentId: companyMemberships[companyId]?.departmentId ?? deptId,
             workingDays: companyMemberships[companyId]?.workingDays || workingDays,
           }),
         ]),
@@ -1309,6 +1371,7 @@ export function PromoteModal({
           selectedCompanyIds={selectedCompanyIds}
           value={companyMemberships}
           onChange={setCompanyMemberships}
+          departments={depts}
         />
         <div>
           <label className="text-sm font-medium">Employee location</label>
@@ -1413,7 +1476,7 @@ function NewEmployeeForm({
           companyId,
           buildCompanyMembership(companyId, {
             ...(companyMemberships[companyId] || {}),
-            departmentId: deptId,
+            departmentId: companyMemberships[companyId]?.departmentId ?? deptId,
             workingDays: companyMemberships[companyId]?.workingDays || workingDays,
           }),
         ]),
@@ -1677,6 +1740,7 @@ function NewEmployeeForm({
             selectedCompanyIds={selectedCompanyIds}
             value={companyMemberships}
             onChange={setCompanyMemberships}
+            departments={departments}
           />
           <div>
             <label className="text-sm font-medium">Employee location</label>

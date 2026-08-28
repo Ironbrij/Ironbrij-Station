@@ -43,14 +43,18 @@ function AdminOvertimePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
+  const { user, activeCompanyId } = useAuth();
   const [statusFilter, setStatusFilter] = useState<OvertimeStatus | "all">("pending");
-  const [filterCompany, setFilterCompany] = useState("all");
+  const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [filterDept, setFilterDept] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("all");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const { user } = useAuth();
+
+  useEffect(() => {
+    setFilterCompany(activeCompanyId);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     const unsubscribers = [

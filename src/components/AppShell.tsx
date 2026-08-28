@@ -8,8 +8,15 @@ import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { COMPANY_ID, type Punch } from "@/lib/types";
-import { getPunchCompanyId } from "@/lib/company-context";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getEmployeePunchesForCompany,
+  getPunchCompanyId,
+} from "@/lib/company-context";
+import { getActiveWorkingSession, getLiveAttendanceStatus } from "@/lib/attendance";
 import { toMillis } from "@/lib/time";
+import { CompanySelector } from "@/components/CompanySelector";
 
 interface NavItem {
   to: string;
@@ -38,7 +45,6 @@ export function AppShell({
   } = useAuth();
   const navigate = useNavigate();
   const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
-  const [pendingCompanyId, setPendingCompanyId] = useState(activeCompanyId);
   const navBadges = useNavigationBadgeCounts({
     isAdmin: Boolean(isAdmin),
     employee,
@@ -46,10 +52,6 @@ export function AppShell({
     activeCompanyId,
   });
   useAutoRejectExpiredLeaves(isAdmin);
-
-  useEffect(() => {
-    setPendingCompanyId(activeCompanyId);
-  }, [activeCompanyId]);
 
   useEffect(() => {
     if (!employee) return;
@@ -65,64 +67,17 @@ export function AppShell({
   }, [employee]);
 
   const activeAttendanceCompanyIds = useMemo(() => {
-    const latestByCompany = new Map<string, Punch>();
-    employeePunches.forEach((punch) => {
-      if (punch.type === "in" || punch.type === "out") {
-        latestByCompany.set(getPunchCompanyId(punch, employee), punch);
-      }
-    });
-    return [...latestByCompany.entries()]
-      .filter(([, punch]) => punch.type === "in")
-      .map(([companyId]) => companyId);
-  }, [employee, employeePunches]);
+    if (!employee) return [];
+    const activeSession = getActiveWorkingSession(employeePunches, employee, new Date(), companies);
+    return activeSession.activeCompanyId ? [activeSession.activeCompanyId] : [];
+  }, [employee, employeePunches, companies]);
 
-  function switchCompany() {
-    const companyId = pendingCompanyId;
-    if (companyId === activeCompanyId) return;
-    const otherActiveCompanyId = activeAttendanceCompanyIds.find((id) => id !== companyId);
-    if (otherActiveCompanyId) {
-      const activeName =
-        companies.find((item) => (item.id || COMPANY_ID) === otherActiveCompanyId)?.name ||
-        "another company";
-      const shouldContinue = window.confirm(
-        `You are still punched in to ${activeName}. Switching company will not move or close that attendance session. Continue?`,
-      );
-      if (!shouldContinue) return;
-    }
-    setActiveCompanyId(companyId);
-  }
-
-  const companySwitcher =
-    companies.length > 1 ? (
-      <div className="flex shrink-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-1 transition-colors hover:bg-muted/60">
-        <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
-        <select
-          value={activeCompanyId}
-          onChange={(event) => {
-            const nextId = event.target.value;
-            setPendingCompanyId(nextId);
-            const activeName =
-              companies.find((item) => (item.id || COMPANY_ID) === activeAttendanceCompanyIds[0])?.name ||
-              "another company";
-            if (activeAttendanceCompanyIds.length > 0 && !activeAttendanceCompanyIds.includes(nextId)) {
-              const shouldContinue = window.confirm(
-                `You are still punched in to ${activeName}. Switching company will not close that attendance session. Continue?`,
-              );
-              if (!shouldContinue) return;
-            }
-            setActiveCompanyId(nextId);
-          }}
-          className="max-w-[130px] sm:max-w-[160px] truncate border-none bg-transparent py-0.5 text-xs font-bold text-foreground outline-none cursor-pointer"
-          aria-label="Choose company"
-        >
-          {companies.map((item) => (
-            <option key={item.id || item.name} value={item.id || COMPANY_ID}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    ) : null;
+  const companySwitcher = (
+    <CompanySelector
+      variant="header"
+      activeShiftCompanyIds={activeAttendanceCompanyIds}
+    />
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">

@@ -69,13 +69,17 @@ function DepartmentsPage() {
   const [name, setName] = useState("");
   const [departmentState, setDepartmentState] = useState("N/A");
   const [deptCompanyId, setDeptCompanyId] = useState<string>(COMPANY_ID);
-  const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
+  const { user, loading: authLoading, company, activeCompanyId } = useAuth();
+  const [filterCompanyId, setFilterCompanyId] = useState<string>(activeCompanyId);
   const [saving, setSaving] = useState(false);
   const [expandedDeptId, setExpandedDeptId] = useState<string | null>(null);
   const [reportDaysMap, setReportDaysMap] = useState<Record<string, number>>({});
   const [allReportDays, setAllReportDays] = useState(30);
   const [allReportDeptId, setAllReportDeptId] = useState("");
-  const { user, loading: authLoading, company } = useAuth();
+
+  useEffect(() => {
+    setFilterCompanyId(activeCompanyId);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     if (authLoading || !user) return;

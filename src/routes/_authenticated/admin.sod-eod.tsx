@@ -64,11 +64,15 @@ const REQUIREMENT_OPTIONS: Array<{ value: ReportingRequirement; label: string }>
 ];
 
 function AdminSodEodPage() {
-  const { user } = useAuth();
+  const { user, activeCompanyId } = useAuth();
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyFilter, setCompanyFilter] = useState("all");
+  const [companyFilter, setCompanyFilter] = useState(activeCompanyId);
   const [questions, setQuestions] = useState<ReportQuestion[] | null>(null);
+
+  useEffect(() => {
+    setCompanyFilter(activeCompanyId);
+  }, [activeCompanyId]);
   const [reports, setReports] = useState<DailyReport[] | null>(null);
   const [settings, setSettings] = useState<ReportingSettings>(DEFAULT_REPORTING_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);

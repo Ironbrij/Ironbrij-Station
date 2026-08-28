@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "test": "node --test --experimental-strip-types tests/attendance-calculation.test.ts tests/company-context.test.ts",
+    "test": "node --test --experimental-strip-types tests/attendance-calculation.test.ts tests/company-context.test.ts tests/shift-conflict.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

@@ -8,6 +8,7 @@ import {
   getPunchCompanyId,
   getRequiredWorkMinutes,
 } from "../src/lib/company-context.ts";
+import { getActiveWorkingSession } from "../src/lib/attendance.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
 
 const employee: Employee = {
@@ -126,5 +127,63 @@ test("getEmployeeBreakSettings handles custom break allowances", () => {
     maxDailyBreaks: 2,
   };
   assert.deepEqual(getEmployeeBreakSettings(customEmp), { allowanceMinutes: 45, maxDailyBreaks: 2 });
+});
+
+test("getActiveWorkingSession strictly resolves only the single latest active company session", () => {
+  const emp: Employee = {
+    id: "emp-multi",
+    name: "Multi Worker",
+    role: "employee",
+    companyIds: ["alpha", "beta"],
+    shiftStartTime: "00:00",
+    shiftEndTime: "23:59",
+    workingDays: [0, 1, 2, 3, 4, 5, 6],
+    companyMemberships: {
+      alpha: {
+        companyId: "alpha",
+        shiftStartTime: "00:00",
+        shiftEndTime: "23:59",
+        workingDays: [0, 1, 2, 3, 4, 5, 6],
+      },
+      beta: {
+        companyId: "beta",
+        shiftStartTime: "00:00",
+        shiftEndTime: "23:59",
+        workingDays: [0, 1, 2, 3, 4, 5, 6],
+      },
+    },
+  };
+
+  const punches: Punch[] = [
+    {
+      id: "p1",
+      employeeId: "emp-multi",
+      companyId: "alpha",
+      type: "in",
+      timestamp: "2026-08-28T08:00:00.000Z",
+    },
+    {
+      id: "p2",
+      employeeId: "emp-multi",
+      companyId: "beta",
+      type: "in",
+      timestamp: "2026-08-28T08:11:00.000Z",
+    },
+  ];
+
+  // Beta is latest, so Beta is the ONLY active working company
+  const session = getActiveWorkingSession(punches, emp, new Date("2026-08-28T08:15:00.000Z"));
+  assert.equal(session.activeCompanyId, "beta");
+
+  // After punching out from beta, active session is null
+  punches.push({
+    id: "p3",
+    employeeId: "emp-multi",
+    companyId: "beta",
+    type: "out",
+    timestamp: "2026-08-28T08:30:00.000Z",
+  });
+  const sessionAfterOut = getActiveWorkingSession(punches, emp, new Date("2026-08-28T08:35:00.000Z"));
+  assert.equal(sessionAfterOut.activeCompanyId, null);
 });
 

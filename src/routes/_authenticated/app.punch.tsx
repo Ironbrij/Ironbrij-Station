@@ -30,6 +30,7 @@ import {
   computeRegularWorkedMsForDay,
   formatInTimezone,
   getActiveEmployeeLeave,
+  getActiveWorkingSession,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
@@ -50,6 +51,8 @@ import {
 import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
+  ArrowRightLeft,
   Lock,
   Megaphone,
   X,
@@ -69,6 +72,8 @@ import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 import {
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getEmployeePunchesForCompany,
   getPunchCompanyId,
   getRequiredWorkMinutes,
 } from "@/lib/company-context";
@@ -88,7 +93,7 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 });
 
 function PunchPage() {
-  const { user, employee, company, activeCompanyId, isAdmin } = useAuth();
+  const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
@@ -96,8 +101,10 @@ function PunchPage() {
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState(randomQuote());
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [confirmEarly, setConfirmEarly] = useState(false);
+  const [showEarlyModal, setShowEarlyModal] = useState(false);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
+  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
+  const [overtimeReason, setOvertimeReason] = useState("Post-shift overtime work");
   const [dismissedNoticeIds, setDismissedNoticeIds] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem("dismissed_notice_ids");
@@ -248,14 +255,38 @@ function PunchPage() {
     return companyPunches[companyPunches.length - 1];
   }, [companyPunches]);
 
+  // Resolves the single active working session for this employee across ALL companies
+  const activeWorkingSession = useMemo(() => {
+    return getActiveWorkingSession(allPunches, employee, new Date(now), companies);
+  }, [allPunches, employee, now, companies]);
+
+  const attendanceStatus = useMemo(
+    () =>
+      employee
+        ? getLiveAttendanceStatus(
+            employee,
+            companyPunches,
+            new Date(now),
+            company?.lateGraceMinutes ?? 5,
+            company?.workingDays,
+            getEmployeeHolidayDates(company, employee),
+          )
+        : null,
+    [employee, companyPunches, now, company],
+  );
+
   const isPunchedIn = useMemo(() => {
-    return (
-      latestCompanyPunch?.type === "in" ||
-      latestCompanyPunch?.type === "extra_in" ||
-      latestCompanyPunch?.type === "lunch_start" ||
-      latestCompanyPunch?.type === "lunch_end"
+    if (activeWorkingSession.activeCompanyId) {
+      return activeWorkingSession.activeCompanyId === activeCompanyId;
+    }
+    return Boolean(
+      (latestCompanyPunch?.type === "in" ||
+        latestCompanyPunch?.type === "extra_in" ||
+        latestCompanyPunch?.type === "lunch_start" ||
+        latestCompanyPunch?.type === "lunch_end") &&
+      attendanceStatus?.isPunchedIn
     );
-  }, [latestCompanyPunch]);
+  }, [activeWorkingSession, activeCompanyId, latestCompanyPunch, attendanceStatus]);
 
   const isOnLunch = useMemo(() => {
     return latestCompanyPunch?.type === "lunch_start";
@@ -312,25 +343,26 @@ function PunchPage() {
     breakSettings.allowanceMinutes,
   ]);
 
-  const attendanceStatus = useMemo(
-    () =>
-      employee
-        ? getLiveAttendanceStatus(
-            employee,
-            companyPunches,
-            new Date(now),
-            company?.lateGraceMinutes ?? 5,
-            company?.workingDays,
-            getEmployeeHolidayDates(company, employee),
-          )
-        : null,
-    [employee, companyPunches, now, company],
-  );
-
   const shiftConversions = useMemo(
     () => (employee ? getShiftConversions(employee, new Date(now)) : []),
     [employee, now],
   );
+
+  // Check if employee is currently clocked in at ANY other company
+  const activeOtherCompany = useMemo(() => {
+    if (
+      activeWorkingSession.activeCompanyId &&
+      activeWorkingSession.activeCompanyId !== activeCompanyId
+    ) {
+      return {
+        companyId: activeWorkingSession.activeCompanyId,
+        companyName: activeWorkingSession.activeCompanyName || "Another Company",
+        status: activeWorkingSession.status,
+        punch: activeWorkingSession.activePunch,
+      };
+    }
+    return null;
+  }, [activeWorkingSession, activeCompanyId]);
 
   // Recent 10 activity logs sorted descending
   const recentPunchesList = useMemo(() => {
@@ -377,21 +409,25 @@ function PunchPage() {
     });
   }, [company, companyPunches, employee, now]);
 
-  async function doPunch(targetType: "in" | "out") {
+  async function doPunch(targetType: "in" | "out" | "extra_in", customReason?: string) {
     if (!employee || !user) return;
 
     // Strict Double-Punch Validation
     const latestPunch = companyPunches[companyPunches.length - 1];
     const latestType = latestPunch?.type;
 
-    if (targetType === "in" && (latestType === "in" || latestType === "extra_in")) {
+    if (
+      (targetType === "in" || targetType === "extra_in") &&
+      (latestType === "in" || latestType === "extra_in" || latestType === "lunch_start" || latestType === "lunch_end") &&
+      attendanceStatus?.isPunchedIn
+    ) {
       toast.error("Action Blocked: You are already punched in!");
       return;
     }
 
     if (
       targetType === "out" &&
-      (!latestType || latestType === "out" || latestType === "extra_out")
+      (!latestType || latestType === "out" || latestType === "extra_out" || !attendanceStatus?.isPunchedIn)
     ) {
       toast.error("Action Blocked: You are already punched out!");
       return;
@@ -399,16 +435,49 @@ function PunchPage() {
 
     setBusy(true);
     try {
+      // Auto-close any previous active session across other companies to strictly enforce single active company
+      if ((targetType === "in" || targetType === "extra_in") && activeOtherCompany) {
+        const prevCompanyId = activeOtherCompany.companyId;
+        const prevPunches = getEmployeePunchesForCompany(allPunches, employee, prevCompanyId);
+        const latestPrev = prevPunches[prevPunches.length - 1];
+        if (
+          latestPrev &&
+          (latestPrev.type === "in" ||
+            latestPrev.type === "extra_in" ||
+            latestPrev.type === "lunch_start" ||
+            latestPrev.type === "lunch_end")
+        ) {
+          await addDoc(collection(db(), "punches"), {
+            employeeId: employee.id,
+            companyId: prevCompanyId,
+            type: "out",
+            timestamp: new Date().toISOString(),
+            source: "web",
+            notes: `Auto punched out on switching to ${company?.name || "another company"}`,
+          });
+          toast.info(`Clocked out from ${activeOtherCompany.companyName}`);
+        }
+      }
+
+      const isExtraOut = latestType === "extra_in" && targetType === "out";
       const punchType =
-        latestType === "extra_in" && targetType === "out" ? "extra_out" : targetType;
+        targetType === "extra_in"
+          ? "extra_in"
+          : isExtraOut
+            ? "extra_out"
+            : targetType;
       const punchTime = new Date();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
-      const inPunchDate = latestPunch?.attendanceDate || latestPunch?.date || zonedDateKey(toDate(latestPunch?.timestamp) ?? punchTime, getShiftTimezone(employee));
+      const inPunchDate =
+        latestPunch?.attendanceDate ||
+        latestPunch?.date ||
+        zonedDateKey(toDate(latestPunch?.timestamp) ?? punchTime, getShiftTimezone(employee));
       const targetAttendanceDate = targetType === "out" && latestPunch ? inPunchDate : punchDate;
       const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
-      const shiftScheduleTime = targetType === "out" && latestPunch?.timestamp
-        ? toDate(latestPunch.timestamp) ?? punchTime
-        : punchTime;
+      const shiftScheduleTime =
+        targetType === "out" && latestPunch?.timestamp
+          ? toDate(latestPunch.timestamp) ?? punchTime
+          : punchTime;
       const schedule = getLiveAttendanceStatus(
         employee,
         companyPunches,
@@ -479,19 +548,21 @@ function PunchPage() {
             : { attendanceStatus: "in_progress" }),
       });
 
-      // 1. If overtime was worked on punch-out, auto-create a pending OvertimeRequest for Admin
+      // 1. If overtime was worked on regular punch-out or extra_out, save OvertimeRequest for Admin
       if (targetType === "out" && recordedOvertimeMinutes > 0) {
         try {
-          const reason = isOffShiftDay
-            ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
-            : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
+          const reason = isExtraOut
+            ? customReason || `Completed ${formatWorkMinutes(recordedOvertimeMinutes)} post-shift overtime work`
+            : isOffShiftDay
+              ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
+              : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
 
           const otDoc = await addDoc(collection(db(), "overtimeRequests"), {
             employeeId: employee.id,
             employeeName: employee.name,
             companyId: activeCompanyId,
             date: targetAttendanceDate,
-            requestType: isOffShiftDay ? "off_shift_work" : "overtime",
+            requestType: isExtraOut || isOffShiftDay ? (isOffShiftDay ? "off_shift_work" : "overtime") : "overtime",
             punchOutId: punchRef.id,
             punchInId: latestPunch?.id || "",
             overtimeMinutes: recordedOvertimeMinutes,
@@ -515,7 +586,7 @@ function PunchPage() {
         earlyPunchMinutes = Math.floor(
           (shiftWindow.start.getTime() - punchTime.getTime()) / 60_000,
         );
-        if (earlyPunchMinutes >= 5) {
+        if (earlyPunchMinutes >= 1) {
           isEarlyPunchIn = true;
           try {
             const earlyReason = `Early clock-in: started work ${formatWorkMinutes(earlyPunchMinutes)} before scheduled shift at ${format(shiftWindow.start, "h:mm a")}`;
@@ -545,6 +616,34 @@ function PunchPage() {
         }
       }
 
+      // 3. If starting post-shift overtime session directly:
+      if (targetType === "extra_in") {
+        try {
+          const postShiftReason = customReason || "Post-shift overtime session";
+          const otDoc = await addDoc(collection(db(), "overtimeRequests"), {
+            employeeId: employee.id,
+            employeeName: employee.name,
+            companyId: activeCompanyId,
+            date: punchDate,
+            requestType: "overtime",
+            punchInId: punchRef.id,
+            overtimeMinutes: 0,
+            normalWorkMinutes: 0,
+            isOffShiftDay,
+            reason: postShiftReason,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+          });
+          await setDoc(
+            doc(db(), "punches", punchRef.id),
+            { overtimeRequestId: otDoc.id },
+            { merge: true },
+          );
+        } catch (otErr) {
+          console.warn("Could not save post-shift overtime request:", otErr);
+        }
+      }
+
       if (user?.uid) {
         try {
           await publishPersonalAttendanceEvent({
@@ -561,19 +660,21 @@ function PunchPage() {
       }
 
       setQuote(randomQuote());
-      if (targetType === "in") {
+      if (targetType === "in" || targetType === "extra_in") {
         const lateness = computeEmployeeLateness(
           new Date(),
           employee,
           company?.lateGraceMinutes ?? 5,
         );
-        if (isOffShiftDay) {
+        if (targetType === "extra_in") {
+          toast.success("Punched in for Overtime! Hours will be tracked in Overtime section.");
+        } else if (isOffShiftDay) {
           toast.success("Punched in on off-shift day! Time will count as overtime.");
         } else if (approvedLeaveToday) {
           toast.success("Punched in on leave date!");
         } else if (isEarlyPunchIn) {
           toast.success(
-            `Punched in early! Early clock-in request (${formatWorkMinutes(earlyPunchMinutes)}) submitted to Admin for approval.`,
+            `Punched in early! Early clock-in overtime (${formatWorkMinutes(earlyPunchMinutes)}) recorded for admin approval. Regular shift hours will count starting from ${format(shiftWindow.start, "h:mm a")}.`,
           );
         } else if (lateness.isLate) {
           toast.warning(`Punched in ${lateness.minutes}m late.`);
@@ -595,8 +696,9 @@ function PunchPage() {
         // Auto-popup EOD Notepad after Punch Out
         setShowNotepadModal("eod");
       }
-      setConfirmEarly(false);
+      setShowEarlyModal(false);
       setShowPunchOutModal(false);
+      setShowOvertimeModal(false);
     } catch (e) {
       toast.error("Punch Action Failed: " + (e as Error).message);
     } finally {
@@ -770,10 +872,35 @@ function PunchPage() {
     }
   }
 
+  const shiftWindow = attendanceStatus?.shift;
+  const isOffShiftDayToday = !attendanceStatus?.isScheduledDay || Boolean(holiday);
+  const isEarlyBeforeShift = Boolean(
+    shiftWindow?.start &&
+    new Date(now).getTime() < shiftWindow.start.getTime() &&
+    !isOffShiftDayToday &&
+    !attendanceStatus?.isPunchedIn
+  );
+  const earlyMinutes = isEarlyBeforeShift && shiftWindow?.start
+    ? Math.max(1, Math.floor((shiftWindow.start.getTime() - new Date(now).getTime()) / 60000))
+    : 0;
+
   function handlePunchClick() {
     if (isPunchedIn) {
       doPunch("out");
     } else {
+      // 1. If shift has totally ended (now >= shiftWindow.end), prompt for post-shift overtime
+      if (attendanceStatus?.isPastShiftEnd) {
+        setShowOvertimeModal(true);
+        return;
+      }
+
+      // 2. If punching in early before scheduled shift start, prompt for early clock-in confirmation
+      if (isEarlyBeforeShift) {
+        setShowEarlyModal(true);
+        return;
+      }
+
+      // 3. Regular on-time punch in (automatically clocks out from any other active company)
       doPunch("in");
     }
   }
@@ -1026,7 +1153,7 @@ function PunchPage() {
                   const isLunchStart = p.type === "lunch_start";
                   const isLunchEnd = p.type === "lunch_end";
                   const isPunchIn = p.type === "in" || p.type === "extra_in";
-                  const timeStr = formatInTimezone(dateObj, getEmployeeTimezone(employee));
+                  const timeStr = format(dateObj, "h:mm a");
                   const dateStr = format(dateObj, "dd/MM/yyyy");
 
                   const label = isLunchStart
@@ -1114,41 +1241,109 @@ function PunchPage() {
                   </div>
                 ) : isPunchedIn && lastIn ? (
                   <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
-                    <div className="text-lg font-semibold">
-                      {lastIn &&
-                      attendanceStatus?.shift?.start &&
-                      lastIn.getTime() < attendanceStatus.shift.start.getTime() &&
-                      new Date().getTime() < attendanceStatus.shift.start.getTime()
-                        ? `Early start · Working since ${format(lastIn, "h:mm a")}`
-                        : currentSessionCalculation?.missingPunchOut
-                          ? "Shift completed"
-                          : `Working since ${format(lastIn, "h:mm a")}`}
+                    <div className="text-lg font-semibold flex items-center justify-center gap-2">
+                      {latestCompanyPunch?.type === "extra_in" ? (
+                        <>
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>⚡ Overtime Active · Working since {format(lastIn, "h:mm a")}</span>
+                        </>
+                      ) : lastIn &&
+                        attendanceStatus?.shift?.start &&
+                        lastIn.getTime() < attendanceStatus.shift.start.getTime() &&
+                        new Date().getTime() < attendanceStatus.shift.start.getTime() ? (
+                        <>
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span>🌅 Early Start · Working since {format(lastIn, "h:mm a")}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Working since {format(lastIn, "h:mm a")}</span>
+                        </>
+                      )}
                     </div>
                     <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
                     <div className="mt-1 text-sm font-medium text-emerald-900">
                       {company?.name || "Company"} · {deptName}
                     </div>
+
+                    {/* Early Clock In Notice */}
                     {lastIn &&
                       attendanceStatus?.shift?.start &&
                       lastIn.getTime() < attendanceStatus.shift.start.getTime() && (
-                        <div className="mt-2 text-xs font-semibold text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded">
-                          Early Clock-In: Started {format(lastIn, "h:mm a")} before scheduled shift (
-                          {format(attendanceStatus.shift.start, "h:mm a")}). Early start overtime
-                          request is submitted for admin review.
+                        <div className="mt-3 rounded-xl border bg-card p-3 text-xs text-foreground text-left space-y-1 shadow-xs">
+                          <div className="flex items-center gap-1.5 font-bold text-primary">
+                            <Sun className="h-3.5 w-3.5" />
+                            <span>Early Clock-In Recorded</span>
+                          </div>
+                          <p className="text-muted-foreground text-[11px]">
+                            Started at <strong>{format(lastIn, "h:mm a")}</strong> before scheduled shift ({format(attendanceStatus.shift.start, "h:mm a")}). Early duration is tracked as Overtime. At {format(attendanceStatus.shift.start, "h:mm a")}, regular shift hours will start counting toward your scheduled shift duration ({formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
+                          </p>
                         </div>
                       )}
-                    {currentSessionCalculation?.missingPunchOut && (
-                      <div className="mt-2 text-xs font-semibold text-sky-800 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded">
-                        Scheduled shift duration has completed. SavyTimes automatically preserves
-                        regular scheduled hours. Overtime worked is tracked for admin approval.
+
+                    {/* Post Shift Overtime Notice */}
+                    {latestCompanyPunch?.type === "extra_in" && (
+                      <div className="mt-3 rounded-xl border bg-card p-3 text-xs text-foreground text-left space-y-1 shadow-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-primary">
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>Overtime Session Active</span>
+                        </div>
+                        <p className="text-muted-foreground text-[11px]">
+                          Your scheduled shift has ended. Extra working time is being recorded directly into the Overtime section.
+                        </p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
-                    <div className="text-lg font-semibold">Not working</div>
-                    <div className="text-sm text-muted-foreground">Ready to start shift</div>
-                    <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
+                  <div className="space-y-2">
+                    {/* Active in another company warning */}
+                    {activeOtherCompany && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-left text-xs text-foreground space-y-2.5 shadow-xs">
+                        <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300 text-sm">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          <span>Active Shift Running at {activeOtherCompany.companyName}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          You are currently clocked in at <strong>{activeOtherCompany.companyName}</strong>. You can only work in one company at a time.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setActiveCompanyId(activeOtherCompany.companyId)}
+                            className="btn-lift inline-flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 shadow-xs transition-all cursor-pointer"
+                          >
+                            Switch to {activeOtherCompany.companyName} &rarr;
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => doPunch("in")}
+                            className="btn-lift inline-flex items-center gap-1.5 rounded-lg border border-border bg-background hover:bg-muted font-bold text-xs px-3.5 py-2 shadow-2xs transition-all cursor-pointer"
+                          >
+                            <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span>End Shift at {activeOtherCompany.companyName} & Start Work Here</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
+                      <div className="text-lg font-semibold">
+                        {attendanceStatus?.isPastShiftEnd
+                          ? "Shift Completed"
+                          : isEarlyBeforeShift && shiftWindow?.start
+                            ? "Ready to start shift (Early)"
+                            : "Not working"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {attendanceStatus?.isPastShiftEnd
+                          ? "Your scheduled shift has ended. Ready for overtime work."
+                          : isEarlyBeforeShift && shiftWindow?.start
+                            ? `Scheduled shift starts at ${format(shiftWindow.start, "h:mm a")} (${formatWorkMinutes(earlyMinutes)} from now). Clocking in now will log Early Overtime.`
+                            : "Ready to start shift"}
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1159,8 +1354,16 @@ function PunchPage() {
               {!isOnLunch && (
                 <div className="text-xs font-medium text-muted-foreground">
                   {isPunchedIn
-                    ? "End the current shift or take break"
-                    : "Begin today’s shift"}
+                    ? latestCompanyPunch?.type === "extra_in"
+                      ? "End the current overtime session"
+                      : "End the current shift or take break"
+                    : activeOtherCompany
+                      ? `Clocked in at ${activeOtherCompany.companyName}`
+                      : attendanceStatus?.isPastShiftEnd
+                        ? "Start an overtime shift"
+                        : isEarlyBeforeShift && shiftWindow?.start
+                          ? "Clock in early (Early Overtime will be tracked)"
+                          : "Begin today’s shift"}
                 </div>
               )}
 
@@ -1182,30 +1385,49 @@ function PunchPage() {
                         ? "cursor-not-allowed bg-slate-400 opacity-70"
                         : isPunchedIn
                           ? "bg-rose-600 hover:bg-rose-700"
-                          : "bg-primary hover:bg-primary/90"
+                          : activeOtherCompany
+                            ? "bg-amber-500 hover:bg-amber-600"
+                            : attendanceStatus?.isPastShiftEnd
+                              ? "bg-amber-500 hover:bg-amber-600"
+                              : isEarlyBeforeShift && shiftWindow?.start
+                                ? "bg-amber-500 hover:bg-amber-600"
+                                : "bg-primary hover:bg-primary/90"
                     }`}
                   >
                     {isPunchedIn
-                      ? "Stop Work"
+                      ? latestCompanyPunch?.type === "extra_in"
+                        ? "Stop Overtime (End Extra Work)"
+                        : "Stop Work"
                       : isHoliday
                         ? "Company Holiday (Shift Off)"
                         : onLeaveToday
                           ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
-                          : "Start Work"}
+                          : activeOtherCompany ? (
+                            <span className="inline-flex items-center justify-center gap-2">
+                              <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                              <span>End {activeOtherCompany.companyName} Shift & Start Work Here</span>
+                            </span>
+                          ) : attendanceStatus?.isPastShiftEnd
+                              ? "⚡ Start Overtime Work"
+                              : isEarlyBeforeShift && shiftWindow?.start
+                                ? `🌅 Start Work (${formatWorkMinutes(earlyMinutes)} Early)`
+                                : "Start Work"}
                   </button>
 
-                  {/* Optional Break Trigger Button - disappears when daily break limit is reached */}
-                  {canTakeBreak && (
+                  {/* Optional Break Trigger Button - Solid, catchy, and clean */}
+                  {canTakeBreak && !latestCompanyPunch?.type?.includes("extra") && (
                     <button
                       type="button"
                       disabled={busy}
                       onClick={() => doLunchPunch("lunch_start")}
-                      className="btn-lift w-full rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold py-2.5 px-4 text-xs shadow-xs flex items-center justify-center gap-2 transition-all"
+                      className="btn-lift w-full rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-3 px-4 text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
-                      <Coffee className="h-4 w-4 text-amber-500" />
-                      {breakSettings.maxDailyBreaks > 1
-                        ? `Take Break #${todayBreaksCount + 1} (${breakSettings.allowanceMinutes}m)`
-                        : `Take Break (${breakSettings.allowanceMinutes}m)`}
+                      <Coffee className="h-4 w-4 text-white" />
+                      <span>
+                        {breakSettings.maxDailyBreaks > 1
+                          ? `Take Break #${todayBreaksCount + 1} (${breakSettings.allowanceMinutes}m)`
+                          : `Take Break (${breakSettings.allowanceMinutes}m)`}
+                      </span>
                     </button>
                   )}
                 </div>
@@ -1220,9 +1442,14 @@ function PunchPage() {
                       ⏸ Paused
                     </span>
                   )}
+                  {latestCompanyPunch?.type === "extra_in" && (
+                    <span className="text-xs font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                      ⚡ Overtime
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground font-medium mt-0.5">
-                  ({(totalWorkedMs / 3600000).toFixed(2)} hours today)
+                  ({(totalWorkedMs / 3600000).toFixed(2)} regular shift hours today)
                 </div>
                 {currentSessionCalculation && (
                   <div className="mt-2 text-xs font-medium text-muted-foreground">
@@ -1372,6 +1599,134 @@ function PunchPage() {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----- Overtime Confirmation Modal ----- */}
+      {showOvertimeModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-5 text-left">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 shrink-0">
+                  <Clock className="h-6 w-6 text-amber-500 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">Start Overtime Shift?</h3>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Scheduled shift for today has ended
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOvertimeModal(false)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-3.5 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
+              Your regular shift for today has already completed. Starting work now will log an <strong>Overtime</strong> session that is tracked and submitted for admin review.
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-foreground">
+                Overtime Reason / Notes (Optional)
+              </label>
+              <input
+                type="text"
+                value={overtimeReason}
+                onChange={(e) => setOvertimeReason(e.target.value)}
+                placeholder="e.g. Completing project deliverables, extra shift..."
+                className="w-full rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium text-foreground focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            <div className="pt-3 flex items-center justify-end gap-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowOvertimeModal(false)}
+                className="rounded-xl border px-4 py-2.5 text-xs font-bold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => doPunch("extra_in", overtimeReason)}
+                className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+              >
+                {busy ? "Starting..." : "⚡ Yes, Start Overtime"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----- Early Clock-In Confirmation Modal ----- */}
+      {showEarlyModal && shiftWindow?.start && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-5 text-left">
+            <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 shrink-0">
+                  <Sun className="h-6 w-6 text-amber-500 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">You're Clocking In Early</h3>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Scheduled shift starts at {format(shiftWindow.start, "h:mm a")}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEarlyModal(false)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed space-y-2">
+              <p>
+                You are starting work <strong>{formatWorkMinutes(earlyMinutes)} before</strong> your scheduled shift ({format(shiftWindow.start, "h:mm a")}).
+              </p>
+              <div className="space-y-1 pt-1 border-t border-amber-500/20">
+                <p className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                  This early time will be counted as <strong>Overtime</strong>, not a regular shift.
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                  At <strong>{format(shiftWindow.start, "h:mm a")}</strong>, regular shift hours will start counting toward your scheduled shift duration ({formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 flex items-center justify-end gap-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowEarlyModal(false)}
+                className="rounded-xl border px-4 py-2.5 text-xs font-bold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setShowEarlyModal(false);
+                  doPunch("in");
+                }}
+                className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+              >
+                {busy ? "Starting..." : "🌅 Yes, Clock In Early"}
+              </button>
             </div>
           </div>
         </div>

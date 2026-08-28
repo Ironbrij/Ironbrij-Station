@@ -51,6 +51,8 @@ import {
   getRequiredWorkMinutes,
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
+import { getEmployeeAllShiftDefinitions, findShiftConflicts } from "@/lib/shift-conflict";
+import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
   head: () => ({ meta: [{ title: "Employee Profile — SavyTimes Admin" }] }),
@@ -345,6 +347,12 @@ function EmployeeDetail() {
         : null,
     [employee, punches, now, company, graceMinutes],
   );
+
+  const profileShiftConflicts = useMemo(() => {
+    if (!employee) return [];
+    const allDefs = getEmployeeAllShiftDefinitions(employee, companies);
+    return findShiftConflicts(allDefs);
+  }, [employee, companies]);
 
   const activeLeave = useMemo(
     () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, now) : null),
@@ -755,6 +763,9 @@ function EmployeeDetail() {
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
               Company-Specific Shifts & Working Days
             </h3>
+            {profileShiftConflicts.length > 0 && (
+              <ShiftConflictAlert conflicts={profileShiftConflicts} className="mb-2" />
+            )}
             <div className="grid gap-2 sm:grid-cols-2">
               {Object.entries(employee.companyMemberships).map(([cId, m]) => {
                 const comp = companies.find((c) => (c.id || COMPANY_ID) === cId);
@@ -775,11 +786,18 @@ function EmployeeDetail() {
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-bold text-primary">{compName}</span>
-                      {isMulti && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                          Multi-Shift ({m.shifts?.length || 0})
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {m.departmentId && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-muted text-foreground border border-border">
+                            {departments.find((d) => d.id === m.departmentId)?.name || "General"}
+                          </span>
+                        )}
+                        {isMulti && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                            Multi-Shift ({m.shifts?.length || 0})
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {isMulti && m.shifts && m.shifts.length > 0 ? (
                       <div className="space-y-1 pt-0.5">

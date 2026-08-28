@@ -53,12 +53,16 @@ function LateArrivalsPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const { company, user, activeCompanyId } = useAuth();
   const [filterDept, setFilterDept] = useState("");
-  const [filterCompany, setFilterCompany] = useState("all");
+  const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
   const [now, setNow] = useState(() => new Date());
-  const { company, user } = useAuth();
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
+
+  useEffect(() => {
+    setFilterCompany(activeCompanyId);
+  }, [activeCompanyId]);
 
   // Manual Clock-In Modal States
   const [showManualModal, setShowManualModal] = useState(false);

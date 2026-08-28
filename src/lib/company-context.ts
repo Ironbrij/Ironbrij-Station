@@ -151,6 +151,14 @@ export function getPunchCompanyId(punch: Punch, employee?: Employee | null): str
   return punch.companyId || employee?.companyIds?.[0] || employee?.companyId || COMPANY_ID;
 }
 
+export function getEmployeePunchesForCompany(
+  punches: Punch[],
+  employee: Employee | null | undefined,
+  companyId: string,
+): Punch[] {
+  return punches.filter((punch) => getPunchCompanyId(punch, employee) === companyId);
+}
+
 export function buildCompanyMembership(
   companyId: string,
   input: Partial<CompanyMembership>,

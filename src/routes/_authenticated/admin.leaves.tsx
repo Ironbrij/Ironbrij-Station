@@ -47,16 +47,20 @@ function LeaveRequestsPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
+  const { user, activeCompanyId } = useAuth();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
-  const [filterCompany, setFilterCompany] = useState("all");
+  const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
-  const { user } = useAuth();
   const today = ymd(new Date());
+
+  useEffect(() => {
+    setFilterCompany(activeCompanyId);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     const unsubCompanies = onSnapshot(collection(db(), "companies"), (snapshot) =>

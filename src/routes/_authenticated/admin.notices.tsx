@@ -62,7 +62,12 @@ function NotificationsPage() {
   const [now, setNow] = useState(() => new Date());
 
   // Global Page Filters
-  const [pageCompanyFilter, setPageCompanyFilter] = useState("all");
+  const { company, user, activeCompanyId } = useAuth();
+  const [pageCompanyFilter, setPageCompanyFilter] = useState(activeCompanyId);
+
+  useEffect(() => {
+    setPageCompanyFilter(activeCompanyId);
+  }, [activeCompanyId]);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -84,7 +89,6 @@ function NotificationsPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [readLateIds, setReadLateIds] = useState<Set<string>>(() => readLateAlertIds());
-  const { company, user } = useAuth();
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);

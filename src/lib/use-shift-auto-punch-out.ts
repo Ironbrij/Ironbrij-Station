@@ -11,7 +11,12 @@ import {
 import { toast } from "sonner";
 import { auth, db } from "./firebase";
 import { formatInTimezone, getShiftTimeout } from "./attendance";
-import { getPunchCompanyId, getRequiredWorkMinutes } from "./company-context";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getPunchCompanyId,
+  getRequiredWorkMinutes,
+} from "./company-context";
 import { companyEmailBranding } from "./email-branding";
 import { toDate, toMillis } from "./time";
 import type { Company, Employee, Punch } from "./types";
@@ -29,115 +34,106 @@ export async function reconcileEmployeeShift(
   activeCompanyId: string,
   announceToCurrentUser: boolean,
 ) {
-  const companyPunches = punches.filter(
-    (punch) => getPunchCompanyId(punch, employee) === activeCompanyId,
-  );
-  const latest = companyPunches.at(-1);
-  if (!latest?.timestamp || latest.type !== "in") return false;
+  const companyIds = getEmployeeCompanyIds(employee);
+  let anyCreated = false;
 
-  const punchedInAt = toDate(latest.timestamp);
-  if (!punchedInAt) return false;
-
-  const graceMinutes = company?.punchOutGraceMinutes ?? 20;
-  const timeout = getShiftTimeout(employee, punchedInAt, new Date(), graceMinutes);
-  if (!timeout) return false;
-
-  const recordId = timeoutDocumentId(latest.id);
-  const punchRef = doc(db(), "punches", recordId);
-  const noticeRef = doc(db(), "notices", recordId);
-  const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
-  const autoOutDate = timeout.shift.end || timeout.punchOutAt;
-
-  const created = await runTransaction(db(), async (transaction) => {
-    const existingPunch = await transaction.get(punchRef);
-    if (existingPunch.exists()) return false;
-
-    transaction.set(punchRef, {
-      employeeId: employee.id,
-      employeeName: employee.name,
-      companyId: activeCompanyId,
-      companyName: company?.name || "Company",
-      date: timeout.shift.dateKey,
-      attendanceDate: timeout.shift.dateKey,
-      type: "out",
-      timestamp: Timestamp.fromDate(autoOutDate),
-      source: "auto",
-      isAuto: true,
-      autoReason: "forgot_punch_out",
-      scheduledShiftStart: timeout.shift.start.toISOString(),
-      scheduledShiftEnd: timeout.shift.end.toISOString(),
-      shiftTimezone: timeout.shift.timezone,
-      requiredWorkMinutes,
-      normalWorkMinutes: requiredWorkMinutes,
-      overtimeMinutes: 0,
-      totalEligibleMinutes: requiredWorkMinutes,
-      attendanceStatus: "complete",
-    });
-
-    transaction.set(noticeRef, {
-      title: "We think you forgot to punch out",
-      message: `You remained clocked in past your scheduled shift, so SavyTimes automatically clocked you out at ${formatInTimezone(
-        autoOutDate,
-        timeout.shift.timezone,
-      )} to preserve accurate shift records. If you worked overtime, your extra hours can be approved by your admin in the Overtime tab.`,
-      priority: "info",
-      targetType: "employee",
-      targetEmployeeId: employee.id,
-      companyId: activeCompanyId,
-      createdAt: new Date().toISOString(),
-      authorName: "SavyTimes",
-    });
-
-    return true;
-  });
-
-  if (created) {
-    // Send email notice to employee
-    try {
-      const currentUser = auth.currentUser;
-      const idToken = currentUser ? await currentUser.getIdToken() : "";
-      const headers: Record<string, string> = {
-        "content-type": "application/json",
-      };
-      if (idToken) {
-        headers["authorization"] = `Bearer ${idToken}`;
-      } else {
-        headers["authorization"] = `Bearer st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc`;
-      }
-
-      void fetch("/api/auto-punch-out-notification", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          notificationId: recordId,
-          employeeId: employee.id,
-          employeeName: employee.name,
-          employeeEmail: employee.email,
-          companyId: activeCompanyId,
-          company: company ? companyEmailBranding(company, activeCompanyId) : undefined,
-          attendanceDate: timeout.shift.dateKey,
-          shiftStartAt: timeout.shift.start.toISOString(),
-          shiftEndAt: timeout.shift.end.toISOString(),
-          autoPunchOutAt: autoOutDate.toISOString(),
-          shiftTimezone: timeout.shift.timezone,
-        }),
-      }).catch((e) => console.warn("Auto punch-out email notification dispatch failed:", e));
-    } catch (emailErr) {
-      console.warn("Could not dispatch auto punch-out email:", emailErr);
+  for (const cId of companyIds) {
+    const cCompanyEmployee = getEmployeeForCompany(employee, cId);
+    const companyPunches = punches.filter(
+      (punch) => getPunchCompanyId(punch, employee) === cId,
+    );
+    const latest = companyPunches.at(-1);
+    if (
+      !latest?.timestamp ||
+      (latest.type !== "in" && latest.type !== "lunch_start" && latest.type !== "lunch_end")
+    ) {
+      continue;
     }
 
-    if (announceToCurrentUser) {
-      toast.info(
-        `Auto Punched Out — We think you forgot to punch out! You have been automatically clocked out at ${formatInTimezone(
-          autoOutDate,
-          timeout.shift.timezone,
-        )}.`,
-        { duration: 9000 },
-      );
+    const punchedInAt = toDate(latest.timestamp);
+    if (!punchedInAt) continue;
+
+    // Check if there was a subsequent punch in ANY OTHER company after this punch-in
+    const subsequentOtherPunch = punches.find((p) => {
+      if (getPunchCompanyId(p, employee) === cId) return false;
+      const pTime = toDate(p.timestamp);
+      return pTime && pTime.getTime() > punchedInAt.getTime();
+    });
+
+    const timeout = getShiftTimeout(cCompanyEmployee, punchedInAt, new Date(), 0);
+
+    if (subsequentOtherPunch || timeout) {
+      const autoOutDate = subsequentOtherPunch
+        ? toDate(subsequentOtherPunch.timestamp) || new Date()
+        : timeout?.shift.end || timeout?.punchOutAt || new Date();
+
+      const recordId = timeoutDocumentId(latest.id);
+      const punchRef = doc(db(), "punches", recordId);
+      const noticeRef = doc(db(), "notices", recordId);
+      const requiredWorkMinutes = getRequiredWorkMinutes(cCompanyEmployee, company);
+      const autoReason = subsequentOtherPunch ? "switch_company" : "forgot_punch_out";
+
+      const created = await runTransaction(db(), async (transaction) => {
+        const existingPunch = await transaction.get(punchRef);
+        if (existingPunch.exists()) return false;
+
+        transaction.set(punchRef, {
+          employeeId: employee.id,
+          employeeName: employee.name,
+          companyId: cId,
+          companyName: cId === activeCompanyId ? (company?.name || "Company") : cId,
+          date: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
+          attendanceDate: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
+          type: "out",
+          timestamp: Timestamp.fromDate(autoOutDate),
+          source: "auto",
+          isAuto: true,
+          autoReason,
+          notes: subsequentOtherPunch
+            ? `Auto punched out upon starting work in another company`
+            : "Auto punched out at shift end",
+          scheduledShiftStart: timeout?.shift.start.toISOString(),
+          scheduledShiftEnd: timeout?.shift.end.toISOString(),
+          shiftTimezone: timeout?.shift.timezone,
+          requiredWorkMinutes,
+          normalWorkMinutes: requiredWorkMinutes,
+          overtimeMinutes: 0,
+          totalEligibleMinutes: requiredWorkMinutes,
+          attendanceStatus: "complete",
+        });
+
+        if (!subsequentOtherPunch && timeout) {
+          transaction.set(noticeRef, {
+            title: "We think you forgot to punch out",
+            message: `You remained clocked in past your scheduled shift, so SavyTimes automatically clocked you out at ${formatInTimezone(
+              autoOutDate,
+              timeout.shift.timezone,
+            )} to preserve accurate shift records. If you worked overtime, your extra hours can be approved by your admin in the Overtime tab.`,
+            priority: "info",
+            targetType: "employee",
+            targetEmployeeId: employee.id,
+            companyId: cId,
+            createdAt: new Date().toISOString(),
+            authorName: "SavyTimes",
+          });
+        }
+
+        return true;
+      });
+
+      if (created) {
+        anyCreated = true;
+        if (announceToCurrentUser && cId === activeCompanyId && !subsequentOtherPunch) {
+          toast.info("Shift ended: You were automatically clocked out.", {
+            description: "Shift period concluded.",
+            duration: 8000,
+          });
+        }
+      }
     }
   }
 
-  return created;
+  return anyCreated;
 }
 
 export function useShiftAutoPunchOut({

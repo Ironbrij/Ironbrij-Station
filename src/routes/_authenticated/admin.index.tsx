@@ -34,6 +34,8 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
+import { getEmployeeCompanyIds, getPunchCompanyId } from "@/lib/company-context";
+import { CompanySelector } from "@/components/CompanySelector";
 import {
   Users,
   Clock,
@@ -67,9 +69,9 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 });
 
 function AdminHome() {
+  const { company, companies, activeCompanyId, setActiveCompanyId } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [todayPunches, setTodayPunches] = useState<Punch[]>([]);
   const [historicalRecent, setHistoricalRecent] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
@@ -79,7 +81,6 @@ function AdminHome() {
   );
 
   // Dashboard UI States
-  const [filterCompanyId, setFilterCompanyId] = useState<string>("all");
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">("country");
@@ -96,7 +97,6 @@ function AdminHome() {
 
   const [now, setNow] = useState(() => new Date());
   const [pendingOvertimeCount, setPendingOvertimeCount] = useState(0);
-  const { company } = useAuth();
 
   const handleBadgeClick = (emp: Employee, type: "sod" | "eod", e: React.MouseEvent) => {
     e.stopPropagation();
@@ -129,16 +129,18 @@ function AdminHome() {
   }, []);
 
   useEffect(() => {
-    const un0 = onSnapshot(collection(db(), "companies"), (s) =>
-      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
-    );
-
     const un1 = onSnapshot(collection(db(), "employees"), (s) =>
       setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
 
-    const un2 = onSnapshot(collection(db(), "departments"), (s) =>
-      setDepartments(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
+    const un2 = onSnapshot(
+      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
+      (s) =>
+        setDepartments(
+          s.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))
+            .filter((d) => (d.companyId || COMPANY_ID) === activeCompanyId),
+        ),
     );
 
     const un3 = onSnapshot(collection(db(), "punches"), (s) =>
@@ -162,12 +164,15 @@ function AdminHome() {
     });
 
     const un7 = onSnapshot(
-      query(collection(db(), "overtimeRequests"), where("status", "==", "pending")),
+      query(
+        collection(db(), "overtimeRequests"),
+        where("companyId", "==", activeCompanyId),
+        where("status", "==", "pending"),
+      ),
       (s) => setPendingOvertimeCount(s.docs.length),
     );
 
     return () => {
-      un0();
       un1();
       un2();
       un3();
@@ -176,18 +181,23 @@ function AdminHome() {
       un6();
       un7();
     };
-  }, []);
+  }, [activeCompanyId]);
 
   // Load historical recent punches only when "Load History" is requested
   useEffect(() => {
     if (!showHistory) return;
     const unsub = onSnapshot(
-      query(collection(db(), "punches"), orderBy("timestamp", "desc"), limit(historyLimit)),
+      query(
+        collection(db(), "punches"),
+        where("companyId", "==", activeCompanyId),
+        orderBy("timestamp", "desc"),
+        limit(historyLimit),
+      ),
       (s) =>
         setHistoricalRecent(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
     );
     return () => unsub();
-  }, [showHistory, historyLimit]);
+  }, [showHistory, historyLimit, activeCompanyId]);
 
   const empById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -198,10 +208,16 @@ function AdminHome() {
     return map;
   }, [employees]);
 
+  // Filter employees belonging to activeCompanyId
+  const scopedEmployees = useMemo(() => {
+    return employees.filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId));
+  }, [employees, activeCompanyId]);
+
   // Group punches by employee for fast today lookup
   const empTodayPunches = useMemo(() => {
     const map = new Map<string, Punch[]>();
     for (const p of todayPunches) {
+      if (getPunchCompanyId(p, empById.get(p.employeeId)) !== activeCompanyId) continue;
       if (!map.has(p.employeeId)) map.set(p.employeeId, []);
       map.get(p.employeeId)!.push(p);
     }
@@ -210,7 +226,7 @@ function AdminHome() {
       list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
     }
     return map;
-  }, [todayPunches]);
+  }, [todayPunches, activeCompanyId, empById]);
 
   function getEmpTodayStatus(emp: Employee) {
     const employeeToday = zonedDateKey(now, getEmployeeTimezone(emp));
@@ -322,20 +338,18 @@ function AdminHome() {
       isAutoPunchOut,
     };
   }
-  // Filtered department list based on user selection
+
+  // Filtered department list based on user selection and activeCompanyId
   const filteredDepartments = useMemo(() => {
     return departments.filter((d) => {
       if (filterDeptId !== "all" && d.id !== filterDeptId) return false;
-      if (filterCompanyId !== "all") {
-        const matchesComp =
-          d.companyId === filterCompanyId ||
-          (!d.companyId &&
-            (filterCompanyId === COMPANY_ID ||
-              companies.find((c) => c.id === filterCompanyId)?.isMain));
-        if (!matchesComp) return false;
-      }
+      const matchesComp =
+        (d.companyId || COMPANY_ID) === activeCompanyId ||
+        (!d.companyId && activeCompanyId === COMPANY_ID);
+      if (!matchesComp) return false;
+
       if (filterStatus !== "all") {
-        const allMembers = employees.filter(
+        const allMembers = scopedEmployees.filter(
           (e) => e.deptId === d.id && e.status === "active" && e.inviteStatus === "accepted",
         );
         const matchingMembers = allMembers.filter((m) => {
@@ -355,10 +369,9 @@ function AdminHome() {
   }, [
     departments,
     filterDeptId,
-    filterCompanyId,
-    companies,
+    activeCompanyId,
     filterStatus,
-    employees,
+    scopedEmployees,
     empTodayPunches,
     now,
     leaves,
@@ -371,13 +384,14 @@ function AdminHome() {
       .filter((punch) => {
         if (!punch.timestamp) return false;
         const employee = empById.get(punch.employeeId);
+        if (getPunchCompanyId(punch, employee) !== activeCompanyId) return false;
         const timezone = getShiftTimezone(employee);
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) return false;
         return zonedDateKey(punchedAt, timezone) === zonedDateKey(now, timezone);
       })
       .sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp));
-  }, [todayPunches, empById, now]);
+  }, [todayPunches, empById, now, activeCompanyId]);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -388,27 +402,13 @@ function AdminHome() {
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
           </h1>
           <p className="text-sm font-medium text-muted-foreground mt-0.5">
-            {format(new Date(), "EEEE d MMMM")} — real-time team status and today's activity.
+            {format(new Date(), "EEEE d MMMM")} — real-time status for <strong>{company?.name || "Company"}</strong>.
           </p>
         </div>
 
-        {/* Global Filters */}
+        {/* Global Filters & Company Selector */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
-            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              value={filterCompanyId}
-              onChange={(e) => setFilterCompanyId(e.target.value)}
-              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
-            >
-              <option value="all">All Companies ({companies.length})</option>
-              {companies.map((c) => (
-                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
-                  {c.name} {c.isMain ? "(Main)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <CompanySelector variant="dashboard" />
 
           <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
             <Filter className="h-3.5 w-3.5 text-muted-foreground" />
@@ -461,23 +461,23 @@ function AdminHome() {
 
       {/* Pending Overtime Alert Banner */}
       {pendingOvertimeCount > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300/80 dark:border-amber-700/50 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 rounded-2xl border bg-card shadow-xs">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shrink-0 shadow-xs">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <span className="font-extrabold text-sm text-amber-950 dark:text-amber-100 block tracking-tight">
+              <span className="font-extrabold text-sm text-foreground block tracking-tight">
                 {pendingOvertimeCount} Pending Overtime Request{pendingOvertimeCount > 1 ? "s" : ""}
               </span>
-              <p className="text-xs text-amber-900/80 dark:text-amber-200/80 font-medium mt-0.5">
+              <p className="text-xs text-muted-foreground font-medium mt-0.5">
                 Team members have logged overtime that requires admin review before payroll calculation.
               </p>
             </div>
           </div>
           <Link
             to="/admin/overtime"
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
+            className="btn-lift inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 text-xs font-bold shadow-xs transition-all whitespace-nowrap"
           >
             Review Overtime &rarr;
           </Link>

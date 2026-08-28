@@ -193,18 +193,15 @@ test("getEmployeeShiftWindow selects the active shift for that day", () => {
   assert.equal(thursdayWindow.end.toISOString(), zonedDateTimeToDate("2026-08-13", "15:00", timezone).toISOString());
 });
 
-test("getShiftTimeout triggers auto punch out when now passes shift end + grace", () => {
+test("getShiftTimeout triggers auto punch out promptly when now reaches shift end", () => {
   const emp = employee();
   const punchInAt = at("09:00");
 
   // Before shift end (e.g. 16:55) -> null
-  assert.equal(getShiftTimeout(emp, punchInAt, at("16:55"), 20), null);
+  assert.equal(getShiftTimeout(emp, punchInAt, at("16:55")), null);
 
-  // During grace period (e.g. 17:15) -> null
-  assert.equal(getShiftTimeout(emp, punchInAt, at("17:15"), 20), null);
-
-  // After grace period passes (e.g. 17:21) -> returns timeout completion
-  const timeout = getShiftTimeout(emp, punchInAt, at("17:21"), 20);
+  // At shift end or after (e.g. 17:00 or 17:05) -> returns timeout completion
+  const timeout = getShiftTimeout(emp, punchInAt, at("17:05"));
   assert.ok(timeout);
   assert.equal(timeout?.shift.end.toISOString(), at("17:00").toISOString());
   assert.equal(timeout?.punchOutAt.toISOString(), at("17:00").toISOString());
