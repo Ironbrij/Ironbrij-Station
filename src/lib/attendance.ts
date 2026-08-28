@@ -522,23 +522,25 @@ export function computeEmployeeLateness(
 ) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(punchValue, shiftTimezone);
-  const window = getShiftWindow(
+  const employeeShift = getEmployeeShiftWindow(employee, punchValue);
+  const fallbackWindow = getShiftWindow(
     dateKey,
     employee.shiftStartTime || "09:00",
     employee.shiftEndTime || "17:00",
     shiftTimezone,
   );
-  const differenceSeconds = Math.floor((punchValue.getTime() - window.start.getTime()) / 1000);
-  const minutes = Math.max(0, Math.floor(differenceSeconds / 60));
+  const windowStart = employeeShift?.start || fallbackWindow.start;
+  const differenceSeconds = Math.floor((punchValue.getTime() - windowStart.getTime()) / 1000);
+  const isEarly = differenceSeconds < 0;
+  const minutes = isEarly ? 0 : Math.max(0, Math.floor(differenceSeconds / 60));
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   return {
-    // A punch showing as 5 minutes after shift start is still on time.
-    isLate: minutes > effectiveGraceMinutes,
-    isEarly: differenceSeconds < 0,
+    isLate: !isEarly && minutes > effectiveGraceMinutes,
+    isEarly,
     minutes,
     seconds: Math.max(0, differenceSeconds),
     dateKey,
-    scheduledAt: window.start,
+    scheduledAt: windowStart,
     shiftTimezone,
     graceMinutes: effectiveGraceMinutes,
   };

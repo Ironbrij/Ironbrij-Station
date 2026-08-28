@@ -27,6 +27,12 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { toDate, toMillis } from "@/lib/time";
 import { toast } from "sonner";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getEmployeePunchesForCompany,
+} from "@/lib/company-context";
+import { formatShiftRange } from "./admin.employees";
 
 export const Route = createFileRoute("/_authenticated/admin/late")({
   head: () => ({ meta: [{ title: "Late Logs — SavyTimes Admin" }] }),
@@ -45,6 +51,9 @@ type LateRecord = {
   punch?: Punch;
   isEarly?: boolean;
   minutesEarly?: number;
+  companyId: string;
+  companyName: string;
+  shiftLabel?: string;
 };
 
 function LateArrivalsPage() {
@@ -67,6 +76,7 @@ function LateArrivalsPage() {
   // Manual Clock-In Modal States
   const [showManualModal, setShowManualModal] = useState(false);
   const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [manualTimezone, setManualTimezone] = useState("Australia/Sydney");
   const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Manila"));
   const [manualTime, setManualTime] = useState("09:00");
@@ -114,111 +124,117 @@ function LateArrivalsPage() {
     };
   }, []);
 
-  const employeePunches = useMemo(() => {
-    const map = new Map<string, Punch[]>();
-    for (const employee of employees) {
-      const ids = new Set([employee.id, employee.authUid].filter(Boolean));
-      map.set(
-        employee.id,
-        punches.filter((punch) => ids.has(punch.employeeId)),
-      );
-    }
-    return map;
-  }, [employees, punches]);
-
   const records = useMemo(() => {
     const result: LateRecord[] = [];
     const today = new Date();
 
     for (const employee of employees.filter((item) => item.status === "active")) {
-      const list = employeePunches.get(employee.id) || [];
-      const firstByShiftDate = new Map<string, Punch>();
-      const shiftTimezone = getShiftTimezone(employee);
-      const todayKey = zonedDateKey(today, shiftTimezone);
+      const companyIds = getEmployeeCompanyIds(employee);
 
-      for (const punch of list) {
-        if (punch.type !== "in" || !punch.timestamp) continue;
-        const punchedAt = toDate(punch.timestamp);
-        if (!punchedAt) continue;
-        const dateKey = zonedDateKey(punchedAt, shiftTimezone);
-        const current = firstByShiftDate.get(dateKey);
-        if (!current || toMillis(punch.timestamp) < toMillis(current.timestamp))
-          firstByShiftDate.set(dateKey, punch);
-      }
+      for (const cId of companyIds) {
+        const cEmp = getEmployeeForCompany(employee, cId);
+        const comp = companies.find((c) => (c.id || COMPANY_ID) === cId);
+        const compName = comp?.name || (cId === COMPANY_ID ? "Main Company" : cId);
+        const cPunches = getEmployeePunchesForCompany(punches, employee, cId);
+        const shiftTimezone = getShiftTimezone(cEmp);
+        const todayKey = zonedDateKey(today, shiftTimezone);
 
-      for (const [dateKey, punch] of firstByShiftDate) {
-        // Only show today's logs, not from the past
-        if (dateKey !== todayKey) continue;
+        const firstByShiftDate = new Map<string, Punch>();
+        for (const punch of cPunches) {
+          if (punch.type !== "in" || !punch.timestamp) continue;
+          const punchedAt = toDate(punch.timestamp);
+          if (!punchedAt) continue;
+          const dateKey = zonedDateKey(punchedAt, shiftTimezone);
+          const current = firstByShiftDate.get(dateKey);
+          if (!current || toMillis(punch.timestamp) < toMillis(current.timestamp))
+            firstByShiftDate.set(dateKey, punch);
+        }
 
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
-        if (approvedLeave) continue;
-        if (getEmployeeHoliday(company, employee, dateKey)) continue;
+        for (const [dateKey, punch] of firstByShiftDate) {
+          // Only show today's logs
+          if (dateKey !== todayKey) continue;
 
-        const punchedAt = toDate(punch.timestamp);
-        if (!punchedAt) continue;
-        const late = computeEmployeeLateness(punchedAt, employee, graceMinutes);
-        const differenceSeconds = Math.floor(
-          (punchedAt.getTime() - late.scheduledAt.getTime()) / 1000,
+          const approvedLeave = getEmployeeApprovedLeaveForDate(cEmp, leaves, dateKey);
+          if (approvedLeave) continue;
+          if (getEmployeeHoliday(comp, cEmp, dateKey)) continue;
+
+          const punchedAt = toDate(punch.timestamp);
+          if (!punchedAt) continue;
+          const late = computeEmployeeLateness(punchedAt, cEmp, graceMinutes);
+
+          // ONLY show in the Late Log if they are actually late (isLate) or have an excused lateness!
+          // Employees who arrive early or on-time are NOT late and must not appear in the Late Log.
+          if (late.isLate || punch.isExcused) {
+            result.push({
+              id: punch.id,
+              employee: cEmp,
+              dateKey,
+              scheduledAt: late.scheduledAt,
+              punchedAt,
+              minutesLate: late.minutes,
+              minutesEarly: 0,
+              isEarly: false,
+              kind: "arrival",
+              isExcused: Boolean(punch.isExcused),
+              punch,
+              companyId: cId,
+              companyName: compName,
+              shiftLabel: formatShiftRange(
+                cEmp.shiftStartTime,
+                cEmp.shiftEndTime,
+                cEmp.isMultipleShift,
+                cEmp.shifts,
+              ),
+            });
+          }
+        }
+
+        const status = getLiveAttendanceStatus(
+          cEmp,
+          cPunches,
+          today,
+          graceMinutes,
+          comp?.workingDays,
+          getEmployeeHolidayDates(comp, cEmp),
         );
-        const isEarly = differenceSeconds < 0;
-        const minutesEarly = isEarly ? Math.floor(Math.abs(differenceSeconds) / 60) : 0;
+        const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
+          cEmp,
+          leaves,
+          status.shift.dateKey,
+        );
 
-        result.push({
-          id: punch.id,
-          employee,
-          dateKey,
-          scheduledAt: late.scheduledAt,
-          punchedAt,
-          minutesLate: late.minutes,
-          minutesEarly,
-          isEarly,
-          kind: "arrival",
-          isExcused: Boolean(punch.isExcused),
-          punch,
-        });
-      }
-
-      const status = getLiveAttendanceStatus(
-        employee,
-        list,
-        today,
-        graceMinutes,
-        company?.workingDays,
-        getEmployeeHolidayDates(company, employee),
-      );
-      const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
-        employee,
-        leaves,
-        status.shift.dateKey,
-      );
-
-      // Only show today's missing
-      if (status.shift.dateKey === todayKey && !approvedLeaveToday && status.isMissingLate) {
-        result.push({
-          id: `missing-${employee.id}-${status.shift.dateKey}`,
-          employee,
-          dateKey: status.shift.dateKey,
-          scheduledAt: status.shift.start,
-          minutesLate: status.minutesLate,
-          kind: "missing",
-        });
+        // Only show today's missing
+        if (status.shift.dateKey === todayKey && !approvedLeaveToday && status.isMissingLate) {
+          result.push({
+            id: `missing-${employee.id}-${cId}-${status.shift.dateKey}`,
+            employee: cEmp,
+            dateKey: status.shift.dateKey,
+            scheduledAt: status.shift.start,
+            minutesLate: status.minutesLate,
+            kind: "missing",
+            companyId: cId,
+            companyName: compName,
+            shiftLabel: formatShiftRange(
+              cEmp.shiftStartTime,
+              cEmp.shiftEndTime,
+              cEmp.isMultipleShift,
+              cEmp.shifts,
+            ),
+          });
+        }
       }
     }
     return result.sort(
       (a, b) => (b.punchedAt || today).getTime() - (a.punchedAt || today).getTime(),
     );
-  }, [employees, employeePunches, leaves, graceMinutes, company]);
+  }, [employees, punches, leaves, graceMinutes, companies]);
 
   const filtered = useMemo(
     () =>
       records.filter((record) => {
         if (filterDept && record.employee.deptId !== filterDept) return false;
         if (filterCompany !== "all") {
-          const matchCompany =
-            record.employee.companyId === filterCompany ||
-            record.employee.companyIds?.includes(filterCompany) ||
-            (!record.employee.companyId && filterCompany === COMPANY_ID);
-          if (!matchCompany) return false;
+          if (record.companyId !== filterCompany) return false;
         }
         return true;
       }),
@@ -258,16 +274,23 @@ function LateArrivalsPage() {
     const targetEmp = employees.find((e) => e.id === selectedEmpId);
     if (!targetEmp) return;
 
+    const targetCompanyIds = getEmployeeCompanyIds(targetEmp);
+    const effectiveCompanyId =
+      selectedCompanyId && targetCompanyIds.includes(selectedCompanyId)
+        ? selectedCompanyId
+        : targetCompanyIds[0] || COMPANY_ID;
+    const targetEmpForCompany = getEmployeeForCompany(targetEmp, effectiveCompanyId);
+
     setSubmittingManual(true);
     try {
-      const shiftTz = getShiftTimezone(targetEmp);
+      const shiftTz = getShiftTimezone(targetEmpForCompany);
       const punchDateObj = zonedDateTimeToDate(manualDate, manualTime, manualTimezone);
       const dateKey = zonedDateKey(punchDateObj, shiftTz);
 
       await addDoc(collection(db(), "punches"), {
         employeeId: targetEmp.id,
         employeeName: targetEmp.name,
-        companyId: targetEmp.companyId || targetEmp.companyIds?.[0] || COMPANY_ID,
+        companyId: effectiveCompanyId,
         date: dateKey,
         attendanceDate: dateKey,
         type: "in",
@@ -305,7 +328,16 @@ function LateArrivalsPage() {
 
         <button
           onClick={() => {
-            if (employees.length > 0) setSelectedEmpId(employees[0].id);
+            if (employees.length > 0) {
+              const firstEmp = employees[0];
+              setSelectedEmpId(firstEmp.id);
+              const compIds = getEmployeeCompanyIds(firstEmp);
+              const cId = compIds[0] || COMPANY_ID;
+              setSelectedCompanyId(cId);
+              const cEmp = getEmployeeForCompany(firstEmp, cId);
+              setManualTimezone(getShiftTimezone(cEmp));
+              if (cEmp.shiftStartTime) setManualTime(cEmp.shiftStartTime);
+            }
             setShowManualModal(true);
           }}
           className="btn-lift inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-md shrink-0"
@@ -362,7 +394,7 @@ function LateArrivalsPage() {
               <th className="p-3.5">Shift date</th>
               <th className="p-3.5">Scheduled</th>
               <th className="p-3.5">Actual punch</th>
-              <th className="p-3.5">Lateness / Early</th>
+              <th className="p-3.5">Lateness</th>
               <th className="p-3.5">Status</th>
               <th className="p-3.5 text-right">Action</th>
             </tr>
@@ -374,17 +406,28 @@ function LateArrivalsPage() {
               return (
                 <tr key={record.id} className="hover:bg-secondary/30">
                   <td className="p-3.5">
-                    <Link
-                      to="/admin/employees/$id"
-                      params={{ id: record.employee.id }}
-                      className="font-bold text-primary hover:underline"
-                    >
-                      {record.employee.name}
-                    </Link>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Link
+                        to="/admin/employees/$id"
+                        params={{ id: record.employee.id }}
+                        className="font-bold text-primary hover:underline"
+                      >
+                        {record.employee.name}
+                      </Link>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                        {record.companyName}
+                      </span>
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {departments.find((item) => item.id === record.employee.deptId)?.name ||
                         "No department"}
                     </div>
+                    {record.shiftLabel && (
+                      <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-1 pt-0.5">
+                        <Clock3 className="h-3 w-3 text-muted-foreground/70" />
+                        <span>{record.shiftLabel}</span>
+                      </div>
+                    )}
                   </td>
                   <td className="p-3.5 font-mono text-xs">{record.dateKey}</td>
                   <td className="p-3.5">
@@ -413,17 +456,11 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 font-bold">
                     {record.kind === "missing" ? (
-                      <span className="text-rose-600">—</span>
-                    ) : record.isEarly ? (
-                      <span className="text-emerald-600 font-extrabold">
-                        +{record.minutesEarly} min
-                      </span>
+                      <span className="text-rose-600 font-extrabold">{record.minutesLate}m overdue</span>
                     ) : record.isExcused ? (
-                      <span className="text-emerald-600 line-through">
+                      <span className="text-emerald-600 line-through font-extrabold">
                         {record.minutesLate} min
                       </span>
-                    ) : record.minutesLate === 0 ? (
-                      <span className="text-emerald-600 font-extrabold">On time</span>
                     ) : (
                       <span className="text-rose-600 font-extrabold">{record.minutesLate} min</span>
                     )}
@@ -431,19 +468,11 @@ function LateArrivalsPage() {
                   <td className="p-3.5">
                     {record.kind === "missing" ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
-                        <UserX className="h-3.5 w-3.5" /> Missing
-                      </span>
-                    ) : record.isEarly ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Arrived early
+                        <UserX className="h-3.5 w-3.5" /> Missing Punch-In
                       </span>
                     ) : record.isExcused ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
-                      </span>
-                    ) : record.minutesLate === 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> On time
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
@@ -453,29 +482,35 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 text-right">
                     {record.kind === "arrival" && record.punch ? (
-                      !record.isEarly && record.minutesLate > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
-                          className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
-                            record.isExcused
-                              ? "bg-secondary text-muted-foreground hover:bg-muted"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                          }`}
-                        >
-                          {record.isExcused ? "Un-excuse" : "Mark Not Late"}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground font-semibold">
-                          No action needed
-                        </span>
-                      )
+                      <button
+                        type="button"
+                        onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
+                        className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
+                          record.isExcused
+                            ? "bg-secondary text-muted-foreground hover:bg-muted"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                        }`}
+                      >
+                        {record.isExcused ? "Un-excuse" : "Mark Not Late"}
+                      </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => {
                           setSelectedEmpId(record.employee.id);
+                          setSelectedCompanyId(record.companyId);
                           setManualDate(record.dateKey);
+                          const shiftTz = getShiftTimezone(record.employee);
+                          setManualTimezone(shiftTz);
+                          if (record.scheduledAt) {
+                            setManualTime(
+                              formatInTimezone(record.scheduledAt, shiftTz, {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: false,
+                              }),
+                            );
+                          }
                           setShowManualModal(true);
                         }}
                         className="rounded-lg border bg-primary/5 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/10"
@@ -500,15 +535,15 @@ function LateArrivalsPage() {
 
       {/* ----- Fix Missed Clock-In Modal ----- */}
       {showManualModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg rounded-2xl border bg-card p-6 shadow-2xl space-y-5">
-            <div className="flex items-start justify-between border-b pb-4">
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border bg-card p-5 sm:p-6 shadow-2xl space-y-4 my-auto overflow-hidden">
+            <div className="flex items-start justify-between border-b pb-3 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold">
-                  <UserCheck className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold">
+                  <UserCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-foreground">Fix Missed Clock-In</h3>
+                  <h3 className="text-base font-bold text-foreground">Fix Missed Clock-In</h3>
                   <p className="text-xs text-muted-foreground">
                     Retroactively add or adjust clock-in time for an employee when a mistake
                     happens.
@@ -524,7 +559,7 @@ function LateArrivalsPage() {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1 min-h-0">
               <div>
                 <label className="block text-xs font-bold text-foreground mb-1">
                   Employee <span className="text-rose-500">*</span>
@@ -534,7 +569,14 @@ function LateArrivalsPage() {
                   onChange={(e) => {
                     setSelectedEmpId(e.target.value);
                     const emp = employees.find((x) => x.id === e.target.value);
-                    if (emp) setManualTimezone(getShiftTimezone(emp));
+                    if (emp) {
+                      const compIds = getEmployeeCompanyIds(emp);
+                      const cId = compIds[0] || COMPANY_ID;
+                      setSelectedCompanyId(cId);
+                      const cEmp = getEmployeeForCompany(emp, cId);
+                      setManualTimezone(getShiftTimezone(cEmp));
+                      if (cEmp.shiftStartTime) setManualTime(cEmp.shiftStartTime);
+                    }
                   }}
                   className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
                 >
@@ -545,6 +587,128 @@ function LateArrivalsPage() {
                   ))}
                 </select>
               </div>
+
+              {(() => {
+                const targetEmp = employees.find((e) => e.id === selectedEmpId);
+                const targetCompanyIds = targetEmp ? getEmployeeCompanyIds(targetEmp) : [];
+                const effectiveCompanyId =
+                  selectedCompanyId && targetCompanyIds.includes(selectedCompanyId)
+                    ? selectedCompanyId
+                    : targetCompanyIds[0] || COMPANY_ID;
+                const targetEmpForCompany = targetEmp
+                  ? getEmployeeForCompany(targetEmp, effectiveCompanyId)
+                  : null;
+
+                return (
+                  <>
+                    {targetCompanyIds.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-bold text-foreground mb-1">
+                          Target Company <span className="text-rose-500">*</span>
+                        </label>
+                        <select
+                          value={effectiveCompanyId}
+                          onChange={(e) => {
+                            setSelectedCompanyId(e.target.value);
+                            if (targetEmp) {
+                              const cEmp = getEmployeeForCompany(targetEmp, e.target.value);
+                              setManualTimezone(getShiftTimezone(cEmp));
+                              if (cEmp.shiftStartTime) setManualTime(cEmp.shiftStartTime);
+                            }
+                          }}
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                        >
+                          {targetCompanyIds.map((cId) => {
+                            const comp = companies.find((c) => (c.id || COMPANY_ID) === cId);
+                            const compName =
+                              comp?.name || (cId === COMPANY_ID ? "Main Company" : cId);
+                            return (
+                              <option key={cId} value={cId}>
+                                {compName} {cId === COMPANY_ID ? "(Main)" : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    )}
+
+                    {targetEmpForCompany && (
+                      <div className="rounded-xl bg-secondary/60 border p-3 text-xs space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
+                          <span className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+                            <Clock3 className="h-3.5 w-3.5 text-primary" /> Shift Schedule (
+                            {companies.find((c) => (c.id || COMPANY_ID) === effectiveCompanyId)
+                              ?.name || effectiveCompanyId}
+                            )
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Click a shift to auto-fill
+                          </span>
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-2 pt-1">
+                          {targetEmpForCompany.isMultipleShift &&
+                          targetEmpForCompany.shifts &&
+                          targetEmpForCompany.shifts.length > 0 ? (
+                            targetEmpForCompany.shifts.map((s, idx) => {
+                              const isActive = manualTime === s.startTime;
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    setManualTime(s.startTime);
+                                    setManualTimezone(getShiftTimezone(targetEmpForCompany));
+                                  }}
+                                  className={`flex items-center justify-between p-2 rounded-lg border text-left text-xs transition-all ${
+                                    isActive
+                                      ? "bg-primary/10 border-primary text-primary font-bold shadow-2xs ring-1 ring-primary/30"
+                                      : "bg-background hover:bg-muted text-foreground"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-bold">Shift #{idx + 1}</div>
+                                    <div className="text-[11px] text-muted-foreground font-mono">
+                                      {s.startTime} – {s.endTime}
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] rounded bg-primary/10 text-primary font-extrabold px-1.5 py-0.5">
+                                    ⚡ Set {s.startTime}
+                                  </span>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualTime(targetEmpForCompany.shiftStartTime || "09:00");
+                                setManualTimezone(getShiftTimezone(targetEmpForCompany));
+                              }}
+                              className={`flex items-center justify-between p-2 rounded-lg border text-left text-xs transition-all col-span-2 ${
+                                manualTime === (targetEmpForCompany.shiftStartTime || "09:00")
+                                  ? "bg-primary/10 border-primary text-primary font-bold shadow-2xs ring-1 ring-primary/30"
+                                  : "bg-background hover:bg-muted text-foreground"
+                              }`}
+                            >
+                              <div>
+                                <div className="font-bold">Standard Shift</div>
+                                <div className="text-[11px] text-muted-foreground font-mono">
+                                  {targetEmpForCompany.shiftStartTime || "09:00"} –{" "}
+                                  {targetEmpForCompany.shiftEndTime || "17:00"}
+                                </div>
+                              </div>
+                              <span className="text-[10px] rounded bg-primary/10 text-primary font-extrabold px-1.5 py-0.5">
+                                ⚡ Set {targetEmpForCompany.shiftStartTime || "09:00"}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               <div className="grid grid-cols-3 gap-2.5">
                 <div>
@@ -589,21 +753,21 @@ function LateArrivalsPage() {
 
               {/* Live 3-Country Time Comparison Helper */}
               {manualTime && manualDate && (
-                <div className="rounded-xl bg-secondary/60 border p-3 text-xs space-y-1.5 animate-in fade-in">
+                <div className="rounded-xl bg-secondary/60 border p-2.5 text-xs space-y-1 animate-in fade-in">
                   <div className="font-bold text-foreground flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-wider">
-                      <Clock3 className="h-3.5 w-3.5 text-primary" /> Timezone Conversion Preview
+                    <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider">
+                      <Clock3 className="h-3 w-3 text-primary" /> Timezone Conversion Preview
                     </span>
                     <span className="text-[10px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                      Input Time: {manualTime} in {manualTimezone.split("/")[1]}
+                      {manualTime} ({manualTimezone.split("/")[1]})
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 font-mono text-[11px] pt-1">
-                    <div className="p-2 rounded-lg border bg-card/60">
+                  <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px] pt-1">
+                    <div className="p-1.5 rounded-lg border bg-card/60">
                       <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇦🇺 Sydney (AU)
+                        🇦🇺 Sydney
                       </span>
-                      <span className="font-bold text-foreground">
+                      <span className="font-bold text-foreground text-[11px]">
                         {formatInTimezone(
                           zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
                           "Australia/Sydney",
@@ -611,11 +775,11 @@ function LateArrivalsPage() {
                         )}
                       </span>
                     </div>
-                    <div className="p-2 rounded-lg border bg-card/60">
+                    <div className="p-1.5 rounded-lg border bg-card/60">
                       <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇵🇭 Philippines (PHT)
+                        🇵🇭 Manila
                       </span>
-                      <span className="font-bold text-foreground">
+                      <span className="font-bold text-foreground text-[11px]">
                         {formatInTimezone(
                           zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
                           "Asia/Manila",
@@ -623,11 +787,11 @@ function LateArrivalsPage() {
                         )}
                       </span>
                     </div>
-                    <div className="p-2 rounded-lg border bg-card/60">
+                    <div className="p-1.5 rounded-lg border bg-card/60">
                       <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇳🇵 Nepal (NPT)
+                        🇳🇵 Kathmandu
                       </span>
-                      <span className="font-bold text-foreground">
+                      <span className="font-bold text-foreground text-[11px]">
                         {formatInTimezone(
                           zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
                           "Asia/Kathmandu",
@@ -653,7 +817,7 @@ function LateArrivalsPage() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t">
+            <div className="flex justify-end gap-2 pt-3 border-t shrink-0">
               <button
                 type="button"
                 onClick={() => setShowManualModal(false)}
