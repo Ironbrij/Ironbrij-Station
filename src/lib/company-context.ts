@@ -156,7 +156,16 @@ export function getEmployeePunchesForCompany(
   employee: Employee | null | undefined,
   companyId: string,
 ): Punch[] {
-  return punches.filter((punch) => getPunchCompanyId(punch, employee) === companyId);
+  const empIds = employee
+    ? new Set([employee.id, employee.authUid].filter(Boolean) as string[])
+    : null;
+
+  return punches.filter((punch) => {
+    if (empIds && punch.employeeId && !empIds.has(punch.employeeId)) {
+      return false;
+    }
+    return getPunchCompanyId(punch, employee) === companyId;
+  });
 }
 
 export function buildCompanyMembership(
