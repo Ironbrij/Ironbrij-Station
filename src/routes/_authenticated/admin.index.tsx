@@ -34,7 +34,11 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
-import { getEmployeeCompanyIds, getPunchCompanyId } from "@/lib/company-context";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getPunchCompanyId,
+} from "@/lib/company-context";
 import { CompanySelector } from "@/components/CompanySelector";
 import {
   Users,
