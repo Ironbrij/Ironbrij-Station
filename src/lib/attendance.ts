@@ -352,8 +352,33 @@ export function getEmployeeShiftWindow(employee: Employee, instant = new Date())
     });
 
     if (activeShifts.length > 0) {
-      startTime = activeShifts[0].startTime;
-      endTime = activeShifts[activeShifts.length - 1].endTime;
+      const shiftWindows = activeShifts.map((s) => {
+        const win = getShiftWindow(dateKey, s.startTime, s.endTime, shiftTimezone);
+        return { shift: s, win };
+      });
+
+      const currentSlot = shiftWindows.find(
+        ({ win }) =>
+          instant.getTime() >= win.start.getTime() && instant.getTime() <= win.end.getTime(),
+      );
+
+      if (currentSlot) {
+        startTime = currentSlot.shift.startTime;
+        endTime = currentSlot.shift.endTime;
+      } else {
+        const upcomingSlot = shiftWindows.find(
+          ({ win }) => instant.getTime() < win.start.getTime(),
+        );
+
+        if (upcomingSlot) {
+          startTime = upcomingSlot.shift.startTime;
+          endTime = upcomingSlot.shift.endTime;
+        } else {
+          const lastSlot = shiftWindows[shiftWindows.length - 1];
+          startTime = lastSlot.shift.startTime;
+          endTime = lastSlot.shift.endTime;
+        }
+      }
     }
   }
 

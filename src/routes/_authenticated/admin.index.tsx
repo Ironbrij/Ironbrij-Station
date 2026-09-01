@@ -208,16 +208,19 @@ function AdminHome() {
     return map;
   }, [employees]);
 
-  // Filter employees belonging to activeCompanyId
+  // Filter employees belonging to activeCompanyId and scope their configuration
   const scopedEmployees = useMemo(() => {
-    return employees.filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId));
+    return employees
+      .filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId))
+      .map((e) => getEmployeeForCompany(e, activeCompanyId));
   }, [employees, activeCompanyId]);
 
   // Group punches by employee for fast today lookup
   const empTodayPunches = useMemo(() => {
     const map = new Map<string, Punch[]>();
     for (const p of todayPunches) {
-      if (getPunchCompanyId(p, empById.get(p.employeeId)) !== activeCompanyId) continue;
+      const emp = empById.get(p.employeeId);
+      if (getPunchCompanyId(p, emp) !== activeCompanyId) continue;
       if (!map.has(p.employeeId)) map.set(p.employeeId, []);
       map.get(p.employeeId)!.push(p);
     }
@@ -229,9 +232,10 @@ function AdminHome() {
   }, [todayPunches, activeCompanyId, empById]);
 
   function getEmpTodayStatus(emp: Employee) {
-    const employeeToday = zonedDateKey(now, getEmployeeTimezone(emp));
-    const shiftToday = zonedDateKey(now, getShiftTimezone(emp));
-    const holiday = getEmployeeHoliday(company, emp, shiftToday);
+    const cEmp = getEmployeeForCompany(emp, activeCompanyId);
+    const employeeToday = zonedDateKey(now, getEmployeeTimezone(cEmp));
+    const shiftToday = zonedDateKey(now, getShiftTimezone(cEmp));
+    const holiday = getEmployeeHoliday(company, cEmp, shiftToday);
     if (holiday) {
       return {
         type: "holiday" as const,
@@ -242,9 +246,9 @@ function AdminHome() {
         isAutoPunchOut: false,
       };
     }
-    const activeLeave = getActiveEmployeeLeave(emp, leaves, now);
+    const activeLeave = getActiveEmployeeLeave(cEmp, leaves, now);
     const approvedLeaveToday =
-      getEmployeeApprovedLeaveForDate(emp, leaves, shiftToday) || activeLeave;
+      getEmployeeApprovedLeaveForDate(cEmp, leaves, shiftToday) || activeLeave;
     if (approvedLeaveToday) {
       return {
         type: "leave" as const,
@@ -276,18 +280,18 @@ function AdminHome() {
     };
 
     const list = [
-      ...(empTodayPunches.get(emp.id) || []),
-      ...(emp.authUid ? empTodayPunches.get(emp.authUid) || [] : []),
+      ...(empTodayPunches.get(cEmp.id) || []),
+      ...(cEmp.authUid ? empTodayPunches.get(cEmp.authUid) || [] : []),
     ];
     const status = getLiveAttendanceStatus(
-      emp,
+      cEmp,
       list,
       now,
       company?.lateGraceMinutes ?? 5,
       company?.workingDays,
-      getEmployeeHolidayDates(company, emp),
+      getEmployeeHolidayDates(company, cEmp),
     );
-    const targetTz = getDisplayTimezone(emp);
+    const targetTz = getDisplayTimezone(cEmp);
     const latestDate = toDate(status.latest?.timestamp);
     const timeStr = latestDate ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})` : "";
     const statusTimeStr =
@@ -339,19 +343,52 @@ function AdminHome() {
     };
   }
 
+  // All departments for activeCompanyId, including General / Unassigned if needed
+  const allCompanyDepartments = useMemo(() => {
+    const compDepts = departments.filter((d) => {
+      return (
+        (d.companyId || COMPANY_ID) === activeCompanyId ||
+        (!d.companyId && activeCompanyId === COMPANY_ID)
+      );
+    });
+
+    const knownDeptIds = new Set(compDepts.map((d) => d.id));
+    const hasUnassignedMembers = scopedEmployees.some(
+      (e) => !e.deptId || !knownDeptIds.has(e.deptId),
+    );
+
+    if (hasUnassignedMembers) {
+      compDepts.push({
+        id: "_unassigned",
+        name: "General / Unassigned",
+        companyId: activeCompanyId,
+      } as Department);
+    }
+
+    return compDepts;
+  }, [departments, activeCompanyId, scopedEmployees]);
+
   // Filtered department list based on user selection and activeCompanyId
   const filteredDepartments = useMemo(() => {
-    return departments.filter((d) => {
+    return allCompanyDepartments.filter((d) => {
       if (filterDeptId !== "all" && d.id !== filterDeptId) return false;
-      const matchesComp =
-        (d.companyId || COMPANY_ID) === activeCompanyId ||
-        (!d.companyId && activeCompanyId === COMPANY_ID);
-      if (!matchesComp) return false;
+
+      const allMembers = scopedEmployees.filter((e) => {
+        if (e.status !== "active" || e.inviteStatus !== "accepted") return false;
+        if (d.id === "_unassigned") {
+          const knownDeptIds = new Set(
+            departments
+              .filter((x) => (x.companyId || COMPANY_ID) === activeCompanyId)
+              .map((x) => x.id),
+          );
+          return !e.deptId || !knownDeptIds.has(e.deptId);
+        }
+        return e.deptId === d.id;
+      });
+
+      if (allMembers.length === 0) return false;
 
       if (filterStatus !== "all") {
-        const allMembers = scopedEmployees.filter(
-          (e) => e.deptId === d.id && e.status === "active" && e.inviteStatus === "accepted",
-        );
         const matchingMembers = allMembers.filter((m) => {
           const status = getEmpTodayStatus(m);
           if (filterStatus === "in") return status.type === "in";
@@ -367,11 +404,12 @@ function AdminHome() {
       return true;
     });
   }, [
-    departments,
+    allCompanyDepartments,
     filterDeptId,
     activeCompanyId,
     filterStatus,
     scopedEmployees,
+    departments,
     empTodayPunches,
     now,
     leaves,
@@ -417,8 +455,8 @@ function AdminHome() {
               onChange={(e) => setFilterDeptId(e.target.value)}
               className="bg-transparent outline-none font-bold text-primary cursor-pointer"
             >
-              <option value="all">All Departments ({departments.length})</option>
-              {departments.map((d) => (
+              <option value="all">All Departments ({allCompanyDepartments.length})</option>
+              {allCompanyDepartments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
@@ -491,7 +529,7 @@ function AdminHome() {
             <Users className="h-4 w-4" /> Department Cards & Today's Member Status
           </h2>
           <span className="text-xs font-semibold text-muted-foreground">
-            Showing {filteredDepartments.length} of {departments.length} Departments
+            Showing {filteredDepartments.length} of {allCompanyDepartments.length} Departments
           </span>
         </div>
 
@@ -503,9 +541,18 @@ function AdminHome() {
           )}
 
           {filteredDepartments.map((dept) => {
-            const allMembers = employees.filter(
-              (e) => e.deptId === dept.id && e.status === "active" && e.inviteStatus === "accepted",
-            );
+            const allMembers = scopedEmployees.filter((e) => {
+              if (e.status !== "active" || e.inviteStatus !== "accepted") return false;
+              if (dept.id === "_unassigned") {
+                const knownDeptIds = new Set(
+                  departments
+                    .filter((x) => (x.companyId || COMPANY_ID) === activeCompanyId)
+                    .map((x) => x.id),
+                );
+                return !e.deptId || !knownDeptIds.has(e.deptId);
+              }
+              return e.deptId === dept.id;
+            });
 
             // Filter members inside card based on status filter
             const filteredMembers = allMembers.filter((m) => {

@@ -171,22 +171,28 @@ test("getEffectiveEmployeeWorkingDays correctly aggregates working days across m
   assert.deepEqual(effectiveDays, [0, 1, 4]); // Sunday (0), Monday (1), Thursday (4)
 });
 
-test("getEmployeeShiftWindow selects the active shift for that day", () => {
+test("getEmployeeShiftWindow selects the active shift for that day and slot", () => {
   const multiEmp = employee({
     isMultipleShift: true,
     shifts: [
       { startTime: "04:00", endTime: "07:00", workingDays: [0, 1] }, // Sun, Mon: 04:00 - 07:00
-      { startTime: "12:00", endTime: "15:00", workingDays: [4] }, // Thu: 12:00 - 15:00
+      { startTime: "12:00", endTime: "15:00", workingDays: [1, 4] }, // Mon, Thu: 12:00 - 15:00
     ],
   });
 
-  // 2026-08-10 is a Monday (weekday 1)
-  const mondayDate = zonedDateTimeToDate("2026-08-10", "09:00", timezone);
-  const mondayWindow = getEmployeeShiftWindow(multiEmp, mondayDate);
-  assert.equal(mondayWindow.start.toISOString(), zonedDateTimeToDate("2026-08-10", "04:00", timezone).toISOString());
-  assert.equal(mondayWindow.end.toISOString(), zonedDateTimeToDate("2026-08-10", "07:00", timezone).toISOString());
+  // Monday morning (03:50 AM early arrival for 04:00 AM shift)
+  const mondayEarly = zonedDateTimeToDate("2026-08-10", "03:50", timezone);
+  const mondayWindow1 = getEmployeeShiftWindow(multiEmp, mondayEarly);
+  assert.equal(mondayWindow1.start.toISOString(), zonedDateTimeToDate("2026-08-10", "04:00", timezone).toISOString());
+  assert.equal(mondayWindow1.end.toISOString(), zonedDateTimeToDate("2026-08-10", "07:00", timezone).toISOString());
 
-  // 2026-08-13 is a Thursday (weekday 4)
+  // Monday midday (11:55 AM early arrival for 12:00 PM shift)
+  const mondayMidday = zonedDateTimeToDate("2026-08-10", "11:55", timezone);
+  const mondayWindow2 = getEmployeeShiftWindow(multiEmp, mondayMidday);
+  assert.equal(mondayWindow2.start.toISOString(), zonedDateTimeToDate("2026-08-10", "12:00", timezone).toISOString());
+  assert.equal(mondayWindow2.end.toISOString(), zonedDateTimeToDate("2026-08-10", "15:00", timezone).toISOString());
+
+  // Thursday (12:00 - 15:00)
   const thursdayDate = zonedDateTimeToDate("2026-08-13", "09:00", timezone);
   const thursdayWindow = getEmployeeShiftWindow(multiEmp, thursdayDate);
   assert.equal(thursdayWindow.start.toISOString(), zonedDateTimeToDate("2026-08-13", "12:00", timezone).toISOString());
