@@ -175,7 +175,10 @@ export const Route = createFileRoute("/api/send-report")({
           }
 
           if (!authenticatedEmail) {
-            return Response.json({ ok: false, error: "Invalid authentication token" }, { status: 401 });
+            return Response.json(
+              { ok: false, error: "Invalid authentication token" },
+              { status: 401 },
+            );
           }
         }
 

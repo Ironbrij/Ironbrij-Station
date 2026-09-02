@@ -215,19 +215,41 @@ const TOOLS = [
       properties: {
         name: { type: "string", description: "Company name (e.g. 'Ironbrij', 'Acme Corp')" },
         code: { type: "string", description: "Short identifier or code (e.g. 'IRON')" },
-        timezone: { type: "string", description: "Primary company timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu')" },
+        timezone: {
+          type: "string",
+          description: "Primary company timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu')",
+        },
         defaultShiftHours: { type: "number", description: "Default daily shift hours (e.g. 8)" },
         workingDays: {
           type: "array",
           items: { type: "number" },
           description: "Working days array where 0=Sun, 1=Mon..6=Sat (defaults to [1, 2, 3, 4, 5])",
         },
-        lateGraceMinutes: { type: "number", description: "Grace minutes allowed before lateness starts (default 5)" },
-        punchOutGraceMinutes: { type: "number", description: "Grace period in minutes after shift end before auto punch-out (default 30)" },
-        punchOutReminderMinutes: { type: "number", description: "Minutes before shift end to send reminder email (default 20)" },
-        breakAllowanceMinutes: { type: "number", description: "Break duration in minutes (e.g. 30, or 0 for N/A / no break)" },
-        maxDailyBreaks: { type: "number", description: "Maximum breaks per shift (default 1, or 0 for N/A / no breaks)" },
-        holidays: { type: "array", items: { type: "string" }, description: "Array of holiday dates in YYYY-MM-DD format" },
+        lateGraceMinutes: {
+          type: "number",
+          description: "Grace minutes allowed before lateness starts (default 5)",
+        },
+        punchOutGraceMinutes: {
+          type: "number",
+          description: "Grace period in minutes after shift end before auto punch-out (default 30)",
+        },
+        punchOutReminderMinutes: {
+          type: "number",
+          description: "Minutes before shift end to send reminder email (default 20)",
+        },
+        breakAllowanceMinutes: {
+          type: "number",
+          description: "Break duration in minutes (e.g. 30, or 0 for N/A / no break)",
+        },
+        maxDailyBreaks: {
+          type: "number",
+          description: "Maximum breaks per shift (default 1, or 0 for N/A / no breaks)",
+        },
+        holidays: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of holiday dates in YYYY-MM-DD format",
+        },
         clientEmail: { type: "string", description: "Client contact email" },
         ownerName: { type: "string", description: "Owner or manager name" },
         logoUrl: { type: "string", description: "Company logo URL" },
@@ -235,7 +257,8 @@ const TOOLS = [
         departments: {
           type: "array",
           items: { type: "string" },
-          description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
+          description:
+            "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
         },
         companies: {
           type: "array",
@@ -275,7 +298,8 @@ const TOOLS = [
   },
   {
     name: "update_company",
-    description: "Update company details, logo, timezone, working days, break rules, or grace minutes.",
+    description:
+      "Update company details, logo, timezone, working days, break rules, or grace minutes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -488,12 +512,19 @@ async function createSingleCompany(compInput) {
     name: companyName,
     code: (compInput.code || companyName.slice(0, 4)).toUpperCase(),
     timezone: compInput.timezone || "Australia/Sydney",
-    defaultShiftHours: typeof compInput.defaultShiftHours === "number" ? compInput.defaultShiftHours : 8,
+    defaultShiftHours:
+      typeof compInput.defaultShiftHours === "number" ? compInput.defaultShiftHours : 8,
     workingDays,
-    lateGraceMinutes: typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
-    punchOutGraceMinutes: typeof compInput.punchOutGraceMinutes === "number" ? compInput.punchOutGraceMinutes : 30,
-    punchOutReminderMinutes: typeof compInput.punchOutReminderMinutes === "number" ? compInput.punchOutReminderMinutes : 20,
-    breakAllowanceMinutes: compInput.breakAllowanceMinutes !== undefined ? Number(compInput.breakAllowanceMinutes) : 30,
+    lateGraceMinutes:
+      typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
+    punchOutGraceMinutes:
+      typeof compInput.punchOutGraceMinutes === "number" ? compInput.punchOutGraceMinutes : 30,
+    punchOutReminderMinutes:
+      typeof compInput.punchOutReminderMinutes === "number"
+        ? compInput.punchOutReminderMinutes
+        : 20,
+    breakAllowanceMinutes:
+      compInput.breakAllowanceMinutes !== undefined ? Number(compInput.breakAllowanceMinutes) : 30,
     maxDailyBreaks: compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
     holidays: Array.isArray(compInput.holidays) ? compInput.holidays : [],
     clientEmail: compInput.clientEmail || compInput.email || "",
@@ -727,7 +758,9 @@ async function executeTool(name, args) {
 
   // 7. Update Company
   if (name === "update_company") {
-    const listRes = await fetch(`${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+    const listRes = await fetch(
+      `${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    );
     const listData = await listRes.json();
     const allDocs = listData.documents || [];
 
@@ -790,7 +823,10 @@ async function executeTool(name, args) {
     }
 
     if (!targetId) {
-      return { success: false, error: "Company not found. Provide a valid 'id', 'name', or 'oldName'." };
+      return {
+        success: false,
+        error: "Company not found. Provide a valid 'id', 'name', or 'oldName'.",
+      };
     }
 
     const fieldsToUpdate = {};
@@ -812,24 +848,27 @@ async function executeTool(name, args) {
 
     if (args.code) fieldsToUpdate.code = args.code.trim().toUpperCase();
     if (args.timezone) fieldsToUpdate.timezone = args.timezone;
-    if (args.defaultShiftHours !== undefined) fieldsToUpdate.defaultShiftHours = Number(args.defaultShiftHours);
-    if (args.workingDays !== undefined && Array.isArray(args.workingDays)) fieldsToUpdate.workingDays = args.workingDays;
-    if (args.lateGraceMinutes !== undefined) fieldsToUpdate.lateGraceMinutes = Number(args.lateGraceMinutes);
-    if (args.punchOutGraceMinutes !== undefined) fieldsToUpdate.punchOutGraceMinutes = Number(args.punchOutGraceMinutes);
-    if (args.punchOutReminderMinutes !== undefined) fieldsToUpdate.punchOutReminderMinutes = Number(args.punchOutReminderMinutes);
-    if (args.breakAllowanceMinutes !== undefined) fieldsToUpdate.breakAllowanceMinutes = Number(args.breakAllowanceMinutes);
-    if (args.maxDailyBreaks !== undefined) fieldsToUpdate.maxDailyBreaks = Number(args.maxDailyBreaks);
-    if (args.holidays !== undefined && Array.isArray(args.holidays)) fieldsToUpdate.holidays = args.holidays;
+    if (args.defaultShiftHours !== undefined)
+      fieldsToUpdate.defaultShiftHours = Number(args.defaultShiftHours);
+    if (args.workingDays !== undefined && Array.isArray(args.workingDays))
+      fieldsToUpdate.workingDays = args.workingDays;
+    if (args.lateGraceMinutes !== undefined)
+      fieldsToUpdate.lateGraceMinutes = Number(args.lateGraceMinutes);
+    if (args.punchOutGraceMinutes !== undefined)
+      fieldsToUpdate.punchOutGraceMinutes = Number(args.punchOutGraceMinutes);
+    if (args.punchOutReminderMinutes !== undefined)
+      fieldsToUpdate.punchOutReminderMinutes = Number(args.punchOutReminderMinutes);
+    if (args.breakAllowanceMinutes !== undefined)
+      fieldsToUpdate.breakAllowanceMinutes = Number(args.breakAllowanceMinutes);
+    if (args.maxDailyBreaks !== undefined)
+      fieldsToUpdate.maxDailyBreaks = Number(args.maxDailyBreaks);
+    if (args.holidays !== undefined && Array.isArray(args.holidays))
+      fieldsToUpdate.holidays = args.holidays;
     if (args.clientEmail !== undefined) fieldsToUpdate.clientEmail = args.clientEmail;
     if (args.ownerName !== undefined) fieldsToUpdate.ownerName = args.ownerName;
 
     const logoVal =
-      args.logoUrl ||
-      args.logo ||
-      args.logo_url ||
-      args.imageUrl ||
-      args.image ||
-      args.logoImage;
+      args.logoUrl || args.logo || args.logo_url || args.imageUrl || args.image || args.logoImage;
     if (logoVal !== undefined) fieldsToUpdate.logoUrl = logoVal;
 
     if (args.archived !== undefined) {
@@ -867,14 +906,26 @@ async function executeTool(name, args) {
 
   // 7b. Rename Company
   if (name === "rename_company") {
-    const listRes = await fetch(`${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+    const listRes = await fetch(
+      `${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    );
     const listData = await listRes.json();
     const allDocs = listData.documents || [];
 
     let targetId = args.id || args.companyId;
     let currentName = "";
 
-    const searchLookupName = (args.oldName || args.from || args.fromName || args.currentName || args.name || args.companyName || "").trim().toLowerCase();
+    const searchLookupName = (
+      args.oldName ||
+      args.from ||
+      args.fromName ||
+      args.currentName ||
+      args.name ||
+      args.companyName ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
 
     if (targetId) {
       const docById = allDocs.find((d) => d.name.split("/").pop() === targetId);
@@ -929,7 +980,9 @@ async function executeTool(name, args) {
 
   // 7c. Archive Company
   if (name === "archive_company") {
-    const listRes = await fetch(`${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+    const listRes = await fetch(
+      `${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    );
     const listData = await listRes.json();
     const allDocs = listData.documents || [];
 
@@ -990,7 +1043,9 @@ async function executeTool(name, args) {
 
   // 7d. Unarchive Company
   if (name === "unarchive_company") {
-    const listRes = await fetch(`${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+    const listRes = await fetch(
+      `${FIRESTORE_BASE_URL}/companies?pageSize=100&key=${encodeURIComponent(FIREBASE_API_KEY)}`,
+    );
     const listData = await listRes.json();
     const allDocs = listData.documents || [];
 

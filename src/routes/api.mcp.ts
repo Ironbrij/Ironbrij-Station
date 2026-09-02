@@ -175,7 +175,8 @@ const MCP_TOOLS = [
         code: { type: "string", description: "Short company code (e.g. 'IRON')" },
         timezone: {
           type: "string",
-          description: "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
+          description:
+            "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
         },
         defaultShiftHours: {
           type: "number",
@@ -218,7 +219,8 @@ const MCP_TOOLS = [
         departments: {
           type: "array",
           items: { type: "string" },
-          description: "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
+          description:
+            "Optional list of initial department names to create (e.g. ['Operations', 'Accounts'])",
         },
         companies: {
           type: "array",
@@ -266,7 +268,10 @@ const MCP_TOOLS = [
         id: { type: "string", description: "Company document ID or name to look up" },
         companyId: { type: "string", description: "Company document ID" },
         name: { type: "string", description: "Company name" },
-        oldName: { type: "string", description: "Previous name to look up when updating or renaming" },
+        oldName: {
+          type: "string",
+          description: "Previous name to look up when updating or renaming",
+        },
         newName: { type: "string", description: "New name to apply" },
         code: { type: "string", description: "Short code" },
         timezone: { type: "string", description: "Timezone" },
@@ -462,7 +467,8 @@ const MCP_TOOLS = [
   },
   {
     name: "list_overtime",
-    description: "List overtime requests with optional status filtering (pending, approved, rejected, all).",
+    description:
+      "List overtime requests with optional status filtering (pending, approved, rejected, all).",
     inputSchema: {
       type: "object",
       properties: {
@@ -532,9 +538,7 @@ async function resolveEmployee(
       const byExactName = list.find((e: any) => e.name?.toLowerCase() === clean.toLowerCase());
       if (byExactName) return byExactName;
 
-      const byPartial = list.find((e: any) =>
-        e.name?.toLowerCase().includes(clean.toLowerCase()),
-      );
+      const byPartial = list.find((e: any) => e.name?.toLowerCase().includes(clean.toLowerCase()));
       if (byPartial) return byPartial;
     }
   } catch {}
@@ -613,7 +617,12 @@ async function createSingleCompany(
   compInput: Record<string, any>,
   baseUrl: string,
   apiKey: string,
-): Promise<{ id: string; name: string; company: any; departments: Array<{ id: string; name: string }> }> {
+): Promise<{
+  id: string;
+  name: string;
+  company: any;
+  departments: Array<{ id: string; name: string }>;
+}> {
   const companyName = (
     compInput.name ||
     compInput.companyName ||
@@ -656,19 +665,14 @@ async function createSingleCompany(
     lateGraceMinutes:
       typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
     punchOutGraceMinutes:
-      typeof compInput.punchOutGraceMinutes === "number"
-        ? compInput.punchOutGraceMinutes
-        : 30,
+      typeof compInput.punchOutGraceMinutes === "number" ? compInput.punchOutGraceMinutes : 30,
     punchOutReminderMinutes:
       typeof compInput.punchOutReminderMinutes === "number"
         ? compInput.punchOutReminderMinutes
         : 20,
     breakAllowanceMinutes:
-      compInput.breakAllowanceMinutes !== undefined
-        ? Number(compInput.breakAllowanceMinutes)
-        : 30,
-    maxDailyBreaks:
-      compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
+      compInput.breakAllowanceMinutes !== undefined ? Number(compInput.breakAllowanceMinutes) : 30,
+    maxDailyBreaks: compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
     holidays: Array.isArray(compInput.holidays) ? compInput.holidays : [],
     holidayAssignments: Array.isArray(compInput.holidayAssignments)
       ? compInput.holidayAssignments
@@ -922,10 +926,7 @@ export const Route = createFileRoute("/api/mcp")({
                       (fields.email || "").toLowerCase() === args.email.toLowerCase()
                     )
                       return true;
-                    if (
-                      args.name &&
-                      (fields.name || "").toLowerCase() === args.name.toLowerCase()
-                    )
+                    if (args.name && (fields.name || "").toLowerCase() === args.name.toLowerCase())
                       return true;
                     return false;
                   });
@@ -1064,7 +1065,7 @@ export const Route = createFileRoute("/api/mcp")({
 
               const liveList = employees.map((emp: any) => {
                 const empPunches = punches
-                  .filter((p: any) => p.employeeId === emp.id)
+                  .filter((p: any) => p.employeeId === emp.id || p.employeeId === emp.authUid)
                   .sort((a: any, b: any) => b.timeMillis - a.timeMillis);
 
                 const latest = empPunches[0];
@@ -1116,15 +1117,19 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 6. LIST OVERTIME
             if (toolName === "list_overtime") {
-              const res = await fetch(`${baseUrl}/overtimeRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/overtimeRequests?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
                 ...fromFirestoreFields(doc.fields),
               }));
               let filtered = list;
-              if (args.status && args.status !== "all") filtered = filtered.filter((r: any) => r.status === args.status);
-              if (args.employeeId) filtered = filtered.filter((r: any) => r.employeeId === args.employeeId);
+              if (args.status && args.status !== "all")
+                filtered = filtered.filter((r: any) => r.status === args.status);
+              if (args.employeeId)
+                filtered = filtered.filter((r: any) => r.employeeId === args.employeeId);
               return Response.json({
                 jsonrpc: "2.0",
                 id,
@@ -1157,7 +1162,12 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Overtime request ${args.requestId} marked as ${args.decision}.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Overtime request ${args.requestId} marked as ${args.decision}.`,
+                    },
+                  ],
                 },
               });
             }
@@ -1230,7 +1240,9 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 9. LIST DAILY REPORTS
             if (toolName === "list_daily_reports") {
-              const res = await fetch(`${baseUrl}/dailyReports?pageSize=200&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/dailyReports?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
@@ -1239,7 +1251,8 @@ export const Route = createFileRoute("/api/mcp")({
 
               let filtered = list;
               if (args.date) filtered = filtered.filter((r: any) => r.reportDate === args.date);
-              if (args.reportType) filtered = filtered.filter((r: any) => r.reportType === args.reportType);
+              if (args.reportType)
+                filtered = filtered.filter((r: any) => r.reportType === args.reportType);
 
               const empIdentifier = args.employeeId || args.name;
               if (empIdentifier) {
@@ -1347,7 +1360,9 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 11. UPDATE COMPANY
             if (toolName === "update_company") {
-              const listRes = await fetch(`${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const allDocs = listData.documents || [];
 
@@ -1415,7 +1430,12 @@ export const Route = createFileRoute("/api/mcp")({
                   id,
                   result: {
                     isError: true,
-                    content: [{ type: "text", text: "Error: Company not found. Provide a valid 'id', 'name', or 'oldName'." }],
+                    content: [
+                      {
+                        type: "text",
+                        text: "Error: Company not found. Provide a valid 'id', 'name', or 'oldName'.",
+                      },
+                    ],
                   },
                 });
               }
@@ -1427,7 +1447,9 @@ export const Route = createFileRoute("/api/mcp")({
                 args.to ||
                 args.renameTo ||
                 (args.oldName ? args.name : undefined) ||
-                (args.id && args.name && args.name !== currentCompanyName ? args.name : undefined) ||
+                (args.id && args.name && args.name !== currentCompanyName
+                  ? args.name
+                  : undefined) ||
                 ""
               ).trim();
 
@@ -1439,14 +1461,22 @@ export const Route = createFileRoute("/api/mcp")({
 
               if (args.code) fieldsToUpdate.code = args.code.trim().toUpperCase();
               if (args.timezone) fieldsToUpdate.timezone = args.timezone;
-              if (args.defaultShiftHours !== undefined) fieldsToUpdate.defaultShiftHours = Number(args.defaultShiftHours);
-              if (args.workingDays !== undefined && Array.isArray(args.workingDays)) fieldsToUpdate.workingDays = args.workingDays;
-              if (args.lateGraceMinutes !== undefined) fieldsToUpdate.lateGraceMinutes = Number(args.lateGraceMinutes);
-              if (args.punchOutGraceMinutes !== undefined) fieldsToUpdate.punchOutGraceMinutes = Number(args.punchOutGraceMinutes);
-              if (args.punchOutReminderMinutes !== undefined) fieldsToUpdate.punchOutReminderMinutes = Number(args.punchOutReminderMinutes);
-              if (args.breakAllowanceMinutes !== undefined) fieldsToUpdate.breakAllowanceMinutes = Number(args.breakAllowanceMinutes);
-              if (args.maxDailyBreaks !== undefined) fieldsToUpdate.maxDailyBreaks = Number(args.maxDailyBreaks);
-              if (args.holidays !== undefined && Array.isArray(args.holidays)) fieldsToUpdate.holidays = args.holidays;
+              if (args.defaultShiftHours !== undefined)
+                fieldsToUpdate.defaultShiftHours = Number(args.defaultShiftHours);
+              if (args.workingDays !== undefined && Array.isArray(args.workingDays))
+                fieldsToUpdate.workingDays = args.workingDays;
+              if (args.lateGraceMinutes !== undefined)
+                fieldsToUpdate.lateGraceMinutes = Number(args.lateGraceMinutes);
+              if (args.punchOutGraceMinutes !== undefined)
+                fieldsToUpdate.punchOutGraceMinutes = Number(args.punchOutGraceMinutes);
+              if (args.punchOutReminderMinutes !== undefined)
+                fieldsToUpdate.punchOutReminderMinutes = Number(args.punchOutReminderMinutes);
+              if (args.breakAllowanceMinutes !== undefined)
+                fieldsToUpdate.breakAllowanceMinutes = Number(args.breakAllowanceMinutes);
+              if (args.maxDailyBreaks !== undefined)
+                fieldsToUpdate.maxDailyBreaks = Number(args.maxDailyBreaks);
+              if (args.holidays !== undefined && Array.isArray(args.holidays))
+                fieldsToUpdate.holidays = args.holidays;
               if (args.clientEmail !== undefined) fieldsToUpdate.clientEmail = args.clientEmail;
               if (args.ownerName !== undefined) fieldsToUpdate.ownerName = args.ownerName;
 
@@ -1469,7 +1499,9 @@ export const Route = createFileRoute("/api/mcp")({
 
               if (args.notes !== undefined) fieldsToUpdate.notes = args.notes;
 
-              const updateMask = Object.keys(fieldsToUpdate).map((k) => `updateMask.fieldPaths=${k}`).join("&");
+              const updateMask = Object.keys(fieldsToUpdate)
+                .map((k) => `updateMask.fieldPaths=${k}`)
+                .join("&");
               const res = await fetch(
                 `${baseUrl}/companies/${targetId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
                 {
@@ -1484,21 +1516,38 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Company '${fieldsToUpdate.name || currentCompanyName || targetId}' updated successfully.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Company '${fieldsToUpdate.name || currentCompanyName || targetId}' updated successfully.`,
+                    },
+                  ],
                 },
               });
             }
 
             // 11b. RENAME COMPANY
             if (toolName === "rename_company") {
-              const listRes = await fetch(`${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const allDocs = listData.documents || [];
 
               let targetId = args.id || args.companyId;
               let currentName = "";
 
-              const searchLookupName = (args.oldName || args.from || args.fromName || args.currentName || args.name || args.companyName || "").trim().toLowerCase();
+              const searchLookupName = (
+                args.oldName ||
+                args.from ||
+                args.fromName ||
+                args.currentName ||
+                args.name ||
+                args.companyName ||
+                ""
+              )
+                .trim()
+                .toLowerCase();
 
               if (targetId) {
                 const docById = allDocs.find((d: any) => d.name.split("/").pop() === targetId);
@@ -1529,7 +1578,12 @@ export const Route = createFileRoute("/api/mcp")({
                   id,
                   result: {
                     isError: true,
-                    content: [{ type: "text", text: "Error: Company not found. Provide 'oldName', 'name', or 'id'." }],
+                    content: [
+                      {
+                        type: "text",
+                        text: "Error: Company not found. Provide 'oldName', 'name', or 'id'.",
+                      },
+                    ],
                   },
                 });
               }
@@ -1541,7 +1595,9 @@ export const Route = createFileRoute("/api/mcp")({
                   id,
                   result: {
                     isError: true,
-                    content: [{ type: "text", text: "Error: 'newName' is required to rename the company." }],
+                    content: [
+                      { type: "text", text: "Error: 'newName' is required to rename the company." },
+                    ],
                   },
                 });
               }
@@ -1560,14 +1616,21 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Company successfully renamed from '${currentName}' to '${newName}' (ID: ${targetId}).` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Company successfully renamed from '${currentName}' to '${newName}' (ID: ${targetId}).`,
+                    },
+                  ],
                 },
               });
             }
 
             // 11c. ARCHIVE COMPANY
             if (toolName === "archive_company") {
-              const listRes = await fetch(`${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const allDocs = listData.documents || [];
 
@@ -1606,14 +1669,22 @@ export const Route = createFileRoute("/api/mcp")({
                 return Response.json({
                   jsonrpc: "2.0",
                   id,
-                  result: { isError: true, content: [{ type: "text", text: "Error: Company not found." }] },
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: Company not found." }],
+                  },
                 });
               }
               if (isMain || targetId === "default") {
                 return Response.json({
                   jsonrpc: "2.0",
                   id,
-                  result: { isError: true, content: [{ type: "text", text: "Error: The main company cannot be archived." }] },
+                  result: {
+                    isError: true,
+                    content: [
+                      { type: "text", text: "Error: The main company cannot be archived." },
+                    ],
+                  },
                 });
               }
 
@@ -1622,7 +1693,9 @@ export const Route = createFileRoute("/api/mcp")({
                 {
                   method: "PATCH",
                   headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields({ archived: true, status: "archived" }) }),
+                  body: JSON.stringify({
+                    fields: toFirestoreFields({ archived: true, status: "archived" }),
+                  }),
                 },
               );
 
@@ -1630,14 +1703,21 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Company '${currentName}' (ID: ${targetId}) has been archived.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Company '${currentName}' (ID: ${targetId}) has been archived.`,
+                    },
+                  ],
                 },
               });
             }
 
             // 11d. UNARCHIVE COMPANY
             if (toolName === "unarchive_company") {
-              const listRes = await fetch(`${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const listRes = await fetch(
+                `${baseUrl}/companies?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const listData = await listRes.json();
               const allDocs = listData.documents || [];
 
@@ -1673,7 +1753,10 @@ export const Route = createFileRoute("/api/mcp")({
                 return Response.json({
                   jsonrpc: "2.0",
                   id,
-                  result: { isError: true, content: [{ type: "text", text: "Error: Company not found." }] },
+                  result: {
+                    isError: true,
+                    content: [{ type: "text", text: "Error: Company not found." }],
+                  },
                 });
               }
 
@@ -1682,7 +1765,9 @@ export const Route = createFileRoute("/api/mcp")({
                 {
                   method: "PATCH",
                   headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields({ archived: false, status: "active" }) }),
+                  body: JSON.stringify({
+                    fields: toFirestoreFields({ archived: false, status: "active" }),
+                  }),
                 },
               );
 
@@ -1690,7 +1775,12 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Company '${currentName}' (ID: ${targetId}) has been restored and unarchived.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Company '${currentName}' (ID: ${targetId}) has been restored and unarchived.`,
+                    },
+                  ],
                 },
               });
             }
@@ -1719,20 +1809,26 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Department '${args.name}' created with ID: ${docId}` }],
+                  content: [
+                    { type: "text", text: `Department '${args.name}' created with ID: ${docId}` },
+                  ],
                 },
               });
             }
 
             // 13. LIST DEPARTMENTS
             if (toolName === "list_departments") {
-              const res = await fetch(`${baseUrl}/departments?pageSize=100&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/departments?pageSize=100&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
                 ...fromFirestoreFields(doc.fields),
               }));
-              const filtered = args.companyId ? list.filter((d: any) => d.companyId === args.companyId) : list;
+              const filtered = args.companyId
+                ? list.filter((d: any) => d.companyId === args.companyId)
+                : list;
               return Response.json({
                 jsonrpc: "2.0",
                 id,
@@ -1744,7 +1840,11 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 14. SEND EMPLOYEE INVITE
             if (toolName === "send_employee_invite") {
-              const matchedEmp = await resolveEmployee(args.employeeId || args.email || args.name, baseUrl, apiKey);
+              const matchedEmp = await resolveEmployee(
+                args.employeeId || args.email || args.name,
+                baseUrl,
+                apiKey,
+              );
               if (!matchedEmp) {
                 return Response.json({
                   jsonrpc: "2.0",
@@ -1813,7 +1913,11 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 15. DELETE EMPLOYEE
             if (toolName === "delete_employee") {
-              const matchedEmp = await resolveEmployee(args.id || args.email || args.name, baseUrl, apiKey);
+              const matchedEmp = await resolveEmployee(
+                args.id || args.email || args.name,
+                baseUrl,
+                apiKey,
+              );
               if (!matchedEmp) {
                 return Response.json({
                   jsonrpc: "2.0",
@@ -1825,15 +1929,23 @@ export const Route = createFileRoute("/api/mcp")({
                 });
               }
 
-              await fetch(`${baseUrl}/employees/${matchedEmp.id}?key=${encodeURIComponent(apiKey)}`, {
-                method: "DELETE",
-              });
+              await fetch(
+                `${baseUrl}/employees/${matchedEmp.id}?key=${encodeURIComponent(apiKey)}`,
+                {
+                  method: "DELETE",
+                },
+              );
 
               return Response.json({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Employee '${matchedEmp.name}' (${matchedEmp.id}) removed.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Employee '${matchedEmp.name}' (${matchedEmp.id}) removed.`,
+                    },
+                  ],
                 },
               });
             }
@@ -1862,20 +1974,26 @@ export const Route = createFileRoute("/api/mcp")({
                 jsonrpc: "2.0",
                 id,
                 result: {
-                  content: [{ type: "text", text: `Notice '${args.title}' published successfully.` }],
+                  content: [
+                    { type: "text", text: `Notice '${args.title}' published successfully.` },
+                  ],
                 },
               });
             }
 
             // 17. LIST NOTICES
             if (toolName === "list_notices") {
-              const res = await fetch(`${baseUrl}/notices?pageSize=50&key=${encodeURIComponent(apiKey)}`);
+              const res = await fetch(
+                `${baseUrl}/notices?pageSize=50&key=${encodeURIComponent(apiKey)}`,
+              );
               const data = await res.json();
               const list = (data.documents || []).map((doc: any) => ({
                 id: doc.name.split("/").pop(),
                 ...fromFirestoreFields(doc.fields),
               }));
-              const filtered = args.companyId ? list.filter((n: any) => !n.companyId || n.companyId === args.companyId) : list;
+              const filtered = args.companyId
+                ? list.filter((n: any) => !n.companyId || n.companyId === args.companyId)
+                : list;
               return Response.json({
                 jsonrpc: "2.0",
                 id,

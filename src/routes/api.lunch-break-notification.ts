@@ -64,8 +64,8 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
           ok: true,
           configured: Boolean(
             process.env.N8N_LUNCH_BREAK_WEBHOOK_URL ||
-              process.env.N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
+            process.env.N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL ||
+            "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
           ),
         }),
       POST: async ({ request }) => {
@@ -131,7 +131,10 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
           (body.type !== "warning_5m" && body.type !== "overdue") ||
           (!isMasterKey && authenticatedEmail !== body.employeeEmail.toLowerCase())
         ) {
-          return Response.json({ ok: false, error: "Invalid notification payload" }, { status: 400 });
+          return Response.json(
+            { ok: false, error: "Invalid notification payload" },
+            { status: 400 },
+          );
         }
 
         const webhookUrl =
@@ -164,9 +167,7 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
         const quoteBoxHtml = `
           <div style="margin: 16px 0; padding: 14px 18px; border-radius: 12px; background-color: ${
             isWarning ? "#fffbeb" : "#fef2f2"
-          }; border: 1px solid ${
-            isWarning ? "#fde68a" : "#fecaca"
-          }; color: ${
+          }; border: 1px solid ${isWarning ? "#fde68a" : "#fecaca"}; color: ${
             isWarning ? "#92400e" : "#991b1b"
           }; font-size: 13px; font-weight: 600; line-height: 1.5;">
             ${escapeEmailHtml(randomQuote)}
@@ -175,7 +176,9 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
 
         const html = renderCompanyEmail({
           company,
-          preheader: isWarning ? "5 minutes remaining in your food session." : "Your break finished 5 minutes ago.",
+          preheader: isWarning
+            ? "5 minutes remaining in your food session."
+            : "Your break finished 5 minutes ago.",
           label: isWarning ? "Food Session Ending Soon" : "Break Overdue (5m Past)",
           title: isWarning ? "5 Minutes Remaining on Break" : "Your Break Finished 5 Minutes Ago",
           introHtml: `

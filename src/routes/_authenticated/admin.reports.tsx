@@ -336,22 +336,27 @@ function ReportsPage() {
         const holiday = getEmployeeHoliday(reportCompany, employee, date);
         const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
         const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
-        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
+          employee,
+          reportCompany?.workingDays,
+        );
         const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
         const isOffShiftDay = !isScheduledDay;
 
-        const late = firstIn && isScheduledDay
-          ? computeEmployeeLateness(
-              toDate(firstIn.timestamp) ?? new Date(),
-              employee,
-              getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
-            )
-          : null;
+        const late =
+          firstIn && isScheduledDay
+            ? computeEmployeeLateness(
+                toDate(firstIn.timestamp) ?? new Date(),
+                employee,
+                getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
+              )
+            : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
 
         const dayOtRequests = overtimeRequests.filter(
           (r) =>
-            (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+            (r.employeeId === employee.id ||
+              (employee.authUid && r.employeeId === employee.authUid)) &&
             r.date === date,
         );
         const approvedDayOtMinutes = dayOtRequests
@@ -376,7 +381,9 @@ function ReportsPage() {
               : isOffShiftDay && firstIn
                 ? "Off-day Shift"
                 : !firstIn
-                  ? "No punch in"
+                  ? isOffShiftDay
+                    ? "Off day"
+                    : "No punch in"
                   : !lastOut
                     ? "Still punched in"
                     : isAutoPunchOut
@@ -421,7 +428,7 @@ function ReportsPage() {
 
       const employeeLeaves = leaves.filter(
         (leave) =>
-          leave.employeeId === employee.id &&
+          (leave.employeeId === employee.id || leave.employeeId === employee.authUid) &&
           leave.status === "approved" &&
           (companyFilter === "all" ||
             (leave.companyId || rawEmployee.companyIds?.[0] || rawEmployee.companyId) ===
@@ -478,7 +485,10 @@ function ReportsPage() {
         const holiday = getEmployeeHoliday(reportCompany, employee, date);
         const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
         const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
-        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
+          employee,
+          reportCompany?.workingDays,
+        );
         const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
         const isOffShiftDay = !isScheduledDay;
 
@@ -501,10 +511,23 @@ function ReportsPage() {
             const inDate = toDate(currentIn.timestamp);
             const outDate = toDate(p.timestamp);
             if (inDate && outDate) {
-              const durMins = Math.max(0, Math.floor((outDate.getTime() - inDate.getTime()) / 60_000));
-              const inTimeStr = formatInTimezone(inDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
-              const outTimeStr = formatInTimezone(outDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
-              const isOt = p.type === "extra_out" || (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0);
+              const durMins = Math.max(
+                0,
+                Math.floor((outDate.getTime() - inDate.getTime()) / 60_000),
+              );
+              const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              });
+              const outTimeStr = formatInTimezone(outDate, shiftTimezone, {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              });
+              const isOt =
+                p.type === "extra_out" ||
+                (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0);
               sessions.push({
                 inTime: inTimeStr,
                 outTime: outTimeStr,
@@ -520,7 +543,11 @@ function ReportsPage() {
         if (currentIn) {
           const inDate = toDate(currentIn.timestamp);
           if (inDate) {
-            const inTimeStr = formatInTimezone(inDate, shiftTimezone, { hour: "2-digit", minute: "2-digit", hour12: false });
+            const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
             sessions.push({
               inTime: inTimeStr,
               durationMinutes: Math.max(0, Math.floor((Date.now() - inDate.getTime()) / 60_000)),
@@ -536,19 +563,20 @@ function ReportsPage() {
               employee,
               company: reportCompany,
               punchIn: toDate(firstIn.timestamp) ?? new Date(),
-              punchOut: lastOut ? toDate(lastOut.timestamp) ?? new Date() : null,
+              punchOut: lastOut ? (toDate(lastOut.timestamp) ?? new Date()) : null,
               requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
               isOffShiftDay,
             })
           : null;
 
-        const lateness = firstIn && isScheduledDay
-          ? computeEmployeeLateness(
-              toDate(firstIn.timestamp) ?? new Date(),
-              employee,
-              getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
-            )
-          : null;
+        const lateness =
+          firstIn && isScheduledDay
+            ? computeEmployeeLateness(
+                toDate(firstIn.timestamp) ?? new Date(),
+                employee,
+                getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
+              )
+            : null;
 
         if (lateness?.isLate) totalLateDays++;
 
@@ -561,7 +589,8 @@ function ReportsPage() {
         // Check all overtime requests for this employee on this day
         const dayOtRequests = overtimeRequests.filter(
           (r) =>
-            (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+            (r.employeeId === employee.id ||
+              (employee.authUid && r.employeeId === employee.authUid)) &&
             r.date === date,
         );
 
@@ -884,7 +913,9 @@ function ReportsPage() {
 
   // Fix Missed Punch Out on a day (sets standard shift end time from employee profile)
   async function handleFixMissedPunchOut(employeeRowId: string, date: string) {
-    const emp = filteredEmployees.find((e) => e.id === employeeRowId || e.authUid === employeeRowId);
+    const emp = filteredEmployees.find(
+      (e) => e.id === employeeRowId || e.authUid === employeeRowId,
+    );
     const defaultEndTime = emp?.shiftEndTime || "17:00";
     const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
     const fixedOutDate = zonedDateTimeToDate(date, defaultEndTime, empTz);
@@ -893,7 +924,7 @@ function ReportsPage() {
       const fixedPunchRef = await addDoc(collection(db(), "punches"), {
         employeeId: emp?.id || employeeRowId,
         employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
-        companyId: companyFilter === "all" ? (emp?.companyId || COMPANY_ID) : companyFilter,
+        companyId: companyFilter === "all" ? emp?.companyId || COMPANY_ID : companyFilter,
         companyName: selectedCompany?.name || "Company",
         date,
         attendanceDate: date,
@@ -1502,8 +1533,7 @@ function ReportsPage() {
               <span>
                 <strong>Spreadsheet & Interval Inspection:</strong> Click on{" "}
                 <span className="font-bold text-primary underline">Inspect Daily Intervals</span> on
-                any employee to see day-by-day hours, fix missed punch-outs, and review
-                overtimes.
+                any employee to see day-by-day hours, fix missed punch-outs, and review overtimes.
               </span>
             </div>
             {hasCustomEdits && (
@@ -1688,7 +1718,8 @@ function ReportsPage() {
                             className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:underline"
                             title="Click to review in Overtime tab"
                           >
-                            <ClockAlert className="h-2.5 w-2.5" /> +{row.pendingOvertimeHours.toFixed(1)}h in OT tab →
+                            <ClockAlert className="h-2.5 w-2.5" /> +
+                            {row.pendingOvertimeHours.toFixed(1)}h in OT tab →
                           </Link>
                         </div>
                       )}
@@ -2006,7 +2037,10 @@ function ReportsPage() {
                                 className="text-[10px] text-muted-foreground font-mono truncate"
                                 title={`Session ${sIdx + 1}: ${s.inTime} - ${s.outTime || "..."} (${formatWorkMinutes(s.durationMinutes)})`}
                               >
-                                <span className="font-bold text-foreground">#{sIdx + 1}:</span> {s.inTime}–{s.outTime || "..."} ({formatWorkMinutes(s.durationMinutes)}{s.isOvertime ? " OT" : ""})
+                                <span className="font-bold text-foreground">#{sIdx + 1}:</span>{" "}
+                                {s.inTime}–{s.outTime || "..."} (
+                                {formatWorkMinutes(s.durationMinutes)}
+                                {s.isOvertime ? " OT" : ""})
                               </div>
                             ))}
                           </div>

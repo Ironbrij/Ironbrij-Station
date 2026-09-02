@@ -456,7 +456,9 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 font-bold">
                     {record.kind === "missing" ? (
-                      <span className="text-rose-600 font-extrabold">{record.minutesLate}m overdue</span>
+                      <span className="text-rose-600 font-extrabold">
+                        {record.minutesLate}m overdue
+                      </span>
                     ) : record.isExcused ? (
                       <span className="text-emerald-600 line-through font-extrabold">
                         {record.minutesLate} min

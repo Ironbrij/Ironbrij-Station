@@ -93,7 +93,8 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 });
 
 function PunchPage() {
-  const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } = useAuth();
+  const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } =
+    useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
@@ -284,7 +285,7 @@ function PunchPage() {
         latestCompanyPunch?.type === "extra_in" ||
         latestCompanyPunch?.type === "lunch_start" ||
         latestCompanyPunch?.type === "lunch_end") &&
-      attendanceStatus?.isPunchedIn
+      attendanceStatus?.isPunchedIn,
     );
   }, [activeWorkingSession, activeCompanyId, latestCompanyPunch, attendanceStatus]);
 
@@ -418,7 +419,10 @@ function PunchPage() {
 
     if (
       (targetType === "in" || targetType === "extra_in") &&
-      (latestType === "in" || latestType === "extra_in" || latestType === "lunch_start" || latestType === "lunch_end") &&
+      (latestType === "in" ||
+        latestType === "extra_in" ||
+        latestType === "lunch_start" ||
+        latestType === "lunch_end") &&
       attendanceStatus?.isPunchedIn
     ) {
       toast.error("Action Blocked: You are already punched in!");
@@ -427,7 +431,10 @@ function PunchPage() {
 
     if (
       targetType === "out" &&
-      (!latestType || latestType === "out" || latestType === "extra_out" || !attendanceStatus?.isPunchedIn)
+      (!latestType ||
+        latestType === "out" ||
+        latestType === "extra_out" ||
+        !attendanceStatus?.isPunchedIn)
     ) {
       toast.error("Action Blocked: You are already punched out!");
       return;
@@ -461,11 +468,7 @@ function PunchPage() {
 
       const isExtraOut = latestType === "extra_in" && targetType === "out";
       const punchType =
-        targetType === "extra_in"
-          ? "extra_in"
-          : isExtraOut
-            ? "extra_out"
-            : targetType;
+        targetType === "extra_in" ? "extra_in" : isExtraOut ? "extra_out" : targetType;
       const punchTime = new Date();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
       const inPunchDate =
@@ -476,7 +479,7 @@ function PunchPage() {
       const requiredWorkMinutes = getRequiredWorkMinutes(employee, company);
       const shiftScheduleTime =
         targetType === "out" && latestPunch?.timestamp
-          ? toDate(latestPunch.timestamp) ?? punchTime
+          ? (toDate(latestPunch.timestamp) ?? punchTime)
           : punchTime;
       const schedule = getLiveAttendanceStatus(
         employee,
@@ -513,8 +516,7 @@ function PunchPage() {
             )
           : null;
 
-      const recordedOvertimeMinutes =
-        calculation?.overtimeMinutes ?? extraOvertimeMinutes ?? 0;
+      const recordedOvertimeMinutes = calculation?.overtimeMinutes ?? extraOvertimeMinutes ?? 0;
 
       const punchRef = await addDoc(collection(db(), "punches"), {
         employeeId: employee.id,
@@ -552,7 +554,8 @@ function PunchPage() {
       if (targetType === "out" && recordedOvertimeMinutes > 0) {
         try {
           const reason = isExtraOut
-            ? customReason || `Completed ${formatWorkMinutes(recordedOvertimeMinutes)} post-shift overtime work`
+            ? customReason ||
+              `Completed ${formatWorkMinutes(recordedOvertimeMinutes)} post-shift overtime work`
             : isOffShiftDay
               ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
               : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
@@ -562,7 +565,12 @@ function PunchPage() {
             employeeName: employee.name,
             companyId: activeCompanyId,
             date: targetAttendanceDate,
-            requestType: isExtraOut || isOffShiftDay ? (isOffShiftDay ? "off_shift_work" : "overtime") : "overtime",
+            requestType:
+              isExtraOut || isOffShiftDay
+                ? isOffShiftDay
+                  ? "off_shift_work"
+                  : "overtime"
+                : "overtime",
             punchOutId: punchRef.id,
             punchInId: latestPunch?.id || "",
             overtimeMinutes: recordedOvertimeMinutes,
@@ -573,7 +581,11 @@ function PunchPage() {
             createdAt: new Date().toISOString(),
           });
 
-          await setDoc(doc(db(), "punches", punchRef.id), { overtimeRequestId: otDoc.id }, { merge: true });
+          await setDoc(
+            doc(db(), "punches", punchRef.id),
+            { overtimeRequestId: otDoc.id },
+            { merge: true },
+          );
         } catch (otErr) {
           console.warn("Could not save overtime request:", otErr);
         }
@@ -878,11 +890,12 @@ function PunchPage() {
     shiftWindow?.start &&
     new Date(now).getTime() < shiftWindow.start.getTime() &&
     !isOffShiftDayToday &&
-    !attendanceStatus?.isPunchedIn
+    !attendanceStatus?.isPunchedIn,
   );
-  const earlyMinutes = isEarlyBeforeShift && shiftWindow?.start
-    ? Math.max(1, Math.floor((shiftWindow.start.getTime() - new Date(now).getTime()) / 60000))
-    : 0;
+  const earlyMinutes =
+    isEarlyBeforeShift && shiftWindow?.start
+      ? Math.max(1, Math.floor((shiftWindow.start.getTime() - new Date(now).getTime()) / 60000))
+      : 0;
 
   function handlePunchClick() {
     if (isPunchedIn) {
@@ -917,7 +930,8 @@ function PunchPage() {
             <div>
               <h1 className="text-2xl font-bold text-primary">Admin Account</h1>
               <p className="mt-2 text-sm text-muted-foreground font-medium">
-                You are logged in as an Administrator (<strong>{user?.email}</strong>). You do not have an assigned employee shift profile.
+                You are logged in as an Administrator (<strong>{user?.email}</strong>). You do not
+                have an assigned employee shift profile.
               </p>
             </div>
 
@@ -1277,7 +1291,12 @@ function PunchPage() {
                             <span>Early Clock-In Recorded</span>
                           </div>
                           <p className="text-muted-foreground text-[11px]">
-                            Started at <strong>{format(lastIn, "h:mm a")}</strong> before scheduled shift ({format(attendanceStatus.shift.start, "h:mm a")}). Early duration is tracked as Overtime. At {format(attendanceStatus.shift.start, "h:mm a")}, regular shift hours will start counting toward your scheduled shift duration ({formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
+                            Started at <strong>{format(lastIn, "h:mm a")}</strong> before scheduled
+                            shift ({format(attendanceStatus.shift.start, "h:mm a")}). Early duration
+                            is tracked as Overtime. At{" "}
+                            {format(attendanceStatus.shift.start, "h:mm a")}, regular shift hours
+                            will start counting toward your scheduled shift duration (
+                            {formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
                           </p>
                         </div>
                       )}
@@ -1290,7 +1309,8 @@ function PunchPage() {
                           <span>Overtime Session Active</span>
                         </div>
                         <p className="text-muted-foreground text-[11px]">
-                          Your scheduled shift has ended. Extra working time is being recorded directly into the Overtime section.
+                          Your scheduled shift has ended. Extra working time is being recorded
+                          directly into the Overtime section.
                         </p>
                       </div>
                     )}
@@ -1305,7 +1325,9 @@ function PunchPage() {
                           <span>Active Shift Running at {activeOtherCompany.companyName}</span>
                         </div>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          You are currently clocked in at <strong>{activeOtherCompany.companyName}</strong>. You can only work in one company at a time.
+                          You are currently clocked in at{" "}
+                          <strong>{activeOtherCompany.companyName}</strong>. You can only work in
+                          one company at a time.
                         </p>
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                           <button
@@ -1321,7 +1343,9 @@ function PunchPage() {
                             className="btn-lift inline-flex items-center gap-1.5 rounded-lg border border-border bg-background hover:bg-muted font-bold text-xs px-3.5 py-2 shadow-2xs transition-all cursor-pointer"
                           >
                             <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                            <span>End Shift at {activeOtherCompany.companyName} & Start Work Here</span>
+                            <span>
+                              End Shift at {activeOtherCompany.companyName} & Start Work Here
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -1394,24 +1418,28 @@ function PunchPage() {
                                 : "bg-primary hover:bg-primary/90"
                     }`}
                   >
-                    {isPunchedIn
-                      ? latestCompanyPunch?.type === "extra_in"
-                        ? "Stop Overtime (End Extra Work)"
-                        : "Stop Work"
-                      : isHoliday
-                        ? "Company Holiday (Shift Off)"
-                        : onLeaveToday
-                          ? `Start Work Disabled (${getLeaveLabel(activeLeave)})`
-                          : activeOtherCompany ? (
-                            <span className="inline-flex items-center justify-center gap-2">
-                              <ArrowRightLeft className="h-4 w-4 shrink-0" />
-                              <span>End {activeOtherCompany.companyName} Shift & Start Work Here</span>
-                            </span>
-                          ) : attendanceStatus?.isPastShiftEnd
-                              ? "⚡ Start Overtime Work"
-                              : isEarlyBeforeShift && shiftWindow?.start
-                                ? `🌅 Start Work (${formatWorkMinutes(earlyMinutes)} Early)`
-                                : "Start Work"}
+                    {isPunchedIn ? (
+                      latestCompanyPunch?.type === "extra_in" ? (
+                        "Stop Overtime (End Extra Work)"
+                      ) : (
+                        "Stop Work"
+                      )
+                    ) : isHoliday ? (
+                      "Company Holiday (Shift Off)"
+                    ) : onLeaveToday ? (
+                      `Start Work Disabled (${getLeaveLabel(activeLeave)})`
+                    ) : activeOtherCompany ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                        <span>End {activeOtherCompany.companyName} Shift & Start Work Here</span>
+                      </span>
+                    ) : attendanceStatus?.isPastShiftEnd ? (
+                      "⚡ Start Overtime Work"
+                    ) : isEarlyBeforeShift && shiftWindow?.start ? (
+                      `🌅 Start Work (${formatWorkMinutes(earlyMinutes)} Early)`
+                    ) : (
+                      "Start Work"
+                    )}
                   </button>
 
                   {/* Optional Break Trigger Button - Solid, catchy, and clean */}
@@ -1630,7 +1658,8 @@ function PunchPage() {
             </div>
 
             <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-3.5 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
-              Your regular shift for today has already completed. Starting work now will log an <strong>Overtime</strong> session that is tracked and submitted for admin review.
+              Your regular shift for today has already completed. Starting work now will log an{" "}
+              <strong>Overtime</strong> session that is tracked and submitted for admin review.
             </div>
 
             <div className="space-y-1.5">
@@ -1694,7 +1723,8 @@ function PunchPage() {
 
             <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed space-y-2">
               <p>
-                You are starting work <strong>{formatWorkMinutes(earlyMinutes)} before</strong> your scheduled shift ({format(shiftWindow.start, "h:mm a")}).
+                You are starting work <strong>{formatWorkMinutes(earlyMinutes)} before</strong> your
+                scheduled shift ({format(shiftWindow.start, "h:mm a")}).
               </p>
               <div className="space-y-1 pt-1 border-t border-amber-500/20">
                 <p className="flex items-center gap-1.5">
@@ -1703,7 +1733,9 @@ function PunchPage() {
                 </p>
                 <p className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                  At <strong>{format(shiftWindow.start, "h:mm a")}</strong>, regular shift hours will start counting toward your scheduled shift duration ({formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
+                  At <strong>{format(shiftWindow.start, "h:mm a")}</strong>, regular shift hours
+                  will start counting toward your scheduled shift duration (
+                  {formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
                 </p>
               </div>
             </div>

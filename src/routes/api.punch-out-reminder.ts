@@ -26,7 +26,7 @@ export const Route = createFileRoute("/api/punch-out-reminder")({
           ok: true,
           configured: Boolean(
             process.env.N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
+            "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
           ),
         }),
       POST: async ({ request }) => {

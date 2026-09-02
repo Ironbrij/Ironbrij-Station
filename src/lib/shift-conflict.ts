@@ -5,7 +5,7 @@ export interface ShiftDefinition {
   id?: string;
   name: string;
   startTime: string; // "HH:mm"
-  endTime: string;   // "HH:mm"
+  endTime: string; // "HH:mm"
   workingDays: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
   companyId?: string;
   companyName?: string;
@@ -24,15 +24,7 @@ export interface ShiftConflict {
   description: string;
 }
 
-const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function parseMinutes(timeStr: string): number {
   if (!timeStr) return 0;
@@ -53,18 +45,17 @@ function formatTime12h(timeStr: string): string {
 /**
  * Checks for conflicts between two shift definitions across all days of the week.
  */
-export function checkTwoShiftsConflict(
-  s1: ShiftDefinition,
-  s2: ShiftDefinition,
-): ShiftConflict[] {
+export function checkTwoShiftsConflict(s1: ShiftDefinition, s2: ShiftDefinition): ShiftConflict[] {
   const conflicts: ShiftConflict[] = [];
 
-  const s1Days = Array.isArray(s1.workingDays) && s1.workingDays.length > 0
-    ? s1.workingDays
-    : [0, 1, 2, 3, 4, 5];
-  const s2Days = Array.isArray(s2.workingDays) && s2.workingDays.length > 0
-    ? s2.workingDays
-    : [0, 1, 2, 3, 4, 5];
+  const s1Days =
+    Array.isArray(s1.workingDays) && s1.workingDays.length > 0
+      ? s1.workingDays
+      : [0, 1, 2, 3, 4, 5];
+  const s2Days =
+    Array.isArray(s2.workingDays) && s2.workingDays.length > 0
+      ? s2.workingDays
+      : [0, 1, 2, 3, 4, 5];
 
   const commonDays = s1Days.filter((d) => s2Days.includes(d));
   if (commonDays.length === 0) return conflicts;
@@ -144,9 +135,10 @@ export function getEmployeeAllShiftDefinitions(
         name: s.name || `Shift ${idx + 1}`,
         startTime: s.startTime || "09:00",
         endTime: s.endTime || "17:00",
-        workingDays: Array.isArray(s.workingDays) && s.workingDays.length > 0
-          ? s.workingDays
-          : (employee.workingDays || [0, 1, 2, 3, 4, 5]),
+        workingDays:
+          Array.isArray(s.workingDays) && s.workingDays.length > 0
+            ? s.workingDays
+            : employee.workingDays || [0, 1, 2, 3, 4, 5],
         companyId: employee.companyId,
         companyName: companyMap.get(employee.companyId || "") || "Primary Company",
       });
@@ -174,9 +166,10 @@ export function getEmployeeAllShiftDefinitions(
             name: s.name || `${cName} Shift ${idx + 1}`,
             startTime: s.startTime || "09:00",
             endTime: s.endTime || "17:00",
-            workingDays: Array.isArray(s.workingDays) && s.workingDays.length > 0
-              ? s.workingDays
-              : (m.workingDays || [0, 1, 2, 3, 4, 5]),
+            workingDays:
+              Array.isArray(s.workingDays) && s.workingDays.length > 0
+                ? s.workingDays
+                : m.workingDays || [0, 1, 2, 3, 4, 5],
             companyId: m.companyId,
             companyName: cName,
           });

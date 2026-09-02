@@ -174,7 +174,10 @@ function EmployeesListPage() {
     };
   }, []);
 
-  function getPunchStatus(empId: string, authUid?: string): { status: "in" | "out" | "break"; elapsedMinutes: number } {
+  function getPunchStatus(
+    empId: string,
+    authUid?: string,
+  ): { status: "in" | "out" | "break"; elapsedMinutes: number } {
     const userPunches = punches.filter(
       (p) =>
         (p.employeeId === empId ||
@@ -191,7 +194,8 @@ function EmployeesListPage() {
     const elapsedMinutes = Math.max(1, Math.floor((Date.now() - lastTime) / 60000));
     if (lastType === "lunch_start") return { status: "break", elapsedMinutes };
     return {
-      status: lastType === "in" || lastType === "extra_in" || lastType === "lunch_end" ? "in" : "out",
+      status:
+        lastType === "in" || lastType === "extra_in" || lastType === "lunch_end" ? "in" : "out",
       elapsedMinutes,
     };
   }
@@ -439,7 +443,9 @@ function EmployeesListPage() {
                     </td>
                     <td className="p-3 text-xs whitespace-nowrap">
                       {e.inviteStatus === "accepted" ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">Accepted</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                          Accepted
+                        </span>
                       ) : (
                         <button
                           onClick={() => handleCopyInviteLink(e)}
@@ -755,7 +761,10 @@ function CompanyMembershipSettings({
           name: s.name || `Shift ${idx + 1}`,
           startTime: s.startTime || "09:00",
           endTime: s.endTime || "17:00",
-          workingDays: Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : (m.workingDays || [0, 1, 2, 3, 4, 5]),
+          workingDays:
+            Array.isArray(s.workingDays) && s.workingDays.length > 0
+              ? s.workingDays
+              : m.workingDays || [0, 1, 2, 3, 4, 5],
           companyId: cId,
           companyName: cName,
         });
@@ -787,8 +796,16 @@ function CompanyMembershipSettings({
           "Main Company";
         const isMulti = Boolean(membership.isMultipleShift);
         const shifts = membership.shifts || [
-          { startTime: "04:00", endTime: "07:00", workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5] },
-          { startTime: "12:00", endTime: "15:00", workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5] },
+          {
+            startTime: "04:00",
+            endTime: "07:00",
+            workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5],
+          },
+          {
+            startTime: "12:00",
+            endTime: "15:00",
+            workingDays: membership.workingDays || [0, 1, 2, 3, 4, 5],
+          },
         ];
         const durationMins = calculateTotalShiftMinutes(
           isMulti,
@@ -879,7 +896,9 @@ function CompanyMembershipSettings({
 
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">Start</span>
+                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                              Start
+                            </span>
                             <input
                               type="time"
                               value={s.startTime}
@@ -896,7 +915,9 @@ function CompanyMembershipSettings({
                           </div>
                           <span className="text-muted-foreground mt-3">–</span>
                           <div className="flex-1">
-                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">End</span>
+                            <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                              End
+                            </span>
                             <input
                               type="time"
                               value={s.endTime}
@@ -917,7 +938,9 @@ function CompanyMembershipSettings({
                             <div className="flex flex-wrap gap-1 text-[10px]">
                               <button
                                 type="button"
-                                onClick={() => handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5, 6])}
+                                onClick={() =>
+                                  handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5, 6])
+                                }
                                 className="text-primary hover:underline font-bold"
                               >
                                 All 7d
@@ -925,7 +948,9 @@ function CompanyMembershipSettings({
                               <span className="text-muted-foreground">·</span>
                               <button
                                 type="button"
-                                onClick={() => handleShiftDaysChange(companyId, idx, [1, 2, 3, 4, 5])}
+                                onClick={() =>
+                                  handleShiftDaysChange(companyId, idx, [1, 2, 3, 4, 5])
+                                }
                                 className="text-primary hover:underline font-bold"
                               >
                                 Mon–Fri (5d)
@@ -933,7 +958,9 @@ function CompanyMembershipSettings({
                               <span className="text-muted-foreground">·</span>
                               <button
                                 type="button"
-                                onClick={() => handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5])}
+                                onClick={() =>
+                                  handleShiftDaysChange(companyId, idx, [0, 1, 2, 3, 4, 5])
+                                }
                                 className="text-primary hover:underline font-bold"
                               >
                                 Sun–Fri (6d)
@@ -952,7 +979,9 @@ function CompanyMembershipSettings({
                                     let newDays: number[];
                                     if (selected) {
                                       if (shiftDays.length === 1) return;
-                                      newDays = shiftDays.filter((d) => d !== day.value).sort((a, b) => a - b);
+                                      newDays = shiftDays
+                                        .filter((d) => d !== day.value)
+                                        .sort((a, b) => a - b);
                                     } else {
                                       newDays = [...shiftDays, day.value].sort((a, b) => a - b);
                                     }
@@ -1082,9 +1111,7 @@ function CompanyMembershipSettings({
             {/* Break Allowance & Limits */}
             <div className="grid grid-cols-2 gap-3 pt-2 border-t mt-2">
               <div>
-                <label className="text-xs font-semibold text-foreground">
-                  Break Allowance
-                </label>
+                <label className="text-xs font-semibold text-foreground">Break Allowance</label>
                 <select
                   value={membership.breakAllowanceMinutes ?? 30}
                   onChange={(e) =>
@@ -1103,14 +1130,10 @@ function CompanyMembershipSettings({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-foreground">
-                  Daily Break Limit
-                </label>
+                <label className="text-xs font-semibold text-foreground">Daily Break Limit</label>
                 <select
                   value={membership.maxDailyBreaks ?? 1}
-                  onChange={(e) =>
-                    update(companyId, { maxDailyBreaks: Number(e.target.value) })
-                  }
+                  onChange={(e) => update(companyId, { maxDailyBreaks: Number(e.target.value) })}
                   className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
                 >
                   <option value={0}>0 (No Breaks Allowed / N/A)</option>

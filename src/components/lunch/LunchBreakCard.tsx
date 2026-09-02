@@ -28,10 +28,7 @@ export function LunchBreakCard({
   }, []);
 
   const allowedSeconds = allowedMinutes * 60;
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((now.getTime() - lunchStartTime.getTime()) / 1000),
-  );
+  const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - lunchStartTime.getTime()) / 1000));
   const isOverdue = elapsedSeconds > allowedSeconds;
 
   let displayMinutes = 0;
@@ -109,7 +106,8 @@ export function LunchBreakCard({
         {/* Overdue Warning Notice */}
         {isOverdue && (
           <div className="my-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold text-center leading-relaxed animate-pulse">
-            ⚠️ Your {allowedMinutes}-minute break has finished. Your shift timer remains paused and time continues to accrue as lunch break until you return and click below.
+            ⚠️ Your {allowedMinutes}-minute break has finished. Your shift timer remains paused and
+            time continues to accrue as lunch break until you return and click below.
           </div>
         )}
 

@@ -768,7 +768,9 @@ function EditLeaveModal({
   const [newDate, setNewDate] = useState("");
   const [newType, setNewType] = useState<NonNullable<LeaveDayItem["leaveType"]>>("full_day");
   const [newPayment, setNewPayment] = useState<NonNullable<LeaveDayItem["paymentStatus"]>>("paid");
-  const [newHalfDayPeriod, setNewHalfDayPeriod] = useState<"first_half" | "second_half">("first_half");
+  const [newHalfDayPeriod, setNewHalfDayPeriod] = useState<"first_half" | "second_half">(
+    "first_half",
+  );
   const [newCategory, setNewCategory] = useState<NonNullable<LeaveDayItem["leaveCategory"]>>(
     leave.leaveCategory || "annual",
   );
@@ -886,9 +888,7 @@ function EditLeaveModal({
               <Calendar className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">
-                Tweak Leave Dates & Breakdown
-              </h3>
+              <h3 className="text-base font-bold text-foreground">Tweak Leave Dates & Breakdown</h3>
               <p className="text-xs text-muted-foreground">
                 {employee?.name || leave.employeeId} · {employee?.email || ""}
               </p>
@@ -953,7 +953,8 @@ function EditLeaveModal({
                         if (val.startsWith("half_")) {
                           handleUpdateItem(idx, {
                             leaveType: "half_day",
-                            halfDayPeriod: val === "half_second_half" ? "second_half" : "first_half",
+                            halfDayPeriod:
+                              val === "half_second_half" ? "second_half" : "first_half",
                           });
                         } else {
                           handleUpdateItem(idx, {
@@ -1032,11 +1033,7 @@ function EditLeaveModal({
                 className="rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground outline-none"
               />
               <select
-                value={
-                  newType === "half_day"
-                    ? `half_${newHalfDayPeriod}`
-                    : newType
-                }
+                value={newType === "half_day" ? `half_${newHalfDayPeriod}` : newType}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val.startsWith("half_")) {

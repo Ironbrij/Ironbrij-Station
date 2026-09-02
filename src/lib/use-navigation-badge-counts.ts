@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
-import { COMPANY_ID, type Company, type Employee, type LeaveRequest, type OvertimeRequest } from "./types";
+import {
+  COMPANY_ID,
+  type Company,
+  type Employee,
+  type LeaveRequest,
+  type OvertimeRequest,
+} from "./types";
 import { useAdminLateNotificationCount } from "./use-admin-late-notification-count";
 
 export function useNavigationBadgeCounts({

@@ -109,7 +109,10 @@ export function calculateAttendanceSession({
       ? 0
       : Math.floor((now.getTime() - shift.start.getTime()) / 60_000);
     const missingPunchOut = now.getTime() > shift.end.getTime();
-    const normalWorkMinutes = Math.min(required, isEarlyStart ? shiftElapsedMinutes : elapsedMinutes);
+    const normalWorkMinutes = Math.min(
+      required,
+      isEarlyStart ? shiftElapsedMinutes : elapsedMinutes,
+    );
     const overtimeMinutes = isEarlyStart
       ? earlyStartMinutes + Math.max(0, shiftElapsedMinutes - required)
       : Math.max(0, elapsedMinutes - required);
@@ -147,11 +150,14 @@ export function calculateAttendanceSession({
     Math.floor((normalizedOut.getTime() - effectiveIn.getTime()) / 60_000),
   );
   const normalWorkMinutes = Math.min(required, normalizedWorkMinutes);
-  
+
   // Overtime starts after required hours or after grace boundary, plus any early start minutes
   const postShiftOvertime =
     punchOut > graceBoundary || normalizedWorkMinutes > required
-      ? Math.max(0, Math.floor((punchOut.getTime() - effectiveIn.getTime()) / 60_000) - normalWorkMinutes)
+      ? Math.max(
+          0,
+          Math.floor((punchOut.getTime() - effectiveIn.getTime()) / 60_000) - normalWorkMinutes,
+        )
       : 0;
   const overtimeMinutes = earlyStartMinutes + postShiftOvertime;
 

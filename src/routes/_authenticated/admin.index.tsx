@@ -87,7 +87,9 @@ function AdminHome() {
   // Dashboard UI States
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">("country");
+  const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">(
+    "country",
+  );
   const [expandedDeptMap, setExpandedDeptMap] = useState<Record<string, boolean>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(15);
@@ -297,7 +299,9 @@ function AdminHome() {
     );
     const targetTz = getDisplayTimezone(cEmp);
     const latestDate = toDate(status.latest?.timestamp);
-    const timeStr = latestDate ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})` : "";
+    const timeStr = latestDate
+      ? `${formatInTimezone(latestDate, targetTz.tz)} (${targetTz.code})`
+      : "";
     const statusTimeStr =
       latestDate && zonedDateKey(latestDate, targetTz.tz) !== employeeToday
         ? `${formatInTimezone(latestDate, targetTz.tz, {
@@ -328,6 +332,17 @@ function AdminHome() {
         isLate: status.isLate,
         minutesLate: status.minutesLate,
         punchTimeStr: timeStr,
+        isAutoPunchOut: false,
+      };
+    }
+
+    if (!status.isScheduledDay) {
+      return {
+        type: "off" as const,
+        label: "No shift today",
+        isLate: false,
+        minutesLate: 0,
+        punchTimeStr: "",
         isAutoPunchOut: false,
       };
     }
@@ -397,7 +412,7 @@ function AdminHome() {
           const status = getEmpTodayStatus(m);
           if (filterStatus === "in") return status.type === "in";
           if (filterStatus === "break") return status.type === "break";
-          if (filterStatus === "out") return status.type === "out";
+          if (filterStatus === "out") return status.type === "out" || status.type === "off";
           if (filterStatus === "holiday") return status.type === "holiday";
           if (filterStatus === "leave") return status.type === "leave";
           if (filterStatus === "late") return status.isLate;
@@ -444,7 +459,8 @@ function AdminHome() {
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
           </h1>
           <p className="text-sm font-medium text-muted-foreground mt-0.5">
-            {format(new Date(), "EEEE d MMMM")} — real-time status for <strong>{company?.name || "Company"}</strong>.
+            {format(new Date(), "EEEE d MMMM")} — real-time status for{" "}
+            <strong>{company?.name || "Company"}</strong>.
           </p>
         </div>
 
@@ -513,7 +529,8 @@ function AdminHome() {
                 {pendingOvertimeCount} Pending Overtime Request{pendingOvertimeCount > 1 ? "s" : ""}
               </span>
               <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                Team members have logged overtime that requires admin review before payroll calculation.
+                Team members have logged overtime that requires admin review before payroll
+                calculation.
               </p>
             </div>
           </div>
@@ -563,7 +580,7 @@ function AdminHome() {
               const status = getEmpTodayStatus(m);
               if (filterStatus === "in") return status.type === "in";
               if (filterStatus === "break") return status.type === "break";
-              if (filterStatus === "out") return status.type === "out";
+              if (filterStatus === "out") return status.type === "out" || status.type === "off";
               if (filterStatus === "holiday") return status.type === "holiday";
               if (filterStatus === "leave") return status.type === "leave";
               if (filterStatus === "late") return status.isLate;
@@ -769,7 +786,8 @@ function AdminHome() {
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded-full shadow-2xs mt-0.5"
                                 title={`Shift started at ${shiftSummary.localStart} ${shiftSummary.localCode}`}
                               >
-                                <AlertTriangle className="h-3 w-3 text-white" /> {status.minutesLate}m Late
+                                <AlertTriangle className="h-3 w-3 text-white" />{" "}
+                                {status.minutesLate}m Late
                               </span>
                             )}
                           </div>

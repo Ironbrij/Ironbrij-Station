@@ -249,7 +249,8 @@ function DepartmentsPage() {
         if (!p.timestamp) continue;
         const punchedAt = toDate(p.timestamp);
         if (!punchedAt) continue;
-        const dateStr = p.attendanceDate || p.date || zonedDateKey(punchedAt, getShiftTimezone(emp));
+        const dateStr =
+          p.attendanceDate || p.date || zonedDateKey(punchedAt, getShiftTimezone(emp));
         if (!empDays.has(dateStr)) empDays.set(dateStr, []);
         empDays.get(dateStr)!.push(p);
       }
@@ -267,7 +268,7 @@ function DepartmentsPage() {
 
       for (const [dateStr, list] of empDays.entries()) {
         const sorted = [...list].sort(
-          (a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0),
+          (a, b) => toMillis(a.timestamp || 0) - toMillis(b.timestamp || 0),
         );
         const firstIn = sorted.find((p) => p.type === "in" || p.type === "extra_in");
         const lastOut = [...sorted]
@@ -275,7 +276,7 @@ function DepartmentsPage() {
           .find((p) => p.type === "out" || p.type === "extra_out");
 
         const sampleDate = firstIn?.timestamp
-          ? toDate(firstIn.timestamp) ?? new Date()
+          ? (toDate(firstIn.timestamp) ?? new Date())
           : new Date(dateStr + "T00:00:00");
         const dayCalc = computeDay(sorted, { employee: emp, company });
 
@@ -393,7 +394,8 @@ function DepartmentsPage() {
       for (const punch of employeePunches) {
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
-        const dateKey = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
+        const dateKey =
+          punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
         days.set(dateKey, [...(days.get(dateKey) || []), punch]);
       }
       const startKey = zonedDateKey(start, shiftTimezone);
@@ -424,11 +426,21 @@ function DepartmentsPage() {
                 company?.lateGraceMinutes ?? 5,
               )
             : null;
+        const [shiftYear, shiftMonth, shiftDay] = dateKey.split("-").map(Number);
+        const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
+          employee,
+          company?.workingDays,
+        );
+        const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
+
         rows.push({
           Department: department,
           Employee: employee.name,
           Date: dateKey,
-          ClockIn: firstIn ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), employeeTimezone) : "",
+          ClockIn: firstIn
+            ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), employeeTimezone)
+            : "",
           ClockOut: lastOut
             ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), employeeTimezone)
             : firstIn
@@ -442,7 +454,9 @@ function DepartmentsPage() {
                 ? `Late (${lateness.minutes} min)`
                 : firstIn
                   ? "On time"
-                  : "No punch in",
+                  : !isScheduledDay
+                    ? "Off day"
+                    : "No punch in",
           RegularHours: day.regularHours.toFixed(2),
           OvertimeHours: day.overtimeHours.toFixed(2),
         });

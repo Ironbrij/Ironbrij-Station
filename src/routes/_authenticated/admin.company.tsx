@@ -506,7 +506,8 @@ function CompanyPage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Archived ({companies.filter((c) => Boolean(c.archived || c.status === "archived")).length})
+              Archived (
+              {companies.filter((c) => Boolean(c.archived || c.status === "archived")).length})
             </button>
             <button
               type="button"
@@ -558,9 +559,7 @@ function CompanyPage() {
                   <div
                     key={c.id || c.name}
                     className={`flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors ${
-                      isArchived
-                        ? "bg-muted/20 border-dashed opacity-80"
-                        : "hover:bg-muted/40"
+                      isArchived ? "bg-muted/20 border-dashed opacity-80" : "hover:bg-muted/40"
                     }`}
                   >
                     <div className="flex items-start gap-3 min-w-0">

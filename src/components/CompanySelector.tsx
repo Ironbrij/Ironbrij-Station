@@ -58,10 +58,7 @@ export function CompanySelector({
       return;
     }
 
-    if (
-      activeShiftCompanyIds.length > 0 &&
-      !activeShiftCompanyIds.includes(targetId)
-    ) {
+    if (activeShiftCompanyIds.length > 0 && !activeShiftCompanyIds.includes(targetId)) {
       const activeName =
         companies.find((item) => (item.id || COMPANY_ID) === activeShiftCompanyIds[0])?.name ||
         "another company";
@@ -139,9 +136,7 @@ export function CompanySelector({
             <span className="text-xs font-extrabold text-primary flex items-center gap-1.5">
               <Building2 className="h-3.5 w-3.5" /> Select Company ({companies.length})
             </span>
-            <span className="text-[10px] text-muted-foreground font-semibold">
-              Type to filter
-            </span>
+            <span className="text-[10px] text-muted-foreground font-semibold">Type to filter</span>
           </div>
 
           <div className="relative">
@@ -231,9 +226,7 @@ export function CompanySelector({
                     </div>
                   </div>
 
-                  {isSelected && (
-                    <Check className="h-4 w-4 text-primary shrink-0 font-bold" />
-                  )}
+                  {isSelected && <Check className="h-4 w-4 text-primary shrink-0 font-bold" />}
                 </button>
               );
             })

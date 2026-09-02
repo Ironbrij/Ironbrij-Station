@@ -156,9 +156,7 @@ async function resolveEmployee(
       if (byExactName) return byExactName;
 
       // Partial name (e.g. "Rose" matches "Rose Miller" or "bibek" matches "Bibek")
-      const byPartial = list.find((e: any) =>
-        e.name?.toLowerCase().includes(clean.toLowerCase()),
-      );
+      const byPartial = list.find((e: any) => e.name?.toLowerCase().includes(clean.toLowerCase()));
       if (byPartial) return byPartial;
     }
   } catch {}
@@ -284,7 +282,8 @@ function getOpenApiSchema(appUrl: string) {
             },
             timezone: {
               type: "string",
-              description: "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
+              description:
+                "Primary timezone (e.g. 'Australia/Sydney', 'Asia/Kathmandu', 'Asia/Manila')",
             },
             defaultShiftHours: {
               type: "number",
@@ -301,7 +300,8 @@ function getOpenApiSchema(appUrl: string) {
             },
             punchOutGraceMinutes: {
               type: "number",
-              description: "Grace period in minutes after shift end before auto punch-out (default: 30)",
+              description:
+                "Grace period in minutes after shift end before auto punch-out (default: 30)",
             },
             punchOutReminderMinutes: {
               type: "number",
@@ -313,7 +313,8 @@ function getOpenApiSchema(appUrl: string) {
             },
             maxDailyBreaks: {
               type: "number",
-              description: "Maximum breaks allowed per shift (default: 1, or 0 for N/A / no breaks)",
+              description:
+                "Maximum breaks allowed per shift (default: 1, or 0 for N/A / no breaks)",
             },
             departments: {
               type: "array",
@@ -468,7 +469,14 @@ async function createSingleEmployee(
   empInput: Record<string, any>,
   baseUrl: string,
   apiKey: string,
-): Promise<{ id: string; name: string; email: string; inviteUrl: string; inviteToken: string; employee: any }> {
+): Promise<{
+  id: string;
+  name: string;
+  email: string;
+  inviteUrl: string;
+  inviteToken: string;
+  employee: any;
+}> {
   const empName = (empInput.name || empInput.employeeName || "").trim();
   const empEmail = (empInput.email || empInput.employeeEmail || "").trim().toLowerCase();
 
@@ -558,7 +566,14 @@ async function createSingleEmployee(
     }
   }
 
-  return { id: docId, name: empName, email: empEmail, inviteUrl, inviteToken, employee: employeeData };
+  return {
+    id: docId,
+    name: empName,
+    email: empEmail,
+    inviteUrl,
+    inviteToken,
+    employee: employeeData,
+  };
 }
 
 // Helper: Create a single company document and its initial departments
@@ -566,7 +581,12 @@ async function createSingleCompany(
   compInput: Record<string, any>,
   baseUrl: string,
   apiKey: string,
-): Promise<{ id: string; name: string; company: any; departments: Array<{ id: string; name: string }> }> {
+): Promise<{
+  id: string;
+  name: string;
+  company: any;
+  departments: Array<{ id: string; name: string }>;
+}> {
   const companyName = (
     compInput.name ||
     compInput.companyName ||
@@ -612,19 +632,14 @@ async function createSingleCompany(
     lateGraceMinutes:
       typeof compInput.lateGraceMinutes === "number" ? compInput.lateGraceMinutes : 5,
     punchOutGraceMinutes:
-      typeof compInput.punchOutGraceMinutes === "number"
-        ? compInput.punchOutGraceMinutes
-        : 30,
+      typeof compInput.punchOutGraceMinutes === "number" ? compInput.punchOutGraceMinutes : 30,
     punchOutReminderMinutes:
       typeof compInput.punchOutReminderMinutes === "number"
         ? compInput.punchOutReminderMinutes
         : 20,
     breakAllowanceMinutes:
-      compInput.breakAllowanceMinutes !== undefined
-        ? Number(compInput.breakAllowanceMinutes)
-        : 30,
-    maxDailyBreaks:
-      compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
+      compInput.breakAllowanceMinutes !== undefined ? Number(compInput.breakAllowanceMinutes) : 30,
+    maxDailyBreaks: compInput.maxDailyBreaks !== undefined ? Number(compInput.maxDailyBreaks) : 1,
     holidays: Array.isArray(compInput.holidays) ? compInput.holidays : [],
     holidayAssignments: Array.isArray(compInput.holidayAssignments)
       ? compInput.holidayAssignments
@@ -1046,7 +1061,9 @@ export const Route = createFileRoute("/api/mcp-action")({
               params.to ||
               params.renameTo ||
               (params.oldName ? params.name : undefined) ||
-              (params.id && params.name && params.name !== currentCompanyName ? params.name : undefined) ||
+              (params.id && params.name && params.name !== currentCompanyName
+                ? params.name
+                : undefined) ||
               ""
             ).trim();
 
@@ -1710,7 +1727,7 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             const liveStatusList = employees.map((emp: any) => {
               const empPunches = punches
-                .filter((p: any) => p.employeeId === emp.id)
+                .filter((p: any) => p.employeeId === emp.id || p.employeeId === emp.authUid)
                 .sort((a: any, b: any) => b.timeMillis - a.timeMillis);
 
               const latestPunch = empPunches[0];

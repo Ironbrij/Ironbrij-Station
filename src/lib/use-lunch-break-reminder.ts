@@ -53,7 +53,10 @@ export function useLunchBreakReminder({
       if (allowedMinutes <= 0 || breakSettings.maxDailyBreaks <= 0) return;
 
       const now = new Date();
-      const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - lunchStartTime.getTime()) / 1000));
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((now.getTime() - lunchStartTime.getTime()) / 1000),
+      );
       const elapsedMinutes = Math.floor(elapsedSeconds / 60);
 
       const warningThresholdMinutes = Math.max(1, allowedMinutes - 5);

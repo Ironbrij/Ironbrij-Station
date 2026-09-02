@@ -63,7 +63,9 @@ function AdminOvertimePage() {
           id: d.id,
           ...(d.data() as Omit<OvertimeRequest, "id">),
         }));
-        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        list.sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+        );
         setRequests(list);
       }),
       onSnapshot(collection(db(), "employees"), (snapshot) =>
@@ -256,7 +258,8 @@ function AdminOvertimePage() {
                 if (inTime.getTime() < shift.start.getTime()) {
                   const earlyMins = Math.floor((shift.start.getTime() - inTime.getTime()) / 60_000);
                   if (earlyMins >= 5) {
-                    const punchDate = p.attendanceDate || p.date || zonedDateKey(inTime, shiftTimezone);
+                    const punchDate =
+                      p.attendanceDate || p.date || zonedDateKey(inTime, shiftTimezone);
                     await addDoc(collection(db(), "overtimeRequests"), {
                       employeeId: empId,
                       employeeName: p.employeeName || emp?.name || "Employee",
@@ -324,7 +327,8 @@ function AdminOvertimePage() {
             }
 
             if (otMinutes > 0) {
-              const isPostShiftWork = emp && inTime.getTime() >= getEmployeeShiftWindow(emp, inTime).end.getTime();
+              const isPostShiftWork =
+                emp && inTime.getTime() >= getEmployeeShiftWindow(emp, inTime).end.getTime();
               const reason = isOff
                 ? `Worked ${formatWorkMinutes(otMinutes)} on off-shift day (synced)`
                 : isPostShiftWork
@@ -336,8 +340,7 @@ function AdminOvertimePage() {
                 employeeName: p.employeeName || emp?.name || "Employee",
                 companyId: p.companyId || emp?.companyId || COMPANY_ID,
                 date:
-                  punchDate ||
-                  zonedDateKey(inTime, emp ? getShiftTimezone(emp) : "Asia/Kathmandu"),
+                  punchDate || zonedDateKey(inTime, emp ? getShiftTimezone(emp) : "Asia/Kathmandu"),
                 requestType: isOff ? "off_shift_work" : isExtra ? "extra_hours" : "overtime",
                 punchOutId: p.id,
                 punchInId: lastIn.id,
@@ -555,9 +558,7 @@ function AdminOvertimePage() {
                           {deptName} · {compName}
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 font-medium whitespace-nowrap">
-                        {req.date}
-                      </td>
+                      <td className="px-4 py-3.5 font-medium whitespace-nowrap">{req.date}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         {req.requestType === "early_clock_in" ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">

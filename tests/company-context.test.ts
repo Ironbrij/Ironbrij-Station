@@ -109,7 +109,10 @@ test("getEmployeeBreakSettings handles N/A (0 breaks / 0 minutes)", () => {
     breakAllowanceMinutes: 0,
     maxDailyBreaks: 0,
   };
-  assert.deepEqual(getEmployeeBreakSettings(noBreakEmp), { allowanceMinutes: 0, maxDailyBreaks: 0 });
+  assert.deepEqual(getEmployeeBreakSettings(noBreakEmp), {
+    allowanceMinutes: 0,
+    maxDailyBreaks: 0,
+  });
 
   const membershipNoBreakEmp: Employee = {
     ...employee,
@@ -117,7 +120,10 @@ test("getEmployeeBreakSettings handles N/A (0 breaks / 0 minutes)", () => {
       alpha: { companyId: "alpha", breakAllowanceMinutes: 0, maxDailyBreaks: 0 },
     },
   };
-  assert.deepEqual(getEmployeeBreakSettings(membershipNoBreakEmp, "alpha"), { allowanceMinutes: 0, maxDailyBreaks: 0 });
+  assert.deepEqual(getEmployeeBreakSettings(membershipNoBreakEmp, "alpha"), {
+    allowanceMinutes: 0,
+    maxDailyBreaks: 0,
+  });
 });
 
 test("getEmployeeBreakSettings handles custom break allowances", () => {
@@ -126,7 +132,10 @@ test("getEmployeeBreakSettings handles custom break allowances", () => {
     breakAllowanceMinutes: 45,
     maxDailyBreaks: 2,
   };
-  assert.deepEqual(getEmployeeBreakSettings(customEmp), { allowanceMinutes: 45, maxDailyBreaks: 2 });
+  assert.deepEqual(getEmployeeBreakSettings(customEmp), {
+    allowanceMinutes: 45,
+    maxDailyBreaks: 2,
+  });
 });
 
 test("getActiveWorkingSession strictly resolves only the single latest active company session", () => {
@@ -183,7 +192,10 @@ test("getActiveWorkingSession strictly resolves only the single latest active co
     type: "out",
     timestamp: "2026-08-28T08:30:00.000Z",
   });
-  const sessionAfterOut = getActiveWorkingSession(punches, emp, new Date("2026-08-28T08:35:00.000Z"));
+  const sessionAfterOut = getActiveWorkingSession(
+    punches,
+    emp,
+    new Date("2026-08-28T08:35:00.000Z"),
+  );
   assert.equal(sessionAfterOut.activeCompanyId, null);
 });
-

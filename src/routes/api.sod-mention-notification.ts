@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
           ok: true,
           configured: Boolean(
             process.env.N8N_SOD_MENTION_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-sod-mention",
+            "https://vmi3182726.contaboserver.net/webhook/time-station-sod-mention",
           ),
         }),
       POST: async ({ request }) => {

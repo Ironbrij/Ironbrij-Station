@@ -406,7 +406,7 @@ function HelpFeedbackAutomationPage() {
         );
         punches = punchesSnapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .sort((a, b) => toMillis((a.timestamp) || 0) - toMillis((b.timestamp) || 0));
+          .sort((a, b) => toMillis(a.timestamp || 0) - toMillis(b.timestamp || 0));
       } catch (err) {
         console.warn("Could not fetch punches for personal API:", err);
       }

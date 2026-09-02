@@ -123,7 +123,10 @@ export const Route = createFileRoute("/api/invite-notification")({
           !validText(body.employeeEmail, 254) ||
           !validText(body.inviteToken, 150)
         ) {
-          return Response.json({ ok: false, error: "Invalid employee invite data" }, { status: 400 });
+          return Response.json(
+            { ok: false, error: "Invalid employee invite data" },
+            { status: 400 },
+          );
         }
 
         const webhookUrl =

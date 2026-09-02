@@ -73,10 +73,7 @@ export function AppShell({
   }, [employee, employeePunches, companies]);
 
   const companySwitcher = (
-    <CompanySelector
-      variant="header"
-      activeShiftCompanyIds={activeAttendanceCompanyIds}
-    />
+    <CompanySelector variant="header" activeShiftCompanyIds={activeAttendanceCompanyIds} />
   );
 
   return (

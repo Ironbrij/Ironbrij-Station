@@ -15,14 +15,7 @@ import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding } from "@/lib/email-branding";
 import type { LeaveDayItem, LeaveRequest } from "@/lib/types";
 import { toast } from "sonner";
-import {
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  Plus,
-  Trash2,
-  XCircle,
-} from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Plus, Trash2, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { toDate } from "@/lib/time";
 
@@ -54,10 +47,15 @@ function LeavePage() {
   const [dateTo, setDateTo] = useState("");
   const [customDates, setCustomDates] = useState<LeaveDayItem[]>([]);
   const [newDateInput, setNewDateInput] = useState("");
-  const [newDateType, setNewDateType] = useState<NonNullable<LeaveDayItem["leaveType"]>>("full_day");
-  const [newDatePayment, setNewDatePayment] = useState<NonNullable<LeaveDayItem["paymentStatus"]>>("paid");
-  const [newDateHalfPeriod, setNewDateHalfPeriod] = useState<"first_half" | "second_half">("first_half");
-  const [newDateCategory, setNewDateCategory] = useState<NonNullable<LeaveDayItem["leaveCategory"]>>("annual");
+  const [newDateType, setNewDateType] =
+    useState<NonNullable<LeaveDayItem["leaveType"]>>("full_day");
+  const [newDatePayment, setNewDatePayment] =
+    useState<NonNullable<LeaveDayItem["paymentStatus"]>>("paid");
+  const [newDateHalfPeriod, setNewDateHalfPeriod] = useState<"first_half" | "second_half">(
+    "first_half",
+  );
+  const [newDateCategory, setNewDateCategory] =
+    useState<NonNullable<LeaveDayItem["leaveCategory"]>>("annual");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<LeaveRequest[]>([]);
@@ -377,7 +375,9 @@ function LeavePage() {
                   <select
                     value={leaveCategory}
                     onChange={(event) =>
-                      setLeaveCategory(event.target.value as NonNullable<LeaveRequest["leaveCategory"]>)
+                      setLeaveCategory(
+                        event.target.value as NonNullable<LeaveRequest["leaveCategory"]>,
+                      )
                     }
                     className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
                   >
@@ -394,7 +394,9 @@ function LeavePage() {
                   <select
                     value={paymentStatus}
                     onChange={(event) =>
-                      setPaymentStatus(event.target.value as NonNullable<LeaveRequest["paymentStatus"]>)
+                      setPaymentStatus(
+                        event.target.value as NonNullable<LeaveRequest["paymentStatus"]>,
+                      )
                     }
                     className="w-full rounded-lg border bg-background px-3 py-2 text-sm font-medium"
                   >
@@ -507,16 +509,14 @@ function LeavePage() {
                       Leave Type
                     </label>
                     <select
-                      value={
-                        newDateType === "half_day"
-                          ? `half_${newDateHalfPeriod}`
-                          : newDateType
-                      }
+                      value={newDateType === "half_day" ? `half_${newDateHalfPeriod}` : newDateType}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val.startsWith("half_")) {
                           setNewDateType("half_day");
-                          setNewDateHalfPeriod(val === "half_second_half" ? "second_half" : "first_half");
+                          setNewDateHalfPeriod(
+                            val === "half_second_half" ? "second_half" : "first_half",
+                          );
                         } else {
                           setNewDateType((val as LeaveDayItem["leaveType"]) || "full_day");
                         }
@@ -549,7 +549,9 @@ function LeavePage() {
                     <select
                       value={newDateCategory}
                       onChange={(e) =>
-                        setNewDateCategory((e.target.value as LeaveDayItem["leaveCategory"]) || "annual")
+                        setNewDateCategory(
+                          (e.target.value as LeaveDayItem["leaveCategory"]) || "annual",
+                        )
                       }
                       className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs font-medium"
                     >
@@ -577,7 +579,8 @@ function LeavePage() {
                 </label>
                 {customDates.length === 0 ? (
                   <div className="p-4 rounded-xl border border-dashed text-center text-xs text-muted-foreground">
-                    No dates added yet. Pick a date above and click <strong>Add Date to List</strong>.
+                    No dates added yet. Pick a date above and click{" "}
+                    <strong>Add Date to List</strong>.
                   </div>
                 ) : (
                   <div className="rounded-xl border divide-y overflow-hidden">

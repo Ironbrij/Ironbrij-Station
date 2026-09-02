@@ -135,7 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onSnapshot(doc(db(), "employees", employee.id), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Omit<Employee, "id">;
-        setEmployee((prev) => (prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data }));
+        setEmployee((prev) =>
+          prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data },
+        );
       }
     });
     return unsub;

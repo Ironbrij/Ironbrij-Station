@@ -630,7 +630,10 @@ export function getLiveAttendanceStatus(
   const todayDateKey = zonedDateKey(now, shiftTimezone);
   const shift = getEmployeeShiftWindow(employee, now);
 
-  const latestPunchDate = latest?.attendanceDate || latest?.date || (latest?.timestamp ? zonedDateKey(toDate(latest?.timestamp) ?? now, shiftTimezone) : "");
+  const latestPunchDate =
+    latest?.attendanceDate ||
+    latest?.date ||
+    (latest?.timestamp ? zonedDateKey(toDate(latest?.timestamp) ?? now, shiftTimezone) : "");
   const isStaleFromPastDay = latestPunchDate ? latestPunchDate < todayDateKey : false;
   const isPastShiftEnd = now.getTime() >= shift.end.getTime();
 
@@ -664,8 +667,7 @@ export function getLiveAttendanceStatus(
       ? Math.floor(
           Math.abs(
             ((toDate(firstIn.timestamp)?.getTime() ?? 0) - lateness.scheduledAt.getTime()) / 1000,
-          ) /
-            60,
+          ) / 60,
         )
       : 0;
 
@@ -734,7 +736,8 @@ export function getActiveWorkingSession(
   const companyEmployee = getEmployeeForCompany(employee, activeCompanyId);
   const companyPunches = sorted.filter((p) => getPunchCompanyId(p, employee) === activeCompanyId);
   const comp = companies.find((c) => (c.id || COMPANY_ID) === activeCompanyId);
-  const activeCompanyName = comp?.name || (activeCompanyId === COMPANY_ID ? "Main Company" : activeCompanyId);
+  const activeCompanyName =
+    comp?.name || (activeCompanyId === COMPANY_ID ? "Main Company" : activeCompanyId);
 
   const status = getLiveAttendanceStatus(
     companyEmployee,

@@ -96,11 +96,13 @@ export function McpConnectPage() {
   const { user } = useAuth();
   const [tokens, setTokens] = useState<AdminApiToken[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chatgpt" | "claude" | "instructions" | "cheatsheet" | "console">("chatgpt");
+  const [activeTab, setActiveTab] = useState<
+    "chatgpt" | "claude" | "instructions" | "cheatsheet" | "console"
+  >("chatgpt");
 
   // Console test state
   const [selectedAction, setSelectedAction] = useState("get_company_summary");
-  const [testPayload, setTestPayload] = useState('{}');
+  const [testPayload, setTestPayload] = useState("{}");
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -295,7 +297,8 @@ export function McpConnectPage() {
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground font-medium">
-              🔒 This key grants full admin access to manage employees, shifts, punches, and leaves. Keep it secret and only share it with your personal AI assistant.
+              🔒 This key grants full admin access to manage employees, shifts, punches, and leaves.
+              Keep it secret and only share it with your personal AI assistant.
             </p>
           </div>
         ) : (
@@ -393,7 +396,8 @@ export function McpConnectPage() {
                   Step 1: Open ChatGPT & Create a Custom GPT
                 </div>
                 <p className="text-xs text-foreground leading-relaxed">
-                  Go to <strong>ChatGPT &gt; Explore GPTs &gt; Create a GPT &gt; Configure</strong>.<br />
+                  Go to <strong>ChatGPT &gt; Explore GPTs &gt; Create a GPT &gt; Configure</strong>.
+                  <br />
                   Set Name: <strong>SavyTimes Admin Assistant</strong>.
                 </p>
               </div>
@@ -403,7 +407,9 @@ export function McpConnectPage() {
                   Step 2: Add Actions & Import OpenAPI Schema URL
                 </div>
                 <p className="text-xs text-foreground leading-relaxed">
-                  Scroll down to <strong>Actions</strong> and click <strong>Create new action</strong>. Click <strong>Import from URL</strong> and paste:
+                  Scroll down to <strong>Actions</strong> and click{" "}
+                  <strong>Create new action</strong>. Click <strong>Import from URL</strong> and
+                  paste:
                 </p>
                 <div className="flex items-center gap-2">
                   <input
@@ -426,7 +432,8 @@ export function McpConnectPage() {
                   Step 3: Set Authentication to Bearer
                 </div>
                 <p className="text-xs text-foreground leading-relaxed">
-                  Under <strong>Authentication</strong>, select <strong>API Key</strong> &gt; <strong>Bearer</strong>, and paste your active Admin Token:
+                  Under <strong>Authentication</strong>, select <strong>API Key</strong> &gt;{" "}
+                  <strong>Bearer</strong>, and paste your active Admin Token:
                 </p>
                 <div className="flex items-center gap-2">
                   <input
@@ -449,7 +456,8 @@ export function McpConnectPage() {
                   <Check className="h-4 w-4" /> Next Step: Add Instructions
                 </div>
                 <p className="text-xs leading-relaxed">
-                  Click the <strong>&quot;Master System Instructions&quot;</strong> tab above and paste the full prompt into your GPT's Instructions field!
+                  Click the <strong>&quot;Master System Instructions&quot;</strong> tab above and
+                  paste the full prompt into your GPT's Instructions field!
                 </p>
               </div>
             </div>
@@ -465,12 +473,15 @@ export function McpConnectPage() {
                   Master GPT System Instructions
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                  Copy and paste this into ChatGPT's <strong>Instructions</strong> box for bulletproof accuracy and custom team personalities.
+                  Copy and paste this into ChatGPT's <strong>Instructions</strong> box for
+                  bulletproof accuracy and custom team personalities.
                 </p>
               </div>
 
               <button
-                onClick={() => copyToClipboard(GPT_SYSTEM_INSTRUCTIONS, "System instructions copied!")}
+                onClick={() =>
+                  copyToClipboard(GPT_SYSTEM_INSTRUCTIONS, "System instructions copied!")
+                }
                 className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-primary/90 transition-all"
               >
                 <Copy className="h-4 w-4" /> Copy Full Instructions
@@ -597,13 +608,14 @@ export function McpConnectPage() {
               {/* Company & Client Management */}
               <div className="p-4 rounded-xl border bg-card space-y-3 md:col-span-2">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Bot className="h-4 w-4 text-blue-600" /> 5. Company &amp; Client Setup with Full Details
+                  <Bot className="h-4 w-4 text-blue-600" /> 5. Company &amp; Client Setup with Full
+                  Details
                 </div>
                 <div className="grid md:grid-cols-2 gap-2">
                   {[
                     'Create company: "Ironbrij", Code: "IRON", Timezone: "Australia/Sydney", Work Hours: 8, Break: 30 min, Grace: 5 min, Departments: ["Operations", "Accounts", "IT"]',
                     'Create company: "SavyKids", Code: "SAVY", Timezone: "Asia/Kathmandu", Work Hours: 8, Working Days: Mon to Fri, Break: 30 min, Grace: 5 min',
-                    'List all client companies',
+                    "List all client companies",
                     'Update company "Ironbrij" timezone to Australia/Sydney and break to 30 min',
                   ].map((cmd) => (
                     <button
@@ -629,7 +641,8 @@ export function McpConnectPage() {
                 How to Connect with Claude Desktop & Claude Code
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                Add the SavyTimes MCP Server config to Claude to let Claude auto-manage the workspace.
+                Add the SavyTimes MCP Server config to Claude to let Claude auto-manage the
+                workspace.
               </p>
             </div>
 
@@ -659,7 +672,11 @@ export function McpConnectPage() {
                   For Claude Desktop (`claude_desktop_config.json`)
                 </div>
                 <p className="text-xs text-muted-foreground font-medium">
-                  Paste this Remote MCP config into <code className="text-primary font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>:
+                  Paste this Remote MCP config into{" "}
+                  <code className="text-primary font-mono">
+                    %APPDATA%\Claude\claude_desktop_config.json
+                  </code>
+                  :
                 </p>
                 <div className="relative">
                   <pre className="p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">
@@ -721,7 +738,7 @@ export function McpConnectPage() {
                     } else if (e.target.value === "list_daily_reports") {
                       setTestPayload('{\n  "reportType": "sod"\n}');
                     } else {
-                      setTestPayload('{}');
+                      setTestPayload("{}");
                     }
                   }}
                   className="w-full px-3 py-2 rounded-lg border bg-background text-sm font-semibold"

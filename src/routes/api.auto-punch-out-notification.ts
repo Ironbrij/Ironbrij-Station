@@ -28,8 +28,8 @@ export const Route = createFileRoute("/api/auto-punch-out-notification")({
           ok: true,
           configured: Boolean(
             process.env.N8N_AUTO_PUNCH_OUT_WEBHOOK_URL ||
-              process.env.N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
+            process.env.N8N_PUNCH_OUT_REMINDER_WEBHOOK_URL ||
+            "https://vmi3182726.contaboserver.net/webhook/time-station-punch-out-reminder",
           ),
         }),
       POST: async ({ request }) => {
@@ -94,7 +94,10 @@ export const Route = createFileRoute("/api/auto-punch-out-notification")({
           !validText(body.attendanceDate, 10) ||
           !validText(body.autoPunchOutAt, 50)
         ) {
-          return Response.json({ ok: false, error: "Invalid notification payload" }, { status: 400 });
+          return Response.json(
+            { ok: false, error: "Invalid notification payload" },
+            { status: 400 },
+          );
         }
 
         const webhookUrl =
@@ -129,7 +132,10 @@ export const Route = createFileRoute("/api/auto-punch-out-notification")({
               { label: "Attendance Date", value: body.attendanceDate },
               { label: "Auto Clock-Out Time", value: formattedShiftEnd },
               { label: "Company", value: company.name || "SavyTimes" },
-              { label: "Note", value: "Overtime worked can be reviewed by your admin in the Overtime tab." },
+              {
+                label: "Note",
+                value: "Overtime worked can be reviewed by your admin in the Overtime tab.",
+              },
             ],
           )}</table>`,
         });

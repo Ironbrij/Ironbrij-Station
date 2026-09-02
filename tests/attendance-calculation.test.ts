@@ -183,20 +183,38 @@ test("getEmployeeShiftWindow selects the active shift for that day and slot", ()
   // Monday morning (03:50 AM early arrival for 04:00 AM shift)
   const mondayEarly = zonedDateTimeToDate("2026-08-10", "03:50", timezone);
   const mondayWindow1 = getEmployeeShiftWindow(multiEmp, mondayEarly);
-  assert.equal(mondayWindow1.start.toISOString(), zonedDateTimeToDate("2026-08-10", "04:00", timezone).toISOString());
-  assert.equal(mondayWindow1.end.toISOString(), zonedDateTimeToDate("2026-08-10", "07:00", timezone).toISOString());
+  assert.equal(
+    mondayWindow1.start.toISOString(),
+    zonedDateTimeToDate("2026-08-10", "04:00", timezone).toISOString(),
+  );
+  assert.equal(
+    mondayWindow1.end.toISOString(),
+    zonedDateTimeToDate("2026-08-10", "07:00", timezone).toISOString(),
+  );
 
   // Monday midday (11:55 AM early arrival for 12:00 PM shift)
   const mondayMidday = zonedDateTimeToDate("2026-08-10", "11:55", timezone);
   const mondayWindow2 = getEmployeeShiftWindow(multiEmp, mondayMidday);
-  assert.equal(mondayWindow2.start.toISOString(), zonedDateTimeToDate("2026-08-10", "12:00", timezone).toISOString());
-  assert.equal(mondayWindow2.end.toISOString(), zonedDateTimeToDate("2026-08-10", "15:00", timezone).toISOString());
+  assert.equal(
+    mondayWindow2.start.toISOString(),
+    zonedDateTimeToDate("2026-08-10", "12:00", timezone).toISOString(),
+  );
+  assert.equal(
+    mondayWindow2.end.toISOString(),
+    zonedDateTimeToDate("2026-08-10", "15:00", timezone).toISOString(),
+  );
 
   // Thursday (12:00 - 15:00)
   const thursdayDate = zonedDateTimeToDate("2026-08-13", "09:00", timezone);
   const thursdayWindow = getEmployeeShiftWindow(multiEmp, thursdayDate);
-  assert.equal(thursdayWindow.start.toISOString(), zonedDateTimeToDate("2026-08-13", "12:00", timezone).toISOString());
-  assert.equal(thursdayWindow.end.toISOString(), zonedDateTimeToDate("2026-08-13", "15:00", timezone).toISOString());
+  assert.equal(
+    thursdayWindow.start.toISOString(),
+    zonedDateTimeToDate("2026-08-13", "12:00", timezone).toISOString(),
+  );
+  assert.equal(
+    thursdayWindow.end.toISOString(),
+    zonedDateTimeToDate("2026-08-13", "15:00", timezone).toISOString(),
+  );
 });
 
 test("getShiftTimeout triggers auto punch out promptly when now reaches shift end", () => {
@@ -313,5 +331,3 @@ test("lunch break punches pause shift timer and exclude lunch duration from regu
   const afterLunchMs = computeRegularWorkedMsForDay(emp, punches, at("13:30"), at("13:30"));
   assert.equal(afterLunchMs, 4 * 60 * 60 * 1000);
 });
-
-

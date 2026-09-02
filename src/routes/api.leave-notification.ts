@@ -30,7 +30,7 @@ export const Route = createFileRoute("/api/leave-notification")({
           ok: true,
           configured: Boolean(
             process.env.N8N_LEAVE_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-leave-request",
+            "https://vmi3182726.contaboserver.net/webhook/time-station-leave-request",
           ),
         }),
       POST: async ({ request }) => {

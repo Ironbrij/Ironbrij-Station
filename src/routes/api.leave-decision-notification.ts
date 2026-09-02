@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           ok: true,
           configured: Boolean(
             process.env.N8N_LEAVE_DECISION_WEBHOOK_URL ||
-              "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision",
+            "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision",
           ),
         }),
       POST: async ({ request }) => {

@@ -27,7 +27,8 @@ export function ShiftConflictAlert({ conflicts, className = "" }: ShiftConflictA
             </span>
           </div>
           <p className="text-xs text-rose-900/80 dark:text-rose-300/80 font-medium">
-            Overlapping shift times found on the same scheduled working days (similar to Google Calendar / Meet conflict warnings).
+            Overlapping shift times found on the same scheduled working days (similar to Google
+            Calendar / Meet conflict warnings).
           </p>
 
           <div className="mt-3 space-y-2">
@@ -42,21 +43,27 @@ export function ShiftConflictAlert({ conflicts, className = "" }: ShiftConflictA
                     {conflict.dayName}:
                   </span>
                   <span>{conflict.shift1Name}</span>
-                  <span className="text-muted-foreground font-normal">({conflict.shift1TimeFormatted})</span>
+                  <span className="text-muted-foreground font-normal">
+                    ({conflict.shift1TimeFormatted})
+                  </span>
                   <span className="text-rose-500 font-extrabold">&harr;</span>
                   <span>{conflict.shift2Name}</span>
-                  <span className="text-muted-foreground font-normal">({conflict.shift2TimeFormatted})</span>
+                  <span className="text-muted-foreground font-normal">
+                    ({conflict.shift2TimeFormatted})
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="flex items-center gap-1 text-rose-700 dark:text-rose-300 font-medium">
                     <Clock className="h-3 w-3" />
                     {conflict.overlapMinutes} min conflict
                   </span>
-                  {conflict.company1Name && conflict.company2Name && conflict.company1Name !== conflict.company2Name && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
-                      Cross-Company: {conflict.company1Name} vs {conflict.company2Name}
-                    </span>
-                  )}
+                  {conflict.company1Name &&
+                    conflict.company2Name &&
+                    conflict.company1Name !== conflict.company2Name && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
+                        Cross-Company: {conflict.company1Name} vs {conflict.company2Name}
+                      </span>
+                    )}
                 </div>
               </div>
             ))}

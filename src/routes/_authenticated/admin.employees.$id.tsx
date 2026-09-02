@@ -21,7 +21,16 @@ import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
-import { COMPANY_ID, type Company, type Department, type Employee, type LeaveRequest, type OvertimeRequest, type OvertimeStatus, type Punch } from "@/lib/types";
+import {
+  COMPANY_ID,
+  type Company,
+  type Department,
+  type Employee,
+  type LeaveRequest,
+  type OvertimeRequest,
+  type OvertimeStatus,
+  type Punch,
+} from "@/lib/types";
 import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
@@ -230,9 +239,7 @@ function EmployeeDetail() {
 
     const output: DayRow[] = [];
     for (const [date, dayPunches] of groups) {
-      const sorted = [...dayPunches].sort(
-        (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
-      );
+      const sorted = [...dayPunches].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
       const firstIn = sorted.find((punch) => punch.type === "in");
       const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
       const rawCalculation = computeDay(sorted);
@@ -244,9 +251,10 @@ function EmployeeDetail() {
       const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
       const isOffShiftDay = !isScheduledDay;
 
-      const lateness = firstIn && isScheduledDay
-        ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? new Date(), employee, graceMinutes)
-        : null;
+      const lateness =
+        firstIn && isScheduledDay
+          ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? new Date(), employee, graceMinutes)
+          : null;
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const attendanceCalculation = firstIn
         ? calculateAttendanceSession({
@@ -267,7 +275,8 @@ function EmployeeDetail() {
 
       const dayOtRequests = overtimeRequests.filter(
         (r) =>
-          (r.employeeId === employee.id || (employee.authUid && r.employeeId === employee.authUid)) &&
+          (r.employeeId === employee.id ||
+            (employee.authUid && r.employeeId === employee.authUid)) &&
           r.date === date,
       );
       const approvedDayOtMinutes = dayOtRequests
@@ -278,14 +287,16 @@ function EmployeeDetail() {
         .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
 
       const isOvertimeApproved = approvedDayOtMinutes > 0;
-      const isOvertimePending = pendingDayOtMinutes > 0 || (dayOtRequests.length === 0 && overtimeMinutes > 0);
-      const otStatus = dayOtRequests.length > 0
-        ? approvedDayOtMinutes > 0
-          ? "approved"
-          : pendingDayOtMinutes > 0
-            ? "pending"
-            : "rejected"
-        : undefined;
+      const isOvertimePending =
+        pendingDayOtMinutes > 0 || (dayOtRequests.length === 0 && overtimeMinutes > 0);
+      const otStatus =
+        dayOtRequests.length > 0
+          ? approvedDayOtMinutes > 0
+            ? "approved"
+            : pendingDayOtMinutes > 0
+              ? "pending"
+              : "rejected"
+          : undefined;
       const otRequestId = dayOtRequests[0]?.id;
 
       output.push({
@@ -311,7 +322,9 @@ function EmployeeDetail() {
             : !firstIn
               ? sorted.length
                 ? "Extra time only"
-                : "No punch in"
+                : isOffShiftDay
+                  ? "Off day"
+                  : "No punch in"
               : !lastOut
                 ? attendanceCalculation?.missingPunchOut
                   ? "Missing punch out"
@@ -435,7 +448,14 @@ function EmployeeDetail() {
       RequiredMinutes: row.requiredMinutes,
       NormalWorkMinutes: row.normalMinutes,
       OvertimeMinutes: row.overtimeMinutes,
-      OvertimeStatus: row.overtimeMinutes > 0 ? (row.isOvertimeApproved ? "Approved" : row.otStatus === "rejected" ? "Rejected" : "Pending") : "N/A",
+      OvertimeStatus:
+        row.overtimeMinutes > 0
+          ? row.isOvertimeApproved
+            ? "Approved"
+            : row.otStatus === "rejected"
+              ? "Rejected"
+              : "Pending"
+          : "N/A",
       Status: row.status,
       MinutesLate: row.minutesLate,
       AllEvents: row.punches
@@ -564,7 +584,10 @@ function EmployeeDetail() {
 
       const punchInPunch = fixingRow.firstIn;
       const empCompanyId = punchInPunch?.companyId || activeCompanyId;
-      const requiredWorkMinutes = getRequiredWorkMinutes(employee, companies.find((c) => c.id === empCompanyId));
+      const requiredWorkMinutes = getRequiredWorkMinutes(
+        employee,
+        companies.find((c) => c.id === empCompanyId),
+      );
 
       // Calculate session stats
       const calculation = punchInPunch?.timestamp
@@ -802,7 +825,9 @@ function EmployeeDetail() {
                     {isMulti && m.shifts && m.shifts.length > 0 ? (
                       <div className="space-y-1 pt-0.5">
                         {m.shifts.map((s, idx) => {
-                          const sDaysText = formatWorkingDaysSummary(s.workingDays || m.workingDays);
+                          const sDaysText = formatWorkingDaysSummary(
+                            s.workingDays || m.workingDays,
+                          );
                           return (
                             <div
                               key={idx}
@@ -813,7 +838,10 @@ function EmployeeDetail() {
                                   Shift #{idx + 1}: {formatShiftRange(s.startTime, s.endTime)}
                                 </span>
                                 <span className="font-mono text-primary font-bold">
-                                  {Number((calculateShiftMinutes(s.startTime, s.endTime) / 60).toFixed(1))}h
+                                  {Number(
+                                    (calculateShiftMinutes(s.startTime, s.endTime) / 60).toFixed(1),
+                                  )}
+                                  h
                                 </span>
                               </div>
                               <div className="text-muted-foreground flex items-center gap-1 text-[10px]">
@@ -918,9 +946,13 @@ function EmployeeDetail() {
                     {row.scheduledAt ? formatInTimezone(row.scheduledAt, timezone) : "—"}
                   </td>
                   <td className="p-3.5 font-mono text-xs">
-                    {row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—"}
+                    {row.firstIn
+                      ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone)
+                      : "—"}
                   </td>
-                  <td className="p-3.5 font-black text-rose-600 dark:text-rose-400">{row.minutesLate} min</td>
+                  <td className="p-3.5 font-black text-rose-600 dark:text-rose-400">
+                    {row.minutesLate} min
+                  </td>
                   <td className="p-3.5">
                     <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
                       {row.isAutoPunchOut ? "Late · auto out" : "Late arrival"}
@@ -1021,7 +1053,9 @@ function EmployeeDetail() {
                 <tr key={row.date} className="align-top hover:bg-secondary/30">
                   <td className="p-3.5 font-mono text-xs">{row.date}</td>
                   <td className="p-3.5 font-mono text-xs">
-                    {row.firstIn ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone) : "—"}
+                    {row.firstIn
+                      ? formatInTimezone(toDate(row.firstIn.timestamp) ?? new Date(), timezone)
+                      : "—"}
                   </td>
                   <td className="p-3.5 font-mono text-xs">
                     {row.lastOut
@@ -1205,12 +1239,16 @@ function EmployeeDetail() {
                   <Wrench className="h-5 w-5 text-primary" /> Fix Missing Punch-Out
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Add the punch-out time for <strong>{employee?.name}</strong> on <strong>{fixingRow.date}</strong>
+                  Add the punch-out time for <strong>{employee?.name}</strong> on{" "}
+                  <strong>{fixingRow.date}</strong>
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => { setFixingRow(null); setFixTime(""); }}
+                onClick={() => {
+                  setFixingRow(null);
+                  setFixTime("");
+                }}
                 className="rounded-lg border p-1.5 hover:bg-muted text-muted-foreground"
               >
                 ✕
@@ -1254,7 +1292,10 @@ function EmployeeDetail() {
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => { setFixingRow(null); setFixTime(""); }}
+                onClick={() => {
+                  setFixingRow(null);
+                  setFixTime("");
+                }}
                 className="rounded-lg border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
               >
                 Cancel

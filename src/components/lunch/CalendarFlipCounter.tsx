@@ -21,9 +21,7 @@ const SingleDigitCard = memo(function SingleDigitCard({
             : "border-amber-500/30 bg-gradient-to-b from-amber-500/10 via-card to-background text-amber-600 dark:text-amber-400 shadow-amber-950/10"
         }`}
       >
-        <span className="leading-none tracking-tight font-mono drop-shadow-xs">
-          {digit}
-        </span>
+        <span className="leading-none tracking-tight font-mono drop-shadow-xs">{digit}</span>
       </div>
 
       <span
@@ -56,16 +54,8 @@ export function CalendarFlipCounter({
 
       {/* Clean Static Colon */}
       <div className="flex flex-col items-center justify-center gap-2 pb-6">
-        <span
-          className={`w-2 h-2 rounded-full ${
-            isOverdue ? "bg-rose-500" : "bg-amber-500"
-          }`}
-        />
-        <span
-          className={`w-2 h-2 rounded-full ${
-            isOverdue ? "bg-rose-500" : "bg-amber-500"
-          }`}
-        />
+        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500"}`} />
+        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500"}`} />
       </div>
 
       {/* Seconds Card */}

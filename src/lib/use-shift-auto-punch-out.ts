@@ -39,9 +39,7 @@ export async function reconcileEmployeeShift(
 
   for (const cId of companyIds) {
     const cCompanyEmployee = getEmployeeForCompany(employee, cId);
-    const companyPunches = punches.filter(
-      (punch) => getPunchCompanyId(punch, employee) === cId,
-    );
+    const companyPunches = punches.filter((punch) => getPunchCompanyId(punch, employee) === cId);
     const latest = companyPunches.at(-1);
     if (
       !latest?.timestamp ||
@@ -81,7 +79,7 @@ export async function reconcileEmployeeShift(
           employeeId: employee.id,
           employeeName: employee.name,
           companyId: cId,
-          companyName: cId === activeCompanyId ? (company?.name || "Company") : cId,
+          companyName: cId === activeCompanyId ? company?.name || "Company" : cId,
           date: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
           attendanceDate: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
           type: "out",
