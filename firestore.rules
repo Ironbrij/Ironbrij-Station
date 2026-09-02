@@ -77,28 +77,28 @@ service cloud.firestore {
 
     // Employees Collection
     match /employees/{empId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if isAdmin() || true;
+      allow read: if isAuthed();
+      allow create: if isAuthed();
+      allow update: if isAuthed();
+      allow delete: if isAdmin();
     }
 
     // Company & Departments Settings
     match /companies/{id} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
+      allow read: if isAuthed();
+      allow write: if isAdmin();
     }
     match /departments/{id} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
+      allow read: if isAuthed();
+      allow write: if isAdmin();
     }
     match /departments/{id}/members/{memberId} {
-      allow read, write: if isAdmin() || true;
+      allow read, write: if isAdmin();
     }
 
     // HR Announcements & Notices Collection
     match /notices/{id} {
-      allow read: if isAuthed() || true;
+      allow read: if isAuthed();
       allow write: if isAdmin();
     }
 
@@ -109,40 +109,43 @@ service cloud.firestore {
 
     // Punches (Clock In / Clock Out / Overtime)
     match /punches/{id} {
-      allow read: if true;
-      allow create, update, delete: if true;
+      allow read: if isAuthed();
+      allow create, update: if isAdmin() || (isAuthed() && ownsEmployee(request.resource.data.employeeId));
+      allow delete: if isAdmin();
     }
 
     // Leave Requests
     match /leaveRequests/{id} {
-      allow read: if true;
-      allow create, update, delete: if true;
+      allow read: if isAuthed();
+      allow create, update: if isAdmin() || (isAuthed() && ownsEmployee(request.resource.data.employeeId));
+      allow delete: if isAdmin();
     }
 
     // Overtime Requests
     match /overtimeRequests/{id} {
-      allow read: if true;
-      allow create, update, delete: if true;
+      allow read: if isAuthed();
+      allow create, update: if isAdmin() || (isAuthed() && ownsEmployee(request.resource.data.employeeId));
+      allow delete: if isAdmin();
     }
 
     match /attendanceReminders/{id} {
-      allow read, write: if true;
+      allow read, write: if isAuthed();
     }
 
     // SOD & EOD configuration and question bank
     match /reportingSettings/{id} {
-      allow read: if isAuthed() || true;
+      allow read: if isAuthed();
       allow write: if isAdmin();
     }
 
     match /reportQuestions/{id} {
-      allow read: if isAuthed() || true;
+      allow read: if isAuthed();
       allow write: if isAdmin();
     }
 
     // Submitted SOD & EOD daily reports
     match /dailyReports/{reportId} {
-      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid) || true;
+      allow read: if isAdmin() || (isAuthed() && resource.data.userId == request.auth.uid);
       allow create: if isAuthed() && request.resource.data.userId == request.auth.uid;
       allow update: if isAdmin() || (
         isAuthed() &&
@@ -154,16 +157,16 @@ service cloud.firestore {
 
     // Help Requests & User Feedback
     match /helpRequests/{id} {
-      allow read, write: if true;
+      allow read, write: if isAuthed();
     }
 
     match /feedback/{id} {
-      allow read, write: if true;
+      allow read, write: if isAuthed();
     }
 
     // Personal automation status
     match /automationProfiles/{token} {
-      allow read: if true;
+      allow read: if isAuthed();
       allow create, update, delete: if isAuthed();
     }
 
@@ -175,7 +178,8 @@ service cloud.firestore {
 
     // Admin API Tokens
     match /adminApiTokens/{token} {
-      allow read, write: if true;
+      allow read: if isAdmin();
+      allow write: if false; // Only manageable directly via Firebase Console
     }
   }
 }
