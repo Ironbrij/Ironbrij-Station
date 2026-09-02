@@ -606,6 +606,14 @@ export function getEffectiveEmployeeWorkingDays(
     }
   }
   if (Array.isArray(employee?.workingDays) && employee!.workingDays!.length > 0) {
+    // If employee has the exact default [0,1,2,3,4,5], prefer the company's working days
+    if (
+      employee!.workingDays!.join(",") === "0,1,2,3,4,5" &&
+      Array.isArray(companyWorkingDays) &&
+      companyWorkingDays.length > 0
+    ) {
+      return companyWorkingDays;
+    }
     return employee!.workingDays!;
   }
   if (Array.isArray(companyWorkingDays) && companyWorkingDays.length > 0) {
