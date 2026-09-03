@@ -15,6 +15,7 @@ import {
   computeEmployeeLateness,
   formatEmployeeShiftSummary,
   formatInTimezone,
+  getEffectiveEmployeeWorkingDays,
   getEmployeeApprovedLeaveDates,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
@@ -288,12 +289,16 @@ function DepartmentsPage() {
             ? getLeaveLabel(approvedLeave)
             : "On Time";
         if (firstIn && !holiday && !approvedLeave) {
+          const isExcused = Boolean(firstIn.isExcused);
           const lateness = computeEmployeeLateness(
             toDate(firstIn.timestamp) ?? new Date(),
             emp,
             company?.lateGraceMinutes ?? 5,
+            isExcused,
           );
-          if (lateness.isLate) {
+          if (isExcused) {
+            latenessText = "Excused (Not Late)";
+          } else if (lateness.isLate) {
             latenessText = `Late (${lateness.minutes} mins late)`;
           } else if (lateness.isEarly) {
             latenessText = `Early (${lateness.minutes} mins early)`;
@@ -418,12 +423,14 @@ function DepartmentsPage() {
         const day = computeDay(sorted, { employee, company });
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, leaves, dateKey);
         const holiday = getEmployeeHoliday(company, employee, dateKey);
+        const isExcused = Boolean(firstIn?.isExcused);
         const lateness =
           firstIn && !holiday && !approvedLeave
             ? computeEmployeeLateness(
                 toDate(firstIn.timestamp) ?? new Date(),
                 employee,
                 company?.lateGraceMinutes ?? 5,
+                isExcused,
               )
             : null;
         const [shiftYear, shiftMonth, shiftDay] = dateKey.split("-").map(Number);
@@ -450,13 +457,15 @@ function DepartmentsPage() {
             ? "Holiday"
             : approvedLeave
               ? getLeaveLabel(approvedLeave)
-              : lateness?.isLate
-                ? `Late (${lateness.minutes} min)`
-                : firstIn
-                  ? "On time"
-                  : !isScheduledDay
-                    ? "Off day"
-                    : "No punch in",
+              : isExcused
+                ? "Excused (Not Late)"
+                : lateness?.isLate
+                  ? `Late (${lateness.minutes} min)`
+                  : firstIn
+                    ? "On time"
+                    : !isScheduledDay
+                      ? "Off day"
+                      : "No punch in",
           RegularHours: day.regularHours.toFixed(2),
           OvertimeHours: day.overtimeHours.toFixed(2),
         });

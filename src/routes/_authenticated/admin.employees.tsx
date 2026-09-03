@@ -182,8 +182,8 @@ function EmployeesListPage() {
       (p) =>
         (p.employeeId === empId ||
           (authUid && p.employeeId === authUid) ||
-          p.userId === empId ||
-          (authUid && p.userId === authUid)) &&
+          (p as any).userId === empId ||
+          (authUid && (p as any).userId === authUid)) &&
         p.timestamp,
     );
     if (userPunches.length === 0) return { status: "out", elapsedMinutes: 0 };

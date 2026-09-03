@@ -544,6 +544,7 @@ export function computeEmployeeLateness(
   punchValue: Date,
   employee: Employee,
   graceMinutes = MINIMUM_LATE_GRACE_MINUTES,
+  isExcused = false,
 ) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(punchValue, shiftTimezone);
@@ -557,12 +558,17 @@ export function computeEmployeeLateness(
   const windowStart = employeeShift?.start || fallbackWindow.start;
   const differenceSeconds = Math.floor((punchValue.getTime() - windowStart.getTime()) / 1000);
   const isEarly = differenceSeconds < 0;
-  const minutes = isEarly ? 0 : Math.max(0, Math.floor(differenceSeconds / 60));
+  const rawMinutes = isEarly ? 0 : Math.max(0, Math.floor(differenceSeconds / 60));
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
+  const naturallyLate = !isEarly && rawMinutes > effectiveGraceMinutes;
+
   return {
-    isLate: !isEarly && minutes > effectiveGraceMinutes,
+    isLate: isExcused ? false : naturallyLate,
+    naturallyLate,
+    isExcused: Boolean(isExcused),
     isEarly,
-    minutes,
+    minutes: isExcused ? 0 : rawMinutes,
+    rawMinutes,
     seconds: Math.max(0, differenceSeconds),
     dateKey,
     scheduledAt: windowStart,
@@ -662,9 +668,15 @@ export function getLiveAttendanceStatus(
   const isScheduledDay =
     effectiveWorkingDays.includes(shiftWeekday) && !holidays.includes(shift.dateKey);
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
+  const isExcused = Boolean(firstIn?.isExcused);
   const lateness =
     firstIn && isScheduledDay
-      ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? now, employee, effectiveGraceMinutes)
+      ? computeEmployeeLateness(
+          toDate(firstIn.timestamp) ?? now,
+          employee,
+          effectiveGraceMinutes,
+          isExcused,
+        )
       : null;
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
@@ -689,8 +701,11 @@ export function getLiveAttendanceStatus(
     isOvertimeSession: isExtraActive,
     isShiftCompleted,
     isPastShiftEnd,
-    isLate: lateness?.isLate ?? isMissingLate,
-    minutesLate: lateness?.minutes ?? (isMissingLate ? missingMinutes : 0),
+    isLate: isExcused ? false : (lateness?.isLate ?? isMissingLate),
+    isExcused,
+    excuseReason: firstIn?.excuseReason,
+    minutesLate: isExcused ? 0 : (lateness?.minutes ?? (isMissingLate ? missingMinutes : 0)),
+    rawMinutesLate: lateness?.rawMinutes ?? (isMissingLate ? missingMinutes : 0),
     isEarly,
     minutesEarly,
     lateness,
@@ -699,6 +714,8 @@ export function getLiveAttendanceStatus(
     shift,
   };
 }
+
+export type LiveAttendanceStatus = ReturnType<typeof getLiveAttendanceStatus>;
 
 /**
  * Resolves the single active working session for an employee across ALL company memberships.

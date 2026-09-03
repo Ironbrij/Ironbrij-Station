@@ -53,6 +53,7 @@ export type CountryCode = "NP" | "AU" | "PH";
 
 export interface ShiftInterval {
   id?: string;
+  name?: string;
   startTime: string; // e.g. "04:00"
   endTime: string; // e.g. "07:00"
   workingDays?: number[]; // Specific working days for this shift interval: 0=Sun..6=Sat
@@ -193,6 +194,7 @@ export interface Punch {
   isExcused?: boolean;
   excusedBy?: string;
   excusedAt?: string;
+  excuseReason?: string;
   isOffShiftDay?: boolean;
   overtimeRequestId?: string;
 }

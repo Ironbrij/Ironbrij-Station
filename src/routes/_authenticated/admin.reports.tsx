@@ -26,6 +26,7 @@ import {
   Sliders,
   ShieldCheck,
   ClockAlert,
+  XCircle,
 } from "lucide-react";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -89,8 +90,11 @@ export interface DailyIntervalRecord {
   regularHours: number;
   rawOvertimeHours: number;
   isOvertimeApproved: boolean;
+  isOvertimeRejected?: boolean;
+  overtimeStatus?: "approved" | "pending" | "rejected" | "none";
   status: string;
   note?: string;
+  isCustom?: boolean;
 }
 
 export interface ReportRow {
@@ -185,6 +189,17 @@ function ReportsPage() {
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [isAddRowModalOpen, setIsAddRowModalOpen] = useState(false);
   const [selectedIntervalEmployee, setSelectedIntervalEmployee] = useState<ReportRow | null>(null);
+
+  // Add custom day / info modal state for inspect drawer
+  const [showAddDayModal, setShowAddDayModal] = useState(false);
+  const [customDayDate, setCustomDayDate] = useState("");
+  const [customDayNote, setCustomDayNote] = useState("");
+  const [customDayRegularHours, setCustomDayRegularHours] = useState(8);
+  const [customDayPunchIn, setCustomDayPunchIn] = useState("09:00");
+  const [customDayPunchOut, setCustomDayPunchOut] = useState("17:00");
+  const [customDayStatus, setCustomDayStatus] = useState("Custom Entry");
+  const [syncToPunches, setSyncToPunches] = useState(true);
+  const [isSavingCustomDay, setIsSavingCustomDay] = useState(false);
 
   // Add row form state
   const [newRowData, setNewRowData] = useState<Omit<ReportRow, "id" | "dailyIntervals">>({
@@ -343,12 +358,14 @@ function ReportsPage() {
         const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
         const isOffShiftDay = !isScheduledDay;
 
+        const isExcused = Boolean(firstIn?.isExcused);
         const late =
           firstIn && isScheduledDay
             ? computeEmployeeLateness(
                 toDate(firstIn.timestamp) ?? new Date(),
                 employee,
                 getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
+                isExcused,
               )
             : null;
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
@@ -390,9 +407,11 @@ function ReportsPage() {
                       ? late?.isLate
                         ? "Auto punched out · Late"
                         : "Auto punched out"
-                      : late?.isLate
-                        ? "Late"
-                        : "On time",
+                      : isExcused
+                        ? "Excused (Not Late)"
+                        : late?.isLate
+                          ? "Late"
+                          : "On time",
           minutesLate: !holiday && !approvedLeave && late?.isLate ? late.minutes : 0,
           isAutoPunchOut,
         });
@@ -562,19 +581,21 @@ function ReportsPage() {
           ? calculateAttendanceSession({
               employee,
               company: reportCompany,
-              punchIn: toDate(firstIn.timestamp) ?? new Date(),
+          punchIn: toDate(firstIn.timestamp) ?? new Date(),
               punchOut: lastOut ? (toDate(lastOut.timestamp) ?? new Date()) : null,
               requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
               isOffShiftDay,
             })
           : null;
 
+        const isExcused = Boolean(firstIn?.isExcused);
         const lateness =
           firstIn && isScheduledDay
             ? computeEmployeeLateness(
                 toDate(firstIn.timestamp) ?? new Date(),
                 employee,
                 getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
+                isExcused,
               )
             : null;
 
@@ -619,6 +640,18 @@ function ReportsPage() {
         }
 
         const isOvertimeApproved = approvedOtHours > 0;
+        const isOvertimePending = pendingOtHours > 0;
+        const isOvertimeRejected =
+          dayOtRequests.some((r) => r.status === "rejected") && !isOvertimeApproved && !isOvertimePending;
+
+        const overtimeStatus: "approved" | "pending" | "rejected" | "none" = isOvertimeApproved
+          ? "approved"
+          : isOvertimePending
+            ? "pending"
+            : isOvertimeRejected
+              ? "rejected"
+              : "none";
+
         const displayOtHours =
           approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : 0;
 
@@ -658,6 +691,8 @@ function ReportsPage() {
           regularHours: Math.round(regHours * 10) / 10,
           rawOvertimeHours: Math.round(displayOtHours * 10) / 10,
           isOvertimeApproved,
+          isOvertimeRejected,
+          overtimeStatus,
           status: holiday
             ? "Holiday"
             : approvedLeave
@@ -668,11 +703,13 @@ function ReportsPage() {
                   ? "Auto Punched Out"
                   : isOffShiftDay && firstIn
                     ? "Off-day Shift"
-                    : lateness?.isLate
-                      ? `Late (${lateness.minutes}m)`
-                      : firstIn
-                        ? "Complete"
-                        : "Off / No punches",
+                    : isExcused
+                      ? "Excused (Not Late)"
+                      : lateness?.isLate
+                        ? `Late (${lateness.minutes}m)`
+                        : firstIn
+                          ? "Complete"
+                          : "Off / No punches",
         });
       }
 
@@ -847,13 +884,6 @@ function ReportsPage() {
     toast.success("Added new person to report.");
   }
 
-  // Reset custom edits to computed real-time calculations
-  function handleResetToCalculated() {
-    setReportRows(computedSummaryRows);
-    setHasCustomEdits(false);
-    toast.success("Reset table to real-time calculated hours.");
-  }
-
   // --------------------------------------------------------------------------
   // DAILY INTERVAL & OVERTIME APPROVAL HANDLERS
   // --------------------------------------------------------------------------
@@ -886,7 +916,7 @@ function ReportsPage() {
             if (day.isOvertimeApproved) {
               newApprovedOt += day.rawOvertimeHours;
               newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
-            } else {
+            } else if (!day.isOvertimeRejected && day.overtimeStatus !== "rejected") {
               newPendingOt += day.rawOvertimeHours;
             }
           }
@@ -949,6 +979,179 @@ function ReportsPage() {
     } catch (err) {
       console.error("Failed to fix punch out:", err);
       toast.error("Could not fix punch out: " + (err as Error).message);
+    }
+  }
+
+  // Add custom information / manual record for a day in the inspect modal
+  async function handleAddCustomDay() {
+    if (!selectedIntervalEmployee || !customDayDate) {
+      toast.error("Please provide a date.");
+      return;
+    }
+
+    setIsSavingCustomDay(true);
+    try {
+      const emp = filteredEmployees.find(
+        (e) => e.id === selectedIntervalEmployee.id || e.authUid === selectedIntervalEmployee.id,
+      );
+      const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
+      const effectiveCompId =
+        companyFilter === "all" ? emp?.companyId || COMPANY_ID : companyFilter;
+
+      let inPunchId: string | undefined;
+      let outPunchId: string | undefined;
+
+      // If syncToPunches is true, create official Punch records in Firestore
+      if (syncToPunches) {
+        if (customDayPunchIn) {
+          const inDate = zonedDateTimeToDate(customDayDate, customDayPunchIn, empTz);
+          const inRef = await addDoc(collection(db(), "punches"), {
+            employeeId: emp?.id || selectedIntervalEmployee.id,
+            employeeName: emp?.name || selectedIntervalEmployee.employeeName,
+            companyId: effectiveCompId,
+            companyName: selectedCompany?.name || "Company",
+            date: customDayDate,
+            attendanceDate: customDayDate,
+            type: "in",
+            timestamp: Timestamp.fromDate(inDate),
+            source: "app",
+            manualNote: customDayNote.trim() || `Manual entry by admin`,
+            addedByAdmin: user?.email || "admin",
+            createdAt: new Date().toISOString(),
+            shiftTimezone: empTz,
+            attendanceStatus: "complete",
+          });
+          inPunchId = inRef.id;
+        }
+
+        if (customDayPunchOut) {
+          const outDate = zonedDateTimeToDate(customDayDate, customDayPunchOut, empTz);
+          const outRef = await addDoc(collection(db(), "punches"), {
+            employeeId: emp?.id || selectedIntervalEmployee.id,
+            employeeName: emp?.name || selectedIntervalEmployee.employeeName,
+            companyId: effectiveCompId,
+            companyName: selectedCompany?.name || "Company",
+            date: customDayDate,
+            attendanceDate: customDayDate,
+            type: "out",
+            timestamp: Timestamp.fromDate(outDate),
+            source: "app",
+            manualNote: customDayNote.trim() || `Manual entry by admin`,
+            addedByAdmin: user?.email || "admin",
+            createdAt: new Date().toISOString(),
+            shiftTimezone: empTz,
+            attendanceStatus: "complete",
+          });
+          outPunchId = outRef.id;
+        }
+      }
+
+      // Update in-memory report rows & dailyIntervals
+      const empRowId = selectedIntervalEmployee.id;
+      setHasCustomEdits(true);
+
+      setReportRows((prev) =>
+        prev.map((row) => {
+          if (row.id !== empRowId) return row;
+
+          const existingIndex = row.dailyIntervals.findIndex((d) => d.date === customDayDate);
+          let updatedIntervals: DailyIntervalRecord[];
+
+          const updatedDayRecord: DailyIntervalRecord = {
+            date: customDayDate,
+            dayOfWeek: getDayOfWeekStr(customDayDate),
+            scheduledShift:
+              emp?.shiftStartTime && emp?.shiftEndTime
+                ? `${emp.shiftStartTime}–${emp.shiftEndTime}`
+                : "09:00–17:00",
+            punchInTime: customDayPunchIn || undefined,
+            punchOutTime: customDayPunchOut || undefined,
+            firstInPunchId: inPunchId,
+            lastOutPunchId: outPunchId,
+            regularHours: Number(customDayRegularHours) || 0,
+            rawOvertimeHours: 0,
+            isOvertimeApproved: false,
+            overtimeStatus: "none",
+            isMissingPunchOut: false,
+            isAutoPunchOut: false,
+            minutesLate: 0,
+            status:
+              customDayStatus.trim() ||
+              (customDayNote ? customDayNote.slice(0, 20) : "Custom Record"),
+            note: customDayNote.trim() || undefined,
+            isCustom: true,
+          };
+
+          if (existingIndex >= 0) {
+            updatedIntervals = row.dailyIntervals.map((d, idx) =>
+              idx === existingIndex
+                ? {
+                    ...d,
+                    ...updatedDayRecord,
+                    note: customDayNote.trim() || d.note,
+                  }
+                : d,
+            );
+          } else {
+            updatedIntervals = [...row.dailyIntervals, updatedDayRecord].sort((a, b) =>
+              a.date.localeCompare(b.date),
+            );
+          }
+
+          // Recompute totals
+          let newReg = 0;
+          let newApprovedOt = 0;
+          let newPendingOt = 0;
+          const newOtDates: string[] = [];
+
+          for (const day of updatedIntervals) {
+            newReg += day.regularHours;
+            if (day.rawOvertimeHours > 0) {
+              if (day.isOvertimeApproved) {
+                newApprovedOt += day.rawOvertimeHours;
+                newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
+              } else if (!day.isOvertimeRejected && day.overtimeStatus !== "rejected") {
+                newPendingOt += day.rawOvertimeHours;
+              }
+            }
+          }
+
+          const newRemarks = customDayNote.trim()
+            ? row.remarks
+              ? `${row.remarks}; [${customDayDate}: ${customDayNote.trim()}]`
+              : `[${customDayDate}: ${customDayNote.trim()}]`
+            : row.remarks;
+
+          const updatedRow: ReportRow = {
+            ...row,
+            dailyIntervals: updatedIntervals,
+            regularHours: Math.round(newReg * 10) / 10,
+            overtimeHours: Math.round(newApprovedOt * 10) / 10,
+            pendingOvertimeHours: Math.round(newPendingOt * 10) / 10,
+            overtimeDates: newOtDates,
+            workedDays: updatedIntervals.filter((d) => d.regularHours > 0).length,
+            remarks: newRemarks,
+            worked: newReg > 0 || newApprovedOt > 0,
+          };
+
+          if (selectedIntervalEmployee?.id === empRowId) {
+            setSelectedIntervalEmployee(updatedRow);
+          }
+
+          return updatedRow;
+        }),
+      );
+
+      toast.success(
+        `Custom info recorded for ${customDayDate}${syncToPunches ? " & synchronized to punches" : ""}! ✓`,
+      );
+      setShowAddDayModal(false);
+      setCustomDayNote("");
+    } catch (err) {
+      console.error("Failed to add custom record:", err);
+      toast.error("Could not add custom record: " + (err as Error).message);
+    } finally {
+      setIsSavingCustomDay(false);
     }
   }
 
@@ -1942,6 +2145,27 @@ function ReportsPage() {
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={() => {
+                    const fallbackDate =
+                      selectedIntervalEmployee.dailyIntervals[0]?.date ||
+                      new Date().toISOString().slice(0, 10);
+                    setCustomDayDate(fallbackDate);
+                    setCustomDayNote("");
+                    setCustomDayRegularHours(8);
+                    setCustomDayPunchIn("09:00");
+                    setCustomDayPunchOut("17:00");
+                    setCustomDayStatus("Custom Entry");
+                    setSyncToPunches(true);
+                    setShowAddDayModal(true);
+                  }}
+                  className="btn-lift inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-xs hover:opacity-90"
+                  title="Add custom information or manual record for a date"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Info / Day</span>
+                </button>
+                <button
                   onClick={() => setSelectedIntervalEmployee(null)}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
                 >
@@ -2117,20 +2341,22 @@ function ReportsPage() {
 
                       {/* Overtime Status */}
                       <td className="p-2.5 text-center">
-                        {day.rawOvertimeHours > 0 ? (
-                          day.isOvertimeApproved ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
-                              <Check className="h-3 w-3" /> Approved
-                            </span>
-                          ) : (
-                            <Link
-                              to="/admin/overtime"
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition"
-                              title="Click to review in Overtime tab"
-                            >
-                              <ClockAlert className="h-3 w-3" /> Pending in OT Tab →
-                            </Link>
-                          )
+                        {day.overtimeStatus === "approved" || day.isOvertimeApproved ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
+                            <Check className="h-3 w-3" /> Approved
+                          </span>
+                        ) : day.overtimeStatus === "rejected" || day.isOvertimeRejected ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shadow-2xs">
+                            <XCircle className="h-3 w-3 text-rose-600" /> Rejected
+                          </span>
+                        ) : day.overtimeStatus === "pending" || day.rawOvertimeHours > 0 ? (
+                          <Link
+                            to="/admin/overtime"
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition"
+                            title="Click to review in Overtime tab"
+                          >
+                            <ClockAlert className="h-3 w-3" /> Pending in OT Tab →
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground text-[10px]">—</span>
                         )}
@@ -2138,9 +2364,20 @@ function ReportsPage() {
 
                       {/* Status */}
                       <td className="p-2.5">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-secondary text-foreground">
-                          {day.status}
-                        </span>
+                        <div className="space-y-1">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-secondary text-foreground">
+                            {day.status}
+                          </span>
+                          {day.note && (
+                            <div
+                              className="flex items-center gap-1 text-[11px] text-primary font-medium bg-primary/10 border border-primary/20 rounded px-1.5 py-0.5 max-w-[200px]"
+                              title={day.note}
+                            >
+                              <FileText className="h-3 w-3 shrink-0 text-primary" />
+                              <span className="truncate">{day.note}</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2167,6 +2404,169 @@ function ReportsPage() {
                 className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold shadow-sm"
               >
                 Done Inspecting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADD CUSTOM DAY RECORD & INFORMATION MODAL                                  */}
+      {/* ========================================================================= */}
+      {showAddDayModal && selectedIntervalEmployee && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold">
+                  <Plus className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Record Custom Information</h3>
+                  <p className="text-xs text-muted-foreground">
+                    For {selectedIntervalEmployee.employeeName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddDayModal(false)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {/* Date */}
+              <div>
+                <label className="block font-bold text-foreground mb-1">Select Date</label>
+                <input
+                  type="date"
+                  value={customDayDate}
+                  onChange={(e) => setCustomDayDate(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 font-medium"
+                />
+              </div>
+
+              {/* Custom Info / Reason */}
+              <div>
+                <label className="block font-bold text-foreground mb-1">
+                  Custom Information / Reason / Incident
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Typhoon delay, Client meeting offsite, Power outage, Manager approved half-day..."
+                  value={customDayNote}
+                  onChange={(e) => setCustomDayNote(e.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 font-medium"
+                />
+              </div>
+
+              {/* Quick Reason Presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "Typhoon / Bad Weather",
+                  "Power / Internet Outage",
+                  "Client Meeting Offsite",
+                  "Manager Approved Exception",
+                  "System Clock Issue",
+                  "Shift Swap",
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() =>
+                      setCustomDayNote((prev) => (prev ? `${prev} · ${preset}` : preset))
+                    }
+                    className="rounded-md border bg-secondary/50 px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                  >
+                    + {preset}
+                  </button>
+                ))}
+              </div>
+
+              {/* Regular Hours & Status */}
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <div>
+                  <label className="block font-bold text-foreground mb-1">Regular Hours (h)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="24"
+                    value={customDayRegularHours}
+                    onChange={(e) => setCustomDayRegularHours(parseFloat(e.target.value) || 0)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 font-bold text-sky-700"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-foreground mb-1">Status Label</label>
+                  <input
+                    type="text"
+                    value={customDayStatus}
+                    onChange={(e) => setCustomDayStatus(e.target.value)}
+                    placeholder="Custom Entry"
+                    className="w-full rounded-lg border bg-background px-3 py-2 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Punch In / Out Times */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-foreground mb-1">Clock In Time</label>
+                  <input
+                    type="time"
+                    value={customDayPunchIn}
+                    onChange={(e) => setCustomDayPunchIn(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-1.5 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-foreground mb-1">Clock Out Time</label>
+                  <input
+                    type="time"
+                    value={customDayPunchOut}
+                    onChange={(e) => setCustomDayPunchOut(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-1.5 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Sync to punches database checkbox */}
+              <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={syncToPunches}
+                  onChange={(e) => setSyncToPunches(e.target.checked)}
+                  className="rounded border mt-0.5"
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="font-bold text-foreground">Synchronize across entire system</span>
+                  <p>
+                    Creates official database punch records so this date updates Dashboard,
+                    Employee Profile, and Attendance Logs.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={() => setShowAddDayModal(false)}
+                className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingCustomDay}
+                onClick={handleAddCustomDay}
+                className="btn-lift rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground hover:opacity-90 transition-all shadow-xs disabled:opacity-50"
+              >
+                {isSavingCustomDay ? "Synchronizing..." : "Save & Synchronize ✓"}
               </button>
             </div>
           </div>

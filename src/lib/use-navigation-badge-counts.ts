@@ -23,6 +23,7 @@ export function useNavigationBadgeCounts({
 }): Record<string, number> {
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [lastSeenOvertime, setLastSeenOvertime] = useState(() => parseInt(localStorage.getItem("lastSeenOvertime") || "0", 10));
   const unreadLateCount = useAdminLateNotificationCount({ enabled: Boolean(isAdmin), company });
 
   useEffect(() => {
@@ -52,8 +53,14 @@ export function useNavigationBadgeCounts({
       }),
     );
 
+    const syncSeen = () => setLastSeenOvertime(parseInt(localStorage.getItem("lastSeenOvertime") || "0", 10));
+    window.addEventListener("storage", syncSeen);
+    window.addEventListener("OVERTIME_SEEN", syncSeen);
+
     return () => {
       unsubscribers.forEach((unsub) => unsub());
+      window.removeEventListener("storage", syncSeen);
+      window.removeEventListener("OVERTIME_SEEN", syncSeen);
     };
   }, []);
 
@@ -64,6 +71,9 @@ export function useNavigationBadgeCounts({
       // 1. Pending Overtime Approvals
       const pendingOvertime = overtimeRequests.filter((r) => {
         if (r.status !== "pending") return false;
+        const createdTime = new Date(r.createdAt || 0).getTime();
+        if (createdTime <= lastSeenOvertime) return false;
+        
         if (activeCompanyId && activeCompanyId !== "all" && activeCompanyId !== COMPANY_ID) {
           return r.companyId === activeCompanyId;
         }
@@ -98,5 +108,5 @@ export function useNavigationBadgeCounts({
     }
 
     return badges;
-  }, [isAdmin, employee, activeCompanyId, overtimeRequests, leaveRequests, unreadLateCount]);
+  }, [isAdmin, employee, activeCompanyId, overtimeRequests, leaveRequests, unreadLateCount, lastSeenOvertime]);
 }

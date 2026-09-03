@@ -331,6 +331,8 @@ function AdminHome() {
         label: `Punched in at ${statusTimeStr}`,
         isLate: status.isLate,
         minutesLate: status.minutesLate,
+        isExcused: status.isExcused,
+        excuseReason: status.excuseReason,
         punchTimeStr: timeStr,
         isAutoPunchOut: false,
       };
@@ -342,6 +344,7 @@ function AdminHome() {
         label: "No shift today",
         isLate: false,
         minutesLate: 0,
+        isExcused: false,
         punchTimeStr: "",
         isAutoPunchOut: false,
       };
@@ -357,6 +360,8 @@ function AdminHome() {
           : "Not on shift",
       isLate: status.isLate,
       minutesLate: status.minutesLate,
+      isExcused: status.isExcused,
+      excuseReason: status.excuseReason,
       punchTimeStr: timeStr,
       isAutoPunchOut,
     };
@@ -788,6 +793,14 @@ function AdminHome() {
                               >
                                 <AlertTriangle className="h-3 w-3 text-white" />{" "}
                                 {status.minutesLate}m Late
+                              </span>
+                            )}
+                            {status.isExcused && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full mt-0.5 shadow-2xs"
+                                title={status.excuseReason ? `Excused: ${status.excuseReason}` : "Lateness excused by admin"}
+                              >
+                                <ShieldCheck className="h-3 w-3 text-emerald-600" /> Not Late (Excused)
                               </span>
                             )}
                           </div>

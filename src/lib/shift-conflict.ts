@@ -160,7 +160,7 @@ export function getEmployeeAllShiftDefinitions(
     employee.companyMemberships.forEach((m, mIdx) => {
       const cName = companyMap.get(m.companyId) || `Company ${mIdx + 1}`;
       if (m.isMultipleShift && Array.isArray(m.shifts) && m.shifts.length > 0) {
-        m.shifts.forEach((s, idx) => {
+        m.shifts.forEach((s: ShiftInterval, idx: number) => {
           definitions.push({
             id: `membership-${m.companyId}-${idx}`,
             name: s.name || `${cName} Shift ${idx + 1}`,

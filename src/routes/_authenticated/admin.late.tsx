@@ -48,6 +48,7 @@ type LateRecord = {
   minutesLate: number;
   kind: "arrival" | "missing";
   isExcused?: boolean;
+  excuseReason?: string;
   punch?: Punch;
   isEarly?: boolean;
   minutesEarly?: number;
@@ -82,6 +83,14 @@ function LateArrivalsPage() {
   const [manualTime, setManualTime] = useState("09:00");
   const [manualNotes, setManualNotes] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
+
+  // Excuse Reason Modal States
+  const [excuseModal, setExcuseModal] = useState<{
+    punchId: string;
+    employeeName: string;
+    minutesLate: number;
+    reason: string;
+  } | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -160,22 +169,24 @@ function LateArrivalsPage() {
 
           const punchedAt = toDate(punch.timestamp);
           if (!punchedAt) continue;
-          const late = computeEmployeeLateness(punchedAt, cEmp, graceMinutes);
+          const isExcused = Boolean(punch.isExcused);
+          const late = computeEmployeeLateness(punchedAt, cEmp, graceMinutes, isExcused);
 
-          // ONLY show in the Late Log if they are actually late (isLate) or have an excused lateness!
+          // ONLY show in the Late Log if they were naturally late or have an excused lateness!
           // Employees who arrive early or on-time are NOT late and must not appear in the Late Log.
-          if (late.isLate || punch.isExcused) {
+          if (late.naturallyLate || isExcused) {
             result.push({
               id: punch.id,
               employee: cEmp,
               dateKey,
               scheduledAt: late.scheduledAt,
               punchedAt,
-              minutesLate: late.minutes,
+              minutesLate: late.rawMinutes,
               minutesEarly: 0,
               isEarly: false,
               kind: "arrival",
-              isExcused: Boolean(punch.isExcused),
+              isExcused,
+              excuseReason: punch.excuseReason,
               punch,
               companyId: cId,
               companyName: compName,
@@ -250,17 +261,21 @@ function LateArrivalsPage() {
     .filter((record) => !record.isExcused && !record.isEarly)
     .reduce((sum, record) => sum + record.minutesLate, 0);
 
-  async function toggleExcuse(punchId?: string, currentExcused?: boolean) {
+  async function toggleExcuse(punchId?: string, currentExcused?: boolean, reason?: string) {
     if (!punchId) return;
     try {
       await updateDoc(doc(db(), "punches", punchId), {
         isExcused: !currentExcused,
         excusedBy: user?.email || "admin",
         excusedAt: new Date().toISOString(),
+        ...(currentExcused
+          ? { excuseReason: null }
+          : { excuseReason: (reason || "").trim() || "Excused by admin" }),
       });
       toast.success(
         !currentExcused ? "Lateness marked as Not Late (Excused)! ✓" : "Lateness flag restored.",
       );
+      setExcuseModal(null);
     } catch (err) {
       toast.error("Could not update punch status: " + (err as Error).message);
     }
@@ -473,9 +488,19 @@ function LateArrivalsPage() {
                         <UserX className="h-3.5 w-3.5" /> Missing Punch-In
                       </span>
                     ) : record.isExcused ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
-                      </span>
+                      <div>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
+                        </span>
+                        {record.excuseReason && (
+                          <div
+                            className="text-[11px] text-muted-foreground font-medium mt-0.5 max-w-[220px] truncate"
+                            title={record.excuseReason}
+                          >
+                            Reason: {record.excuseReason}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
                         <AlertTriangle className="h-3.5 w-3.5" /> Arrived late
@@ -486,7 +511,18 @@ function LateArrivalsPage() {
                     {record.kind === "arrival" && record.punch ? (
                       <button
                         type="button"
-                        onClick={() => toggleExcuse(record.punch?.id, record.isExcused)}
+                        onClick={() => {
+                          if (record.isExcused) {
+                            toggleExcuse(record.punch?.id, true);
+                          } else {
+                            setExcuseModal({
+                              punchId: record.punch!.id,
+                              employeeName: record.employee.name,
+                              minutesLate: record.minutesLate,
+                              reason: "",
+                            });
+                          }
+                        }}
                         className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
                           record.isExcused
                             ? "bg-secondary text-muted-foreground hover:bg-muted"
@@ -834,6 +870,92 @@ function LateArrivalsPage() {
                 className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
               >
                 {submittingManual ? "Saving..." : "Save Manual Clock-In"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----- Excuse Reason Modal ----- */}
+      {excuseModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 font-bold">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Mark Not Late (Excuse)</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {excuseModal.employeeName} · {excuseModal.minutesLate}m late
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExcuseModal(null)}
+                className="rounded-lg border p-1.5 text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">
+                  Reason for Excusing (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Traffic, Doctor's appointment, Approved by manager"
+                  value={excuseModal.reason}
+                  onChange={(e) =>
+                    setExcuseModal((prev) => (prev ? { ...prev, reason: e.target.value } : null))
+                  }
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                />
+              </div>
+
+              {/* Presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "Traffic / Transit",
+                  "Medical / Doctor",
+                  "Manager Approved",
+                  "System / Network Issue",
+                  "Bad Weather",
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() =>
+                      setExcuseModal((prev) => (prev ? { ...prev, reason: preset } : null))
+                    }
+                    className="rounded-md border bg-secondary/50 px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                  >
+                    + {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={() => setExcuseModal(null)}
+                className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  toggleExcuse(excuseModal.punchId, false, excuseModal.reason)
+                }
+                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors shadow-xs"
+              >
+                Save as Not Late ✓
               </button>
             </div>
           </div>

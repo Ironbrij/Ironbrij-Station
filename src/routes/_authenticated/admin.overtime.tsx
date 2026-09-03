@@ -44,19 +44,24 @@ function AdminOvertimePage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const { user, activeCompanyId } = useAuth();
-  const [statusFilter, setStatusFilter] = useState<OvertimeStatus | "all">("pending");
+  const [statusFilter, setStatusFilter] = useState<OvertimeStatus>("pending");
   const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [filterDept, setFilterDept] = useState("");
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("all");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(50);
 
   useEffect(() => {
     setFilterCompany(activeCompanyId);
   }, [activeCompanyId]);
 
   useEffect(() => {
+    // Clear notification badge
+    localStorage.setItem("lastSeenOvertime", Date.now().toString());
+    window.dispatchEvent(new Event("OVERTIME_SEEN"));
+
     const unsubscribers = [
       onSnapshot(collection(db(), "overtimeRequests"), (snapshot) => {
         const list = snapshot.docs.map((d) => ({
@@ -124,7 +129,7 @@ function AdminOvertimePage() {
     const todayStr = format(now, "yyyy-MM-dd");
 
     return requests.filter((req) => {
-      if (statusFilter !== "all" && req.status !== statusFilter) return false;
+      if (req.status !== statusFilter) return false;
 
       const emp =
         empMap.get(req.employeeId) ||
@@ -155,6 +160,10 @@ function AdminOvertimePage() {
       return true;
     });
   }, [requests, statusFilter, filterCompany, filterDept, filterPeriod, empMap, employees]);
+
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [statusFilter, filterCompany, filterDept, filterPeriod]);
 
   async function handleDecision(requestId: string, status: "approved" | "rejected") {
     setProcessingId(requestId);
@@ -458,16 +467,6 @@ function AdminOvertimePage() {
           >
             Rejected ({counts.rejected})
           </button>
-          <button
-            onClick={() => setStatusFilter("all")}
-            className={`px-3 py-1.5 rounded-md transition-all ${
-              statusFilter === "all"
-                ? "bg-background text-foreground shadow-xs font-bold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            All ({counts.all})
-          </button>
         </div>
 
         {/* Filters */}
@@ -524,125 +523,137 @@ function AdminOvertimePage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 border-b text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Employee</th>
-                  <th className="px-4 py-3">Shift Date</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Normal (Auto)</th>
-                  <th className="px-4 py-3 text-primary font-black">Overtime to Approve</th>
-                  <th className="px-4 py-3">Reason / Shift Note</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {filteredRequests.map((req) => {
-                  const emp = empMap.get(req.employeeId);
-                  const deptName = emp?.deptId ? deptMap.get(emp.deptId) : "General";
-                  const compName = compMap.get(req.companyId) || "Company";
+          <div className="flex flex-col">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-muted/40 border-b text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Shift Date</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Normal (Auto)</th>
+                    <th className="px-4 py-3 text-primary font-black">Overtime to Approve</th>
+                    <th className="px-4 py-3">Reason / Shift Note</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {filteredRequests.slice(0, visibleCount).map((req) => {
+                    const emp = empMap.get(req.employeeId);
+                    const deptName = emp?.deptId ? deptMap.get(emp.deptId) : "General";
+                    const compName = compMap.get(req.companyId) || "Company";
 
-                  return (
-                    <tr key={req.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3.5">
-                        <Link
-                          to="/admin/employees/$id"
-                          params={{ id: emp?.id || req.employeeId }}
-                          className="font-bold text-foreground hover:underline"
-                        >
-                          {req.employeeName || emp?.name || "Employee"}
-                        </Link>
-                        <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
-                          {deptName} · {compName}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 font-medium whitespace-nowrap">{req.date}</td>
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        {req.requestType === "early_clock_in" ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                            Early Clock-In
-                          </span>
-                        ) : req.isOffShiftDay || req.requestType === "off_shift_work" ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                            Off-Day / Holiday
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                            Post-Shift
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap text-muted-foreground font-semibold">
-                        {formatWorkMinutes(req.normalWorkMinutes || 0)}
-                        <span className="text-[10px] text-muted-foreground/80 block font-normal">
-                          (auto-counted)
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="inline-flex items-center font-bold text-sm bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20">
-                          +{formatWorkMinutes(req.overtimeMinutes)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 max-w-xs text-muted-foreground font-medium truncate">
-                        {req.reason}
-                      </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        {req.status === "approved" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                            <CheckCircle2 className="h-3 w-3" /> Approved
-                          </span>
-                        ) : req.status === "rejected" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                            <XCircle className="h-3 w-3" /> Rejected
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                            <Clock3 className="h-3 w-3" /> Pending Review
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        {req.status === "pending" ? (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              onClick={() => handleDecision(req.id, "rejected")}
-                              disabled={processingId === req.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition-all disabled:opacity-50"
-                            >
-                              <UserX className="h-3.5 w-3.5" /> Reject
-                            </button>
-                            <button
-                              onClick={() => handleDecision(req.id, "approved")}
-                              disabled={processingId === req.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
-                            >
-                              <UserCheck className="h-3.5 w-3.5" /> Accept
-                            </button>
+                    return (
+                      <tr key={req.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3.5">
+                          <Link
+                            to="/admin/employees/$id"
+                            params={{ id: emp?.id || req.employeeId }}
+                            className="font-bold text-foreground hover:underline"
+                          >
+                            {req.employeeName || emp?.name || "Employee"}
+                          </Link>
+                          <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
+                            {deptName} · {compName}
                           </div>
-                        ) : (
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              onClick={() =>
-                                handleDecision(
-                                  req.id,
-                                  req.status === "approved" ? "rejected" : "approved",
-                                )
-                              }
-                              disabled={processingId === req.id}
-                              className="text-xs text-muted-foreground hover:text-foreground font-semibold px-2 py-1 rounded-md border hover:bg-muted transition-colors"
-                            >
-                              {req.status === "approved" ? "Change to Reject" : "Change to Approve"}
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="px-4 py-3.5 font-medium whitespace-nowrap">{req.date}</td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {req.requestType === "early_clock_in" ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              Early Clock-In
+                            </span>
+                          ) : req.isOffShiftDay || req.requestType === "off_shift_work" ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              Off-Day / Holiday
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              Post-Shift
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-muted-foreground font-semibold">
+                          {formatWorkMinutes(req.normalWorkMinutes || 0)}
+                          <span className="text-[10px] text-muted-foreground/80 block font-normal">
+                            (auto-counted)
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className="inline-flex items-center font-bold text-sm bg-primary/10 text-primary px-2.5 py-1 rounded-md border border-primary/20">
+                            +{formatWorkMinutes(req.overtimeMinutes)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 max-w-xs text-muted-foreground font-medium truncate">
+                          {req.reason}
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {req.status === "approved" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle2 className="h-3 w-3" /> Approved
+                            </span>
+                          ) : req.status === "rejected" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                              <XCircle className="h-3 w-3" /> Rejected
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              <Clock3 className="h-3 w-3" /> Pending Review
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          {req.status === "pending" ? (
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleDecision(req.id, "rejected")}
+                                disabled={processingId === req.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition-all disabled:opacity-50"
+                              >
+                                <UserX className="h-3.5 w-3.5" /> Reject
+                              </button>
+                              <button
+                                onClick={() => handleDecision(req.id, "approved")}
+                                disabled={processingId === req.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
+                              >
+                                <UserCheck className="h-3.5 w-3.5" /> Accept
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() =>
+                                  handleDecision(
+                                    req.id,
+                                    req.status === "approved" ? "rejected" : "approved",
+                                  )
+                                }
+                                disabled={processingId === req.id}
+                                className="text-xs text-muted-foreground hover:text-foreground font-semibold px-2 py-1 rounded-md border hover:bg-muted transition-colors"
+                              >
+                                {req.status === "approved" ? "Change to Reject" : "Change to Approve"}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {filteredRequests.length > visibleCount && (
+              <div className="p-4 border-t flex justify-center bg-muted/10">
+                <button
+                  onClick={() => setVisibleCount((v) => v + 50)}
+                  className="rounded-xl border bg-background px-4 py-2 text-xs font-semibold text-foreground shadow-xs hover:bg-muted transition-all"
+                >
+                  Load More ({filteredRequests.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

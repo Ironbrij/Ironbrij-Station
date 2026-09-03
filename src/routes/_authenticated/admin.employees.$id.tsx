@@ -251,9 +251,15 @@ function EmployeeDetail() {
       const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
       const isOffShiftDay = !isScheduledDay;
 
+      const isExcused = Boolean(firstIn?.isExcused);
       const lateness =
         firstIn && isScheduledDay
-          ? computeEmployeeLateness(toDate(firstIn.timestamp) ?? new Date(), employee, graceMinutes)
+          ? computeEmployeeLateness(
+              toDate(firstIn.timestamp) ?? new Date(),
+              employee,
+              graceMinutes,
+              isExcused,
+            )
           : null;
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const attendanceCalculation = firstIn
@@ -333,9 +339,11 @@ function EmployeeDetail() {
                   ? lateness?.isLate
                     ? "Auto punched out · Late"
                     : "Auto punched out"
-                  : lateness?.isLate
-                    ? "Late"
-                    : "On time",
+                  : isExcused
+                    ? "Excused (Not Late)"
+                    : lateness?.isLate
+                      ? "Late"
+                      : "On time",
       });
     }
     return output.sort((a, b) => b.date.localeCompare(a.date));
