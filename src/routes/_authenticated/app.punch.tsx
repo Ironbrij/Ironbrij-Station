@@ -145,7 +145,7 @@ function PunchPage() {
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
 
   const companyPunches = useMemo(
-    () => allPunches.filter((punch) => getPunchCompanyId(punch, employee) === activeCompanyId),
+    () => getEmployeePunchesForCompany(allPunches, employee, activeCompanyId, company?.name),
     [activeCompanyId, allPunches, employee],
   );
 
@@ -467,7 +467,7 @@ function PunchPage() {
       // Auto-close any previous active session across other companies to strictly enforce single active company
       if ((targetType === "in" || targetType === "extra_in") && activeOtherCompany) {
         const prevCompanyId = activeOtherCompany.companyId;
-        const prevPunches = getEmployeePunchesForCompany(allPunches, employee, prevCompanyId);
+        const prevPunches = getEmployeePunchesForCompany(allPunches, employee, prevCompanyId, company?.name);
         const latestPrev = prevPunches[prevPunches.length - 1];
         if (
           latestPrev &&

@@ -846,9 +846,9 @@ export function getActiveWorkingSession(
     return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 
-  const activeCompanyId = getPunchCompanyId(latestGlobal, employee);
+  const activeCompanyId = getPunchCompanyId(latestGlobal, employee, companies);
   const companyEmployee = getEmployeeForCompany(employee, activeCompanyId);
-  const companyPunches = sorted.filter((p) => getPunchCompanyId(p, employee) === activeCompanyId);
+  const companyPunches = sorted.filter((p) => getPunchCompanyId(p, employee, companies) === activeCompanyId);
   const comp = companies.find(
     (c) => normalizeCompanyId(c.id) === normalizeCompanyId(activeCompanyId),
   );

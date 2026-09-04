@@ -193,15 +193,26 @@ export function getRequiredWorkMinutes(
   return DEFAULT_REQUIRED_WORK_MINUTES;
 }
 
-export function getPunchCompanyId(punch: Punch, employee?: Employee | null): string {
-  const rawId = punch.companyId || employee?.companyIds?.[0] || employee?.companyId || COMPANY_ID;
-  return normalizeCompanyId(rawId);
+export function getPunchCompanyId(
+  punch: Punch,
+  employee?: Employee | null,
+  companies: Company[] = [],
+): string {
+  if (punch.companyId) return normalizeCompanyId(punch.companyId);
+  if (punch.companyName) {
+    const namedCompany = companies.find(
+      (company) => company.name?.trim().toLowerCase() === punch.companyName?.trim().toLowerCase(),
+    );
+    if (namedCompany?.id) return normalizeCompanyId(namedCompany.id);
+  }
+  return normalizeCompanyId(employee?.companyId || COMPANY_ID);
 }
 
 export function getEmployeePunchesForCompany(
   punches: Punch[],
   employee: Employee | null | undefined,
   companyId: string,
+  companyName?: string,
 ): Punch[] {
   const empIds = employee
     ? new Set([employee.id, employee.authUid].filter(Boolean) as string[])
@@ -212,6 +223,8 @@ export function getEmployeePunchesForCompany(
     if (empIds && punch.employeeId && !empIds.has(punch.employeeId)) {
       return false;
     }
+    if (punch.companyId) return normalizeCompanyId(punch.companyId) === targetCId;
+    if (companyName && punch.companyName) return punch.companyName.trim().toLowerCase() === companyName.trim().toLowerCase();
     return normalizeCompanyId(getPunchCompanyId(punch, employee)) === targetCId;
   });
 }

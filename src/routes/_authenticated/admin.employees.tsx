@@ -36,6 +36,7 @@ import {
   cleanFirestoreData,
   getCompanyMembership,
   getEmployeeCompanyIds,
+  normalizeCompanyId,
 } from "@/lib/company-context";
 import { findShiftConflicts, type ShiftDefinition } from "@/lib/shift-conflict";
 import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
@@ -1156,30 +1157,37 @@ function CompanyMembershipSettings({
               </div>
             </div>
 
-            {/* Department for this company (only needed when employee is allocated to multiple companies) */}
-            {selectedCompanyIds.length > 1 && (
-              <div className="pt-2 border-t mt-2">
-                <label className="text-xs font-semibold text-foreground">
-                  Department for {companyName}
-                </label>
-                <select
-                  value={membership.departmentId || mainDeptId || ""}
-                  onChange={(e) => update(companyId, { departmentId: e.target.value })}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
-                >
-                  <option value="">
-                    {mainDeptId
-                      ? `Use main (${departments.find((d) => d.id === mainDeptId)?.name || "General"})`
-                      : "No department / General"}
-                  </option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
+            {/* Department for this company — filtered to only show departments belonging to this company */}
+            {(() => {
+              const nCId = normalizeCompanyId(companyId);
+              const companyDepts = departments.filter((d) => {
+                const dCId = normalizeCompanyId(d.companyId || COMPANY_ID);
+                return dCId === nCId;
+              });
+              // If no departments exist for this company, show all as fallback
+              const deptOptions = companyDepts;
+              return (
+                <div className="pt-2 border-t mt-2">
+                  <label className="text-xs font-semibold text-foreground">
+                    Department for {companyName}
+                  </label>
+                  <select
+                    value={membership.departmentId || ""}
+                    onChange={(e) => update(companyId, { departmentId: e.target.value })}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
+                  >
+                    <option value="">
+                      No department / General
                     </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                    {deptOptions.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
           </div>
         );
       })}
@@ -1226,14 +1234,11 @@ export function PromoteModal({
     const emailChanged = cleanEmail && cleanEmail !== (emp.email || "").toLowerCase().trim();
 
     try {
-      const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
+      const finalCompanyIds = selectedCompanyIds;
       const normalizedMemberships = Object.fromEntries(
         finalCompanyIds.map((companyId) => {
           const mem = companyMemberships[companyId] || {};
-          const resolvedDeptId =
-            finalCompanyIds.length > 1
-              ? (mem.departmentId || deptId)
-              : deptId;
+          const resolvedDeptId = mem.departmentId || deptId;
           return [
             companyId,
             buildCompanyMembership(companyId, {
@@ -1251,7 +1256,7 @@ export function PromoteModal({
           name: cleanName,
           email: cleanEmail || emp.email,
           jobTitle: jobTitle.trim() || emp.jobTitle,
-          deptId: deptId || "",
+          deptId: primaryMembership?.departmentId || deptId || "",
           companyId: finalCompanyIds[0],
           companyIds: finalCompanyIds,
           companyMemberships: normalizedMemberships,
@@ -1348,41 +1353,7 @@ export function PromoteModal({
         <Field label="Full name" value={name} onChange={setName} />
         <Field label="Email address" type="email" value={email} onChange={setEmail} />
         <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
-        {selectedCompanyIds.length <= 1 && (
-        <div>
-          <label className="text-sm font-medium">Department</label>
-          <select
-            value={deptId}
-            onChange={(e) => {
-              const newDeptId = e.target.value;
-              setDeptId(newDeptId);
-              const departmentState = depts.find(
-                (department) => department.id === newDeptId,
-              )?.state;
-              if (departmentState) setState(normalizeState(departmentState));
-              if (selectedCompanyIds.length <= 1) {
-                setCompanyMemberships((current) => {
-                  const updated = { ...current };
-                  selectedCompanyIds.forEach((cId) => {
-                    if (updated[cId]) {
-                      updated[cId] = { ...updated[cId], departmentId: newDeptId };
-                    }
-                  });
-                  return updated;
-                });
-              }
-            }}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
-          >
-            <option value="">Select department</option>
-            {depts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        )}
+
         <div>
           <label className="text-sm font-medium">Company Allocation</label>
           <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
@@ -1433,7 +1404,7 @@ export function PromoteModal({
           value={companyMemberships}
           onChange={setCompanyMemberships}
           departments={depts}
-          mainDeptId={deptId}
+          mainDeptId={undefined}
         />
         <div>
           <label className="text-sm font-medium">Employee location</label>
@@ -1495,21 +1466,14 @@ function NewEmployeeForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [jobTitle, setJobTitle] = useState("");
-  const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([activeCompanyId || COMPANY_ID]);
+  const [deptId, setDeptId] = useState("");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [companyMemberships, setCompanyMemberships] = useState<Record<string, CompanyMembership>>(
     () =>
-      initialMemberships(null, [activeCompanyId || COMPANY_ID], {
-        requiredWorkMinutes: 480,
-        shiftStartTime: "09:00",
-        shiftEndTime: "17:00",
-        shiftTimezone: DEFAULT_SHIFT_TIMEZONE,
-      }),
+      initialMemberships(null, []),
   );
   const [country, setCountry] = useState<CountryCode>("PH");
-  const [state, setState] = useState(
-    normalizeState(departments.find((department) => department.id === departments[0]?.id)?.state),
-  );
+  const [state, setState] = useState("N/A");
   const [shiftTimezone, setShiftTimezone] = useState(DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState("09:00");
   const [shiftEndTime, setShiftEndTime] = useState("17:00");
@@ -1518,7 +1482,7 @@ function NewEmployeeForm({
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [createdEmpId, setCreatedEmpId] = useState<string | null>(null);
   const [inviteEmailSent, setInviteEmailSent] = useState<boolean | null>(null);
-  const { user, company, activeCompanyId } = useAuth();
+  const { user, company } = useAuth();
   const navigate = useNavigate();
 
   async function submit(e: React.FormEvent) {
@@ -1526,20 +1490,21 @@ function NewEmployeeForm({
     const cleanEmail = email.toLowerCase().trim();
     const cleanName = name.trim();
     if (!cleanEmail || !cleanName) return;
+    if (selectedCompanyIds.length === 0) {
+      toast.error("Select at least one company before creating the employee.");
+      return;
+    }
     setBusy(true);
     const empRef = doc(collection(db(), "employees"));
     const empId = empRef.id;
     const token = crypto.randomUUID().replace(/-/g, "");
     const inviteUrl = `${window.location.origin}/invite/${token}`;
     try {
-      const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
+      const finalCompanyIds = selectedCompanyIds;
       const normalizedMemberships = Object.fromEntries(
         finalCompanyIds.map((companyId) => {
           const mem = companyMemberships[companyId] || {};
-          const resolvedDeptId =
-            finalCompanyIds.length > 1
-              ? (mem.departmentId || deptId)
-              : deptId;
+          const resolvedDeptId = mem.departmentId || deptId;
           return [
             companyId,
             buildCompanyMembership(companyId, {
@@ -1592,7 +1557,7 @@ function NewEmployeeForm({
             companyId: finalCompanyIds[0],
             companyIds: finalCompanyIds,
             companyMemberships: normalizedMemberships,
-            deptId: deptId || "",
+            deptId: primaryMembership?.departmentId || deptId || "",
             name: cleanName,
             email: cleanEmail,
             jobTitle: jobTitle.trim() || "Virtual Assistant",
@@ -1737,43 +1702,8 @@ function NewEmployeeForm({
           <Field label="Full name" value={name} onChange={setName} />
           <Field label="Email" type="email" value={email} onChange={setEmail} />
           <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
-          {selectedCompanyIds.length <= 1 && (
-          <div>
-            <label className="text-sm font-medium">Department</label>
-            <select
-              required
-              value={deptId}
-              onChange={(e) => {
-                const newDeptId = e.target.value;
-                setDeptId(newDeptId);
-                setState(
-                  normalizeState(
-                    departments.find((department) => department.id === newDeptId)?.state,
-                  ),
-                );
-                if (selectedCompanyIds.length <= 1) {
-                  setCompanyMemberships((current) => {
-                    const updated = { ...current };
-                    selectedCompanyIds.forEach((cId) => {
-                      if (updated[cId]) {
-                        updated[cId] = { ...updated[cId], departmentId: newDeptId };
-                      }
-                    });
-                    return updated;
-                  });
-                }
-              }}
-              className="mt-1 w-full rounded-md border px-3 py-2 bg-background font-medium"
-            >
-              <option value="">Select department</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          )}
+
+
           <div>
             <label className="text-sm font-medium">Company Allocation</label>
             <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
@@ -1824,7 +1754,7 @@ function NewEmployeeForm({
             value={companyMemberships}
             onChange={setCompanyMemberships}
             departments={departments}
-            mainDeptId={deptId}
+            mainDeptId={undefined}
           />
           <div>
             <label className="text-sm font-medium">Employee location</label>

@@ -198,7 +198,7 @@ function LateArrivalsPage() {
         const compName =
           comp?.name ||
           (normalizeCompanyId(cId) === COMPANY_ID ? "Main Company" : cId);
-        const cPunches = getEmployeePunchesForCompany(punches, employee, cId);
+        const cPunches = getEmployeePunchesForCompany(punches, employee, cId, comp?.name);
         const shiftTimezone = getShiftTimezone(cEmp);
         const todayKey = zonedDateKey(today, shiftTimezone);
 
@@ -274,6 +274,20 @@ function LateArrivalsPage() {
           }
         }
 
+        // An active punch in this company is authoritative. This also protects
+        // against legacy records whose attendanceDate used a different timezone.
+        const latestCompanyPunch = [...cPunches]
+          .filter((p) => p.timestamp)
+          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))
+          .at(-1);
+        const hasActiveCompanyPunch = Boolean(
+          latestCompanyPunch &&
+          (latestCompanyPunch.type === "in" ||
+            latestCompanyPunch.type === "extra_in" ||
+            latestCompanyPunch.type === "lunch_start" ||
+            latestCompanyPunch.type === "lunch_end"),
+        );
+
         // Only show today's missing if scheduled today and overdue
         if (
           status.shift.dateKey === todayKey &&
@@ -282,7 +296,12 @@ function LateArrivalsPage() {
           status.isMissingLate
         ) {
           // 1. If already punched in for this company/shift: NEVER show as missing!
-          if (firstByShiftDate.has(todayKey) || firstByShiftDate.has(status.shift.dateKey)) {
+          if (
+            status.isPunchedIn ||
+            hasActiveCompanyPunch ||
+            firstByShiftDate.has(todayKey) ||
+            firstByShiftDate.has(status.shift.dateKey)
+          ) {
             continue;
           }
 
