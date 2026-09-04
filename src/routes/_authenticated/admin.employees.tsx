@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -269,6 +269,17 @@ function EmployeesListPage() {
       (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
     );
 
+  const duplicateGroups = useMemo(() => {
+    const groups = new Map<string, Employee[]>();
+    for (const employee of employees ?? []) {
+      const identity = (employee.email || employee.authUid || "").trim().toLowerCase();
+      if (!identity) continue;
+      const group = groups.get(identity) || [];
+      group.push(employee);
+      groups.set(identity, group);
+    }
+    return Array.from(groups.values()).filter((group) => group.length > 1);
+  }, [employees]);
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -331,6 +342,33 @@ function EmployeesListPage() {
         </select>
       </div>
 
+      {duplicateGroups.length > 0 && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50/60 p-4 shadow-xs dark:border-amber-700 dark:bg-amber-950/20">
+          <h2 className="font-bold text-amber-900 dark:text-amber-200">Duplicate employee records ({duplicateGroups.length})</h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Keep the record with the correct login and attendance history. Remove the extra record so it cannot create duplicate Late Log entries.</p>
+          <div className="mt-3 space-y-2">
+            {duplicateGroups.map((group) => (
+              <div key={(group[0].email || group[0].authUid || group[0].id).toLowerCase()} className="rounded-md border border-amber-200 bg-background p-3 dark:border-amber-800">
+                <div className="mb-2 text-xs font-semibold text-muted-foreground">Identity: {group[0].email || group[0].authUid || "Unknown"}</div>
+                <div className="space-y-2">
+                  {group.map((employee) => (
+                    <div key={employee.id} className="flex flex-wrap items-center justify-between gap-2 rounded border bg-card px-3 py-2">
+                      <div className="min-w-0 text-sm">
+                        <Link to="/admin/employees/$id" params={{ id: employee.id }} className="font-bold text-primary hover:underline">{employee.name || "Unnamed employee"}</Link>
+                        <div className="truncate text-xs text-muted-foreground">{employee.jobTitle || "No title"} · Record {employee.id.slice(0, 10)} · {employee.status || "unknown"}</div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button type="button" onClick={() => setEmpToPromote(employee)} className="rounded border px-2.5 py-1 text-xs font-semibold">Edit / Keep</button>
+                        <button type="button" onClick={() => setEmpToDelete(employee)} className="rounded border border-rose-500/40 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-600 hover:text-white">Remove duplicate</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="mt-4 rounded-xl border bg-card overflow-hidden shadow-xs">
         {employees === null ? (
           <div className="p-6 space-y-2">
