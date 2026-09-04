@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkTwoShiftsConflict,
   findShiftConflicts,
+  getEmployeeAllShiftDefinitions,
   type ShiftDefinition,
 } from "../src/lib/shift-conflict.ts";
 
@@ -82,3 +83,38 @@ test("cross-company overlapping shifts are flagged by findShiftConflicts", () =>
   assert.equal(conflicts[0].company1Name, "Ironbrij");
   assert.equal(conflicts[0].company2Name, "Savykids");
 });
+
+test("single-company employee with companyMemberships does not produce duplicate Primary Shift conflicts", () => {
+  const employee = {
+    id: "emp-andre",
+    name: "Andre Pasumbal",
+    companyId: "default",
+    companyIds: ["default"],
+    shiftStartTime: "06:00",
+    shiftEndTime: "15:00",
+    workingDays: [1, 2, 3, 4, 5],
+    companyMemberships: {
+      default: {
+        companyId: "default",
+        shiftStartTime: "06:00",
+        shiftEndTime: "15:00",
+        workingDays: [1, 2, 3, 4, 5],
+      },
+    },
+  } as any;
+
+  const companies = [
+    { id: "default", name: "ironbrij", workingDays: [1, 2, 3, 4, 5] },
+  ] as any;
+
+  const defs = getEmployeeAllShiftDefinitions(employee, companies);
+  // Must only contain 1 shift definition (ironbrij Shift), not a duplicate "Primary Shift"
+  assert.equal(defs.length, 1);
+  assert.equal(defs[0].name, "ironbrij Shift");
+  assert.equal(defs[0].startTime, "06:00");
+  assert.equal(defs[0].endTime, "15:00");
+
+  const conflicts = findShiftConflicts(defs);
+  assert.equal(conflicts.length, 0);
+});
+

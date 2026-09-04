@@ -199,9 +199,26 @@ function LateArrivalsPage() {
             firstByShiftDate.set(dateKey, punch);
         }
 
+        const status = getLiveAttendanceStatus(
+          cEmp,
+          cPunches,
+          today,
+          graceMinutes,
+          comp?.workingDays,
+          getEmployeeHolidayDates(comp, cEmp),
+        );
+        const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
+          cEmp,
+          leaves,
+          status.shift.dateKey,
+        );
+
         for (const [dateKey, punch] of firstByShiftDate) {
           // Only show today's logs
           if (dateKey !== todayKey) continue;
+
+          // If not a scheduled working day for this company, punches are off-schedule / overtime, NOT late arrivals!
+          if (!status.isScheduledDay) continue;
 
           const approvedLeave = getEmployeeApprovedLeaveForDate(cEmp, leaves, dateKey);
           if (approvedLeave) continue;
@@ -239,20 +256,6 @@ function LateArrivalsPage() {
             });
           }
         }
-
-        const status = getLiveAttendanceStatus(
-          cEmp,
-          cPunches,
-          today,
-          graceMinutes,
-          comp?.workingDays,
-          getEmployeeHolidayDates(comp, cEmp),
-        );
-        const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
-          cEmp,
-          leaves,
-          status.shift.dateKey,
-        );
 
         // Only show today's missing if scheduled today and overdue
         if (

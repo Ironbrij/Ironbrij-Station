@@ -238,10 +238,17 @@ function AdminHome() {
           uniqueMap.set(key, e);
         }
       }
-      list = Array.from(uniqueMap.values());
+      list = Array.from(uniqueMap.values()).map((e) => {
+        const primaryCId = getEmployeeCompanyIds(e)[0] || COMPANY_ID;
+        return getEmployeeForCompany(e, primaryCId);
+      });
     } else {
       list = employees
-        .filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId))
+        .filter((e) =>
+          getEmployeeCompanyIds(e)
+            .map(normalizeCompanyId)
+            .includes(normalizeCompanyId(activeCompanyId)),
+        )
         .map((e) => getEmployeeForCompany(e, activeCompanyId));
     }
     return list.sort((a, b) =>
@@ -350,8 +357,12 @@ function AdminHome() {
       };
     }
 
-    const cEmp = getEmployeeForCompany(emp, activeCompanyId);
-    const targetCompId = cEmp.companyId || emp.companyId || (activeCompanyId !== "all" ? activeCompanyId : COMPANY_ID);
+    const primaryCId = getEmployeeCompanyIds(emp)[0] || COMPANY_ID;
+    const cEmp =
+      activeCompanyId === "all"
+        ? getEmployeeForCompany(emp, primaryCId)
+        : getEmployeeForCompany(emp, activeCompanyId);
+    const targetCompId = cEmp.companyId || emp.companyId || (activeCompanyId !== "all" ? activeCompanyId : primaryCId);
     const empComp =
       companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(targetCompId)) ||
       companies.find((c) => c.name?.trim().toLowerCase() === targetCompId?.trim().toLowerCase()) ||
@@ -473,15 +484,26 @@ function AdminHome() {
     });
     const isMissingLate = status.isMissingLate && !hasPunchCoveringShift;
 
+    const isShiftEndedWithoutPunch =
+      status.isScheduledDay &&
+      !status.isPunchedIn &&
+      !status.latest &&
+      !hasPunchCoveringShift &&
+      now.getTime() > status.shift.end.getTime();
+
     return {
       type: "out" as const,
       label: isMissingLate
         ? "Not punched in"
-        : status.latest
-          ? `${isAutoPunchOut ? "Auto punched out" : "Punched out"} at ${statusTimeStr}${lastPunchCompanyName}`
-          : hasPunchCoveringShift
-            ? "Worked on another client shift"
-            : "Not on shift",
+        : isShiftEndedWithoutPunch
+          ? "Missed shift"
+          : status.latest
+            ? `${isAutoPunchOut ? "Auto punched out" : "Punched out"} at ${statusTimeStr}${lastPunchCompanyName}`
+            : hasPunchCoveringShift
+              ? "Worked on another client shift"
+              : now.getTime() < status.shift.start.getTime()
+                ? "Shift not started"
+                : "Not on shift",
       isLate: isMissingLate,
       minutesLate: isMissingLate ? status.minutesLate : 0,
       isExcused: status.isExcused,

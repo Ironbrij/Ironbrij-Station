@@ -1,5 +1,10 @@
-import type { Employee, ShiftInterval, CompanyMembership, Company } from "./types.ts";
+import { COMPANY_ID, type Employee, type ShiftInterval, type CompanyMembership, type Company } from "./types.ts";
 import { formatWorkMinutes } from "./attendance-calculation.ts";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  normalizeCompanyId,
+} from "./company-context.ts";
 
 export interface ShiftDefinition {
   id?: string;
@@ -129,69 +134,76 @@ export function getEmployeeAllShiftDefinitions(
   const definitions: ShiftDefinition[] = [];
   const companyMap = new Map(companies.map((c) => [c.id, c.name]));
 
-  // 1. Primary shifts
-  if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
-    employee.shifts.forEach((s, idx) => {
-      definitions.push({
-        id: s.id || `shift-${idx}`,
-        name: s.name || `Shift ${idx + 1}`,
-        startTime: s.startTime || "09:00",
-        endTime: s.endTime || "17:00",
-        workingDays:
-          Array.isArray(s.workingDays) && s.workingDays.length > 0
-            ? s.workingDays
-            : employee.workingDays || [0, 1, 2, 3, 4, 5],
-        companyId: employee.companyId,
-        companyName: companyMap.get(employee.companyId || "") || "Primary Company",
-      });
-    });
-  } else if (employee.shiftStartTime && employee.shiftEndTime) {
-    definitions.push({
-      id: "primary-single",
-      name: "Primary Shift",
-      startTime: employee.shiftStartTime,
-      endTime: employee.shiftEndTime,
-      workingDays: employee.workingDays || [0, 1, 2, 3, 4, 5],
-      companyId: employee.companyId,
-      companyName: companyMap.get(employee.companyId || "") || "Primary Company",
-    });
-  }
+  const companyIds = getEmployeeCompanyIds(employee);
 
-  // 2. Cross-company memberships
-  const memberships: CompanyMembership[] = Array.isArray(employee.companyMemberships)
-    ? employee.companyMemberships
-    : Object.values(employee.companyMemberships || {});
+  if (companyIds.length > 0) {
+    for (const cId of companyIds) {
+      const cEmp = getEmployeeForCompany(employee, cId);
+      const comp =
+        companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(cId)) ||
+        companies.find((c) => c.name?.trim().toLowerCase() === cId.trim().toLowerCase());
+      const cName =
+        comp?.name ||
+        companyMap.get(cId) ||
+        (normalizeCompanyId(cId) === COMPANY_ID ? "Ironbrij" : cId);
 
-  memberships.forEach((m, mIdx) => {
-    if (!m || !m.companyId) return;
-    const cName = companyMap.get(m.companyId) || `Company ${mIdx + 1}`;
-    if (m.isMultipleShift && Array.isArray(m.shifts) && m.shifts.length > 0) {
-      m.shifts.forEach((s: ShiftInterval, idx: number) => {
+      if (cEmp.isMultipleShift && Array.isArray(cEmp.shifts) && cEmp.shifts.length > 0) {
+        cEmp.shifts.forEach((s, idx) => {
+          definitions.push({
+            id: s.id || `membership-${cId}-${idx}`,
+            name: s.name || `${cName} Shift ${idx + 1}`,
+            startTime: s.startTime || "09:00",
+            endTime: s.endTime || "17:00",
+            workingDays:
+              Array.isArray(s.workingDays) && s.workingDays.length > 0
+                ? s.workingDays
+                : cEmp.workingDays || [0, 1, 2, 3, 4, 5],
+            companyId: cId,
+            companyName: cName,
+          });
+        });
+      } else if (cEmp.shiftStartTime && cEmp.shiftEndTime) {
         definitions.push({
-          id: `membership-${m.companyId}-${idx}`,
-          name: s.name || `${cName} Shift ${idx + 1}`,
+          id: `membership-${cId}`,
+          name: `${cName} Shift`,
+          startTime: cEmp.shiftStartTime,
+          endTime: cEmp.shiftEndTime,
+          workingDays: cEmp.workingDays || [0, 1, 2, 3, 4, 5],
+          companyId: cId,
+          companyName: cName,
+        });
+      }
+    }
+  } else {
+    // Fallback for legacy employee with no company assigned
+    const cName = companyMap.get(employee.companyId || "") || "Primary Company";
+    if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
+      employee.shifts.forEach((s, idx) => {
+        definitions.push({
+          id: s.id || `shift-${idx}`,
+          name: s.name || `Shift ${idx + 1}`,
           startTime: s.startTime || "09:00",
           endTime: s.endTime || "17:00",
           workingDays:
             Array.isArray(s.workingDays) && s.workingDays.length > 0
               ? s.workingDays
-              : m.workingDays || [0, 1, 2, 3, 4, 5],
-          companyId: m.companyId,
+              : employee.workingDays || [0, 1, 2, 3, 4, 5],
+          companyId: employee.companyId,
           companyName: cName,
         });
       });
-    } else if (m.shiftStartTime && m.shiftEndTime) {
+    } else if (employee.shiftStartTime && employee.shiftEndTime) {
       definitions.push({
-        id: `membership-${m.companyId}`,
-        name: `${cName} Shift`,
-        startTime: m.shiftStartTime,
-        endTime: m.shiftEndTime,
-        workingDays: m.workingDays || [0, 1, 2, 3, 4, 5],
-        companyId: m.companyId,
+        id: "primary-single",
+        name: "Primary Shift",
+        startTime: employee.shiftStartTime,
+        endTime: employee.shiftEndTime,
+        workingDays: employee.workingDays || [0, 1, 2, 3, 4, 5],
+        companyId: employee.companyId,
         companyName: cName,
       });
     }
-  });
+  }
 
   return definitions;
 }
