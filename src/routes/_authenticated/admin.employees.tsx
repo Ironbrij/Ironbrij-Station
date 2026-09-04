@@ -244,17 +244,7 @@ function EmployeesListPage() {
     }
   }
 
-  const uniqueEmps = new Map<string, Employee>();
-  (employees ?? []).forEach((e) => {
-    const emailStr = (e.email || e.id || "").toLowerCase().trim();
-    if (!emailStr) return;
-    const existing = uniqueEmps.get(emailStr);
-    if (!existing || (existing.inviteStatus === "pending" && e.inviteStatus === "accepted")) {
-      uniqueEmps.set(emailStr, e);
-    }
-  });
-
-  const filtered = Array.from(uniqueEmps.values())
+  const filtered = (employees ?? [])
     .filter((e) => {
       if (filterCompany !== "all") {
         const matchComp =

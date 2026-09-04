@@ -104,12 +104,12 @@ function AcceptInvite() {
       const empSnap = await getDoc(doc(db(), "employees", invite.employeeId));
       const empData = empSnap.exists() ? empSnap.data() : {};
 
-      // Save employee record and update invite token simultaneously (client only writes to its own authUid)
+      // Link the invited employee record to Auth without creating a second employee document
       await Promise.all([
-        setDoc(doc(db(), "employees", cred.user.uid), {
-          ...empData,
+        updateDoc(doc(db(), "employees", invite.employeeId), {
           authUid: cred.user.uid,
           inviteStatus: "accepted",
+          email: cred.user.email?.toLowerCase().trim() || invite.email.toLowerCase().trim(),
         }),
         updateDoc(doc(db(), "invites", token), { used: true }),
       ]);
@@ -135,12 +135,12 @@ function AcceptInvite() {
       const empSnap = await getDoc(doc(db(), "employees", invite.employeeId));
       const empData = empSnap.exists() ? empSnap.data() : {};
 
-      // Save employee record and update invite token simultaneously
+      // Link the invited employee record to Auth without creating a second employee document
       await Promise.all([
-        setDoc(doc(db(), "employees", cred.user.uid), {
-          ...empData,
+        updateDoc(doc(db(), "employees", invite.employeeId), {
           authUid: cred.user.uid,
           inviteStatus: "accepted",
+          email: cred.user.email?.toLowerCase().trim() || invite.email.toLowerCase().trim(),
         }),
         updateDoc(doc(db(), "invites", token), { used: true }),
       ]);
