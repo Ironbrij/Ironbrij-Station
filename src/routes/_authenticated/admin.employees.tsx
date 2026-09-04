@@ -535,12 +535,17 @@ function initialMemberships(
   defaults?: Partial<CompanyMembership>,
 ): Record<string, CompanyMembership> {
   return Object.fromEntries(
-    companyIds.map((companyId) => [
-      companyId,
-      employee
-        ? buildCompanyMembership(companyId, getCompanyMembership(employee, companyId))
-        : buildCompanyMembership(companyId, defaults || {}),
-    ]),
+    companyIds.map((companyId) => {
+      const existing = employee ? getCompanyMembership(employee, companyId) : defaults || {};
+      const fallbackDeptId = employee?.deptId || defaults?.departmentId || "";
+      return [
+        companyId,
+        buildCompanyMembership(companyId, {
+          ...existing,
+          departmentId: existing.departmentId || fallbackDeptId,
+        }),
+      ];
+    }),
   );
 }
 
@@ -591,12 +596,14 @@ function CompanyMembershipSettings({
   value,
   onChange,
   departments = [],
+  mainDeptId,
 }: {
   companies: Company[];
   selectedCompanyIds: string[];
   value: Record<string, CompanyMembership>;
   onChange: (memberships: Record<string, CompanyMembership>) => void;
   departments?: Department[];
+  mainDeptId?: string;
 }) {
   if (selectedCompanyIds.length === 0) return null;
 
@@ -1149,24 +1156,30 @@ function CompanyMembershipSettings({
               </div>
             </div>
 
-            {/* Department for this company */}
-            <div className="pt-2 border-t mt-2">
-              <label className="text-xs font-semibold text-foreground">
-                Department for {companyName}
-              </label>
-              <select
-                value={membership.departmentId || ""}
-                onChange={(e) => update(companyId, { departmentId: e.target.value })}
-                className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
-              >
-                <option value="">No department / General</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+            {/* Department for this company (only needed when employee is allocated to multiple companies) */}
+            {selectedCompanyIds.length > 1 && (
+              <div className="pt-2 border-t mt-2">
+                <label className="text-xs font-semibold text-foreground">
+                  Department for {companyName}
+                </label>
+                <select
+                  value={membership.departmentId || mainDeptId || ""}
+                  onChange={(e) => update(companyId, { departmentId: e.target.value })}
+                  className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-xs font-medium"
+                >
+                  <option value="">
+                    {mainDeptId
+                      ? `Use main (${departments.find((d) => d.id === mainDeptId)?.name || "General"})`
+                      : "No department / General"}
                   </option>
-                ))}
-              </select>
-            </div>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         );
       })}
@@ -1215,14 +1228,21 @@ export function PromoteModal({
     try {
       const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
       const normalizedMemberships = Object.fromEntries(
-        finalCompanyIds.map((companyId) => [
-          companyId,
-          buildCompanyMembership(companyId, {
-            ...(companyMemberships[companyId] || {}),
-            departmentId: companyMemberships[companyId]?.departmentId ?? deptId,
-            workingDays: companyMemberships[companyId]?.workingDays || workingDays,
-          }),
-        ]),
+        finalCompanyIds.map((companyId) => {
+          const mem = companyMemberships[companyId] || {};
+          const resolvedDeptId =
+            finalCompanyIds.length > 1
+              ? (mem.departmentId || deptId)
+              : deptId;
+          return [
+            companyId,
+            buildCompanyMembership(companyId, {
+              ...mem,
+              departmentId: resolvedDeptId,
+              workingDays: mem.workingDays || workingDays,
+            }),
+          ];
+        }),
       );
       const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
       await updateDoc(
@@ -1333,11 +1353,23 @@ export function PromoteModal({
           <select
             value={deptId}
             onChange={(e) => {
-              setDeptId(e.target.value);
+              const newDeptId = e.target.value;
+              setDeptId(newDeptId);
               const departmentState = depts.find(
-                (department) => department.id === e.target.value,
+                (department) => department.id === newDeptId,
               )?.state;
               if (departmentState) setState(normalizeState(departmentState));
+              if (selectedCompanyIds.length <= 1) {
+                setCompanyMemberships((current) => {
+                  const updated = { ...current };
+                  selectedCompanyIds.forEach((cId) => {
+                    if (updated[cId]) {
+                      updated[cId] = { ...updated[cId], departmentId: newDeptId };
+                    }
+                  });
+                  return updated;
+                });
+              }
             }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
           >
@@ -1399,6 +1431,7 @@ export function PromoteModal({
           value={companyMemberships}
           onChange={setCompanyMemberships}
           departments={depts}
+          mainDeptId={deptId}
         />
         <div>
           <label className="text-sm font-medium">Employee location</label>
@@ -1499,14 +1532,21 @@ function NewEmployeeForm({
     try {
       const finalCompanyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [COMPANY_ID];
       const normalizedMemberships = Object.fromEntries(
-        finalCompanyIds.map((companyId) => [
-          companyId,
-          buildCompanyMembership(companyId, {
-            ...(companyMemberships[companyId] || {}),
-            departmentId: companyMemberships[companyId]?.departmentId ?? deptId,
-            workingDays: companyMemberships[companyId]?.workingDays || workingDays,
-          }),
-        ]),
+        finalCompanyIds.map((companyId) => {
+          const mem = companyMemberships[companyId] || {};
+          const resolvedDeptId =
+            finalCompanyIds.length > 1
+              ? (mem.departmentId || deptId)
+              : deptId;
+          return [
+            companyId,
+            buildCompanyMembership(companyId, {
+              ...mem,
+              departmentId: resolvedDeptId,
+              workingDays: mem.workingDays || workingDays,
+            }),
+          ];
+        }),
       );
       const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
       const existingEmployees = await getDocs(
@@ -1701,12 +1741,24 @@ function NewEmployeeForm({
               required
               value={deptId}
               onChange={(e) => {
-                setDeptId(e.target.value);
+                const newDeptId = e.target.value;
+                setDeptId(newDeptId);
                 setState(
                   normalizeState(
-                    departments.find((department) => department.id === e.target.value)?.state,
+                    departments.find((department) => department.id === newDeptId)?.state,
                   ),
                 );
+                if (selectedCompanyIds.length <= 1) {
+                  setCompanyMemberships((current) => {
+                    const updated = { ...current };
+                    selectedCompanyIds.forEach((cId) => {
+                      if (updated[cId]) {
+                        updated[cId] = { ...updated[cId], departmentId: newDeptId };
+                      }
+                    });
+                    return updated;
+                  });
+                }
               }}
               className="mt-1 w-full rounded-md border px-3 py-2 bg-background font-medium"
             >
@@ -1768,6 +1820,7 @@ function NewEmployeeForm({
             value={companyMemberships}
             onChange={setCompanyMemberships}
             departments={departments}
+            mainDeptId={deptId}
           />
           <div>
             <label className="text-sm font-medium">Employee location</label>
