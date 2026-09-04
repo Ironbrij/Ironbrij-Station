@@ -344,14 +344,11 @@ function AdminHome() {
         };
       }
 
-      const lateness = pDate
-        ? computeEmployeeLateness(pDate, targetEmp, company?.lateGraceMinutes ?? 5)
-        : null;
       return {
         type: "in" as const,
         label: `Punched in at ${workingCompanyName}`,
-        isLate: Boolean(lateness?.isLate),
-        minutesLate: lateness?.minutes ?? 0,
+        isLate: false,
+        minutesLate: 0,
         isExcused: false,
         punchTimeStr: timeStr,
         isAutoPunchOut: false,
@@ -445,8 +442,8 @@ function AdminHome() {
       return {
         type: "in" as const,
         label: `Punched in at ${statusTimeStr}`,
-        isLate: Boolean(status.firstIn && status.isLate),
-        minutesLate: status.firstIn ? status.minutesLate : 0,
+        isLate: false,
+        minutesLate: 0,
         isExcused: status.isExcused,
         excuseReason: status.excuseReason,
         punchTimeStr: timeStr,
