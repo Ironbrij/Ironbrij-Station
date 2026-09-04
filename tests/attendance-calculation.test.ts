@@ -8,6 +8,7 @@ import {
   computeRegularWorkedMsForDay,
   getEffectiveEmployeeWorkingDays,
   getEmployeeShiftWindow,
+  getFirstRegularPunchInForShift,
   getLiveAttendanceStatus,
   getShiftTimeout,
   zonedDateTimeToDate,
@@ -451,4 +452,87 @@ test("active regular work session past scheduled shift end stays clocked in (doe
   assert.equal(status.isPunchedIn, true);
   assert.equal(status.isPastShiftEnd, false);
 });
+
+test("getFirstRegularPunchInForShift identifies regular 'in' and 'extra_in' punches", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+
+  const extraInPunch: Punch = {
+    id: "punch-ot-1",
+    employeeId: emp.id,
+    companyId: "alpha",
+    type: "extra_in",
+    timestamp: { seconds: at("09:02").getTime() / 1000, nanoseconds: 0 } as any,
+    source: "app",
+  };
+
+  const firstPunch = getFirstRegularPunchInForShift(emp, [extraInPunch], at("10:00"));
+  assert.ok(firstPunch);
+  assert.equal(firstPunch?.type, "extra_in");
+  assert.equal(firstPunch?.id, "punch-ot-1");
+});
+
+test("getLiveAttendanceStatus ensures an actively punched-in employee is never marked as isMissingLate", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+
+  // Employee clocked in with extra_in at 09:02
+  const punches: Punch[] = [
+    {
+      id: "p-ot",
+      employeeId: emp.id,
+      companyId: "alpha",
+      type: "extra_in",
+      timestamp: { seconds: at("09:02").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+    },
+  ];
+
+  // At 10:00 (1 hour after shift start):
+  const status = getLiveAttendanceStatus(emp, punches, at("10:00"), 5);
+  assert.equal(status.isPunchedIn, true);
+  assert.equal(status.isMissingLate, false);
+});
+
+test("getEffectiveEmployeeWorkingDays correctly coerces string workingDays from Firestore", () => {
+  const emp = employee({
+    workingDays: ["1", "5"] as any,
+  });
+  const days = getEffectiveEmployeeWorkingDays(emp);
+  assert.deepEqual(days, [1, 5]);
+
+  const multiEmp = employee({
+    isMultipleShift: true,
+    shifts: [
+      { startTime: "08:00", endTime: "12:00", workingDays: ["1", "5"] as any },
+    ],
+  });
+  const multiDays = getEffectiveEmployeeWorkingDays(multiEmp);
+  assert.deepEqual(multiDays, [1, 5]);
+});
+
+test("getLiveAttendanceStatus correctly identifies scheduled day for Monday & Friday employee", () => {
+  const emp = employee({
+    workingDays: ["1", "5"] as any, // Monday & Friday only
+    shiftStartTime: "08:00",
+    shiftEndTime: "17:00",
+    shiftTimezone: "Australia/Sydney",
+  });
+
+  // 2026-09-04 is a Friday (day 5)
+  const fridayInstant = new Date("2026-09-04T00:00:00.000Z"); // 10:00 AM Sydney on Friday
+  const fridayStatus = getLiveAttendanceStatus(emp, [], fridayInstant, 5);
+  assert.equal(fridayStatus.isScheduledDay, true);
+
+  // 2026-09-01 is a Tuesday (day 2)
+  const tuesdayInstant = new Date("2026-09-01T00:00:00.000Z"); // 10:00 AM Sydney on Tuesday
+  const tuesdayStatus = getLiveAttendanceStatus(emp, [], tuesdayInstant, 5);
+  assert.equal(tuesdayStatus.isScheduledDay, false);
+});
+
+
 

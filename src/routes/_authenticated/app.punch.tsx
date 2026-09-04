@@ -275,19 +275,24 @@ function PunchPage() {
     return getActiveWorkingSession(allPunches, employee, new Date(now), companies);
   }, [allPunches, employee, now, companies]);
 
+  const effectiveEmployee = useMemo(() => {
+    if (!employee) return null;
+    return getEmployeeForCompany(employee, activeCompanyId);
+  }, [employee, activeCompanyId]);
+
   const attendanceStatus = useMemo(
     () =>
-      employee
+      effectiveEmployee
         ? getLiveAttendanceStatus(
-            employee,
+            effectiveEmployee,
             companyPunches,
             new Date(now),
             company?.lateGraceMinutes ?? 5,
             company?.workingDays,
-            getEmployeeHolidayDates(company, employee),
+            getEmployeeHolidayDates(company, effectiveEmployee),
           )
         : null,
-    [employee, companyPunches, now, company],
+    [effectiveEmployee, companyPunches, now, company],
   );
 
   const isPunchedIn = useMemo(() => {
@@ -359,8 +364,11 @@ function PunchPage() {
   ]);
 
   const shiftConversions = useMemo(
-    () => (employee ? getShiftConversions(employee, new Date(now)) : []),
-    [employee, now],
+    () =>
+      effectiveEmployee || employee
+        ? getShiftConversions(effectiveEmployee || employee!, new Date(now))
+        : [],
+    [effectiveEmployee, employee, now],
   );
 
   // Check if employee is currently clocked in at ANY other company

@@ -48,14 +48,16 @@ function formatTime12h(timeStr: string): string {
 export function checkTwoShiftsConflict(s1: ShiftDefinition, s2: ShiftDefinition): ShiftConflict[] {
   const conflicts: ShiftConflict[] = [];
 
-  const s1Days =
+  const s1Days = (
     Array.isArray(s1.workingDays) && s1.workingDays.length > 0
       ? s1.workingDays
-      : [0, 1, 2, 3, 4, 5];
-  const s2Days =
+      : [0, 1, 2, 3, 4, 5]
+  ).map(Number);
+  const s2Days = (
     Array.isArray(s2.workingDays) && s2.workingDays.length > 0
       ? s2.workingDays
-      : [0, 1, 2, 3, 4, 5];
+      : [0, 1, 2, 3, 4, 5]
+  ).map(Number);
 
   const commonDays = s1Days.filter((d) => s2Days.includes(d));
   if (commonDays.length === 0) return conflicts;

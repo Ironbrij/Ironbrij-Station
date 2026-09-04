@@ -40,6 +40,7 @@ import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
+  normalizeCompanyId,
 } from "@/lib/company-context";
 import { CompanySelector } from "@/components/CompanySelector";
 import {
@@ -253,7 +254,11 @@ function AdminHome() {
     const map = new Map<string, Punch[]>();
     for (const p of todayPunches) {
       const emp = empById.get(p.employeeId);
-      if (activeCompanyId !== "all" && getPunchCompanyId(p, emp) !== activeCompanyId) continue;
+      if (
+        activeCompanyId !== "all" &&
+        normalizeCompanyId(getPunchCompanyId(p, emp)) !== normalizeCompanyId(activeCompanyId)
+      )
+        continue;
       if (!map.has(p.employeeId)) map.set(p.employeeId, []);
       map.get(p.employeeId)!.push(p);
     }
@@ -284,44 +289,65 @@ function AdminHome() {
       return { tz: empTz, code: countryCode, flag };
     };
 
-    // When viewing "All Companies", resolve active session across any company first
-    if (activeCompanyId === "all") {
-      const activeSession = getActiveWorkingSession(todayPunches, emp, now, companies);
-      if (activeSession.status === "in" || activeSession.status === "break") {
-        const workingCompanyId = activeSession.activeCompanyId || COMPANY_ID;
-        const workingCompanyName = activeSession.activeCompanyName || "Company";
-        const targetEmp = getEmployeeForCompany(emp, workingCompanyId);
-        const targetTz = getDisplayTimezone(targetEmp);
-        const pDate = toDate(activeSession.activePunch?.timestamp);
-        const timeStr = pDate ? `${formatInTimezone(pDate, targetTz.tz)} (${targetTz.code})` : "";
+    // Resolve active session across any company first
+    const activeSession = getActiveWorkingSession(todayPunches, emp, now, companies);
+    const isSessionActive = Boolean(
+      activeSession.activeCompanyId &&
+      (activeSession.status?.isPunchedIn || activeSession.sessionType === "in" || activeSession.sessionType === "break"),
+    );
 
-        if (activeSession.status === "break") {
-          const elapsed = pDate
-            ? Math.max(0, Math.floor((now.getTime() - pDate.getTime()) / 60000))
-            : 0;
-          return {
-            type: "break" as const,
-            label: `On break at ${workingCompanyName} (${elapsed > 0 ? `${elapsed}m` : "1m"})`,
-            isLate: false,
-            minutesLate: 0,
-            punchTimeStr: timeStr,
-            isAutoPunchOut: false,
-            activeCompanyName: workingCompanyName,
-          };
-        }
+    if (isSessionActive) {
+      const workingCompanyId = activeSession.activeCompanyId || COMPANY_ID;
+      const workingCompanyName = activeSession.activeCompanyName || "Company";
+      const targetEmp = getEmployeeForCompany(emp, workingCompanyId);
+      const targetTz = getDisplayTimezone(targetEmp);
+      const pDate = toDate(activeSession.activePunch?.timestamp);
+      const timeStr = pDate ? `${formatInTimezone(pDate, targetTz.tz)} (${targetTz.code})` : "";
+      const isBreak =
+        activeSession.sessionType === "break" ||
+        activeSession.status?.isOnLunch ||
+        activeSession.activePunch?.type === "lunch_start";
 
-        const lateness = computeEmployeeLateness(now, targetEmp, company?.lateGraceMinutes ?? 5);
+      if (isBreak) {
+        const elapsed = pDate
+          ? Math.max(0, Math.floor((now.getTime() - pDate.getTime()) / 60000))
+          : 0;
+        return {
+          type: "break" as const,
+          label: `On break at ${workingCompanyName} (${elapsed > 0 ? `${elapsed}m` : "1m"})`,
+          isLate: false,
+          minutesLate: 0,
+          punchTimeStr: timeStr,
+          isAutoPunchOut: false,
+          activeCompanyName: workingCompanyName,
+        };
+      }
+
+      // If viewing a specific company and employee is clocked in at another client company:
+      if (activeCompanyId !== "all" && workingCompanyId !== activeCompanyId) {
         return {
           type: "in" as const,
-          label: `Punched in at ${workingCompanyName}`,
-          isLate: lateness.isLate,
-          minutesLate: lateness.minutes,
+          label: `Working at ${workingCompanyName}`,
+          isLate: false,
+          minutesLate: 0,
           isExcused: false,
           punchTimeStr: timeStr,
           isAutoPunchOut: false,
           activeCompanyName: workingCompanyName,
         };
       }
+
+      const lateness = computeEmployeeLateness(pDate ?? now, targetEmp, company?.lateGraceMinutes ?? 5);
+      return {
+        type: "in" as const,
+        label: `Punched in at ${workingCompanyName}`,
+        isLate: lateness.isLate,
+        minutesLate: lateness.minutes,
+        isExcused: false,
+        punchTimeStr: timeStr,
+        isAutoPunchOut: false,
+        activeCompanyName: workingCompanyName,
+      };
     }
 
     const cEmp = getEmployeeForCompany(emp, activeCompanyId);
@@ -356,13 +382,17 @@ function AdminHome() {
       ...(empTodayPunches.get(cEmp.id) || []),
       ...(cEmp.authUid ? empTodayPunches.get(cEmp.authUid) || [] : []),
     ];
+    const empComp =
+      companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(cEmp.companyId)) ||
+      companies.find((c) => c.name?.trim().toLowerCase() === cEmp.companyId?.trim().toLowerCase()) ||
+      company;
     const status = getLiveAttendanceStatus(
       cEmp,
       list,
       now,
       company?.lateGraceMinutes ?? 5,
-      company?.workingDays,
-      getEmployeeHolidayDates(company, cEmp),
+      empComp?.workingDays,
+      getEmployeeHolidayDates(empComp, cEmp),
     );
     const targetTz = getDisplayTimezone(cEmp);
     const latestDate = toDate(status.latest?.timestamp);
@@ -424,15 +454,30 @@ function AdminHome() {
         ? ` (${companies.find((c) => (c.id || COMPANY_ID) === lastPunchCompanyId)?.name || "Company"})`
         : "";
 
+    const shiftStartMs = status.shift.start.getTime();
+    const shiftEndMs = status.shift.end.getTime();
+    const allEmpTodayPunches = todayPunches.filter(
+      (p) => p.employeeId === emp.id || Boolean(emp.authUid && p.employeeId === emp.authUid),
+    );
+    const hasPunchCoveringShift = allEmpTodayPunches.some((p) => {
+      if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
+      const pTime = toDate(p.timestamp)?.getTime();
+      if (!pTime) return false;
+      return pTime >= shiftStartMs - 4 * 3600 * 1000 && pTime <= shiftEndMs;
+    });
+    const isMissingLate = status.isMissingLate && !hasPunchCoveringShift;
+
     return {
       type: "out" as const,
-      label: status.isMissingLate
+      label: isMissingLate
         ? "Not punched in"
         : status.latest
           ? `${isAutoPunchOut ? "Auto punched out" : "Punched out"} at ${statusTimeStr}${lastPunchCompanyName}`
-          : "Not on shift",
-      isLate: status.isLate,
-      minutesLate: status.minutesLate,
+          : hasPunchCoveringShift
+            ? "Worked on another client shift"
+            : "Not on shift",
+      isLate: isMissingLate,
+      minutesLate: isMissingLate ? status.minutesLate : 0,
       isExcused: status.isExcused,
       excuseReason: status.excuseReason,
       punchTimeStr: timeStr,

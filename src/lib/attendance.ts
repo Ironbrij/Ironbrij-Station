@@ -348,10 +348,12 @@ export function getEmployeeShiftWindow(
   if (employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
     const [shiftYear, shiftMonth, shiftDay] = dateKey.split("-").map(Number);
     const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
-    const fallbackDays = employee.workingDays || [0, 1, 2, 3, 4, 5];
+    const fallbackDays = getEffectiveEmployeeWorkingDays(employee);
     const activeShifts = employee.shifts.filter((s) => {
       const days =
-        Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
+        Array.isArray(s.workingDays) && s.workingDays.length > 0
+          ? s.workingDays.map(Number).filter((d) => !Number.isNaN(d) && d >= 0 && d <= 6)
+          : fallbackDays;
       return days.includes(shiftWeekday);
     });
 
@@ -609,45 +611,57 @@ export function getFirstRegularPunchInForShift(
   const shiftTimezone = getShiftTimezone(employee);
   const targetDate = zonedDateKey(instant, shiftTimezone);
   return punches
-    .filter(
-      (punch) =>
-        punch.type === "in" &&
-        punch.timestamp &&
-        zonedDateKey(toDate(punch.timestamp) ?? new Date(0), shiftTimezone) === targetDate,
-    )
+    .filter((punch) => {
+      if ((punch.type !== "in" && punch.type !== "extra_in") || !punch.timestamp) return false;
+      const pDate =
+        punch.attendanceDate ||
+        punch.date ||
+        zonedDateKey(toDate(punch.timestamp) ?? new Date(0), shiftTimezone);
+      return pDate === targetDate;
+    })
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
 }
 
 export function getEffectiveEmployeeWorkingDays(
   employee?: Pick<Employee, "workingDays" | "isMultipleShift" | "shifts">,
-  companyWorkingDays?: number[],
+  companyWorkingDays?: (number | string)[],
 ): number[] {
+  const normalizeDays = (days?: (number | string)[]): number[] => {
+    if (!Array.isArray(days)) return [];
+    return days
+      .map((d) => Number(d))
+      .filter((d) => !Number.isNaN(d) && d >= 0 && d <= 6);
+  };
+
   if (employee?.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0) {
     const shiftDays = new Set<number>();
     let hasCustomShiftDays = false;
     for (const shift of employee.shifts) {
       if (Array.isArray(shift.workingDays) && shift.workingDays.length > 0) {
         hasCustomShiftDays = true;
-        shift.workingDays.forEach((d) => shiftDays.add(d));
+        normalizeDays(shift.workingDays).forEach((d) => shiftDays.add(d));
       }
     }
     if (hasCustomShiftDays && shiftDays.size > 0) {
       return Array.from(shiftDays).sort((a, b) => a - b);
     }
   }
-  if (Array.isArray(employee?.workingDays) && employee!.workingDays!.length > 0) {
+
+  const normalizedCompanyDays = normalizeDays(companyWorkingDays);
+  const normalizedEmployeeDays = normalizeDays(employee?.workingDays);
+
+  if (normalizedEmployeeDays.length > 0) {
     // If employee has the exact default [0,1,2,3,4,5], prefer the company's working days
     if (
-      employee!.workingDays!.join(",") === "0,1,2,3,4,5" &&
-      Array.isArray(companyWorkingDays) &&
-      companyWorkingDays.length > 0
+      normalizedEmployeeDays.join(",") === "0,1,2,3,4,5" &&
+      normalizedCompanyDays.length > 0
     ) {
-      return companyWorkingDays;
+      return normalizedCompanyDays;
     }
-    return employee!.workingDays!;
+    return normalizedEmployeeDays;
   }
-  if (Array.isArray(companyWorkingDays) && companyWorkingDays.length > 0) {
-    return companyWorkingDays;
+  if (normalizedCompanyDays.length > 0) {
+    return normalizedCompanyDays;
   }
   return [0, 1, 2, 3, 4, 5]; // Default Sunday to Friday (6 days)
 }
@@ -657,7 +671,7 @@ export function getLiveAttendanceStatus(
   punches: Punch[],
   now = new Date(),
   graceMinutes = MINIMUM_LATE_GRACE_MINUTES,
-  workingDays?: number[],
+  workingDays?: (number | string)[],
   holidays: string[] = [],
 ) {
   const sorted = [...punches]
@@ -697,15 +711,17 @@ export function getLiveAttendanceStatus(
       p.attendanceDate ||
       p.date ||
       (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? now, shiftTimezone) : "");
-    return pDate === todayDateKey;
+    return pDate === todayDateKey || pDate === shift.dateKey;
   });
 
-  const fallbackDays = employee.workingDays || [0, 1, 2, 3, 4, 5];
+  const fallbackDays = effectiveWorkingDays;
   const activeShiftsForToday =
     employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0
       ? employee.shifts.filter((s) => {
           const days =
-            Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
+            Array.isArray(s.workingDays) && s.workingDays.length > 0
+              ? s.workingDays.map(Number).filter((d) => !Number.isNaN(d) && d >= 0 && d <= 6)
+              : fallbackDays;
           return days.includes(shiftWeekday);
         })
       : [];
@@ -746,6 +762,7 @@ export function getLiveAttendanceStatus(
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
     isScheduledDay &&
+    !isPunchedIn &&
     !firstIn &&
     missingMinutes > effectiveGraceMinutes &&
     now <= shift.end &&
@@ -803,9 +820,10 @@ export function getActiveWorkingSession(
   activePunch: Punch | null;
   status: LiveAttendanceStatus | null;
   activeCompanyName: string | null;
+  sessionType: "in" | "break" | null;
 } {
   if (!employee || !allPunches || allPunches.length === 0) {
-    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 
   // Sort punches chronologically ascending
@@ -814,7 +832,7 @@ export function getActiveWorkingSession(
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
 
   if (sorted.length === 0) {
-    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 
   const latestGlobal = sorted[sorted.length - 1];
@@ -825,7 +843,7 @@ export function getActiveWorkingSession(
     latestGlobal.type === "lunch_end";
 
   if (!isGlobalIn) {
-    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 
   const activeCompanyId = getPunchCompanyId(latestGlobal, employee);
@@ -845,13 +863,17 @@ export function getActiveWorkingSession(
   );
 
   if (!status.isPunchedIn) {
-    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null };
+    return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
+
+  const sessionType: "in" | "break" =
+    latestGlobal.type === "lunch_start" || status.isOnLunch ? "break" : "in";
 
   return {
     activeCompanyId,
     activePunch: latestGlobal,
     status,
     activeCompanyName,
+    sessionType,
   };
 }

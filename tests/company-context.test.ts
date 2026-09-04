@@ -8,6 +8,7 @@ import {
   getEmployeeForCompany,
   getPunchCompanyId,
   getRequiredWorkMinutes,
+  normalizeCompanyId,
 } from "../src/lib/company-context.ts";
 import { getActiveWorkingSession } from "../src/lib/attendance.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
@@ -240,4 +241,24 @@ test("getEmployeeForCompany returns base employee when companyId is 'all'", () =
   assert.equal(allEmp.companyId, "alpha");
   assert.equal(allEmp.requiredWorkMinutes, 480);
 });
+
+test("normalizeCompanyId normalizes default and ironbrij to default COMPANY_ID", () => {
+  assert.equal(normalizeCompanyId("default"), "default");
+  assert.equal(normalizeCompanyId("ironbrij"), "default");
+  assert.equal(normalizeCompanyId("Ironbrij "), "default");
+  assert.equal(normalizeCompanyId(""), "default");
+  assert.equal(normalizeCompanyId(undefined), "default");
+  assert.equal(normalizeCompanyId("client-william"), "client-william");
+});
+
+test("getEmployeeCompanyIds deduplicates default and ironbrij aliases", () => {
+  const empWithAliases: Employee = {
+    ...employee,
+    companyId: "default",
+    companyIds: ["ironbrij", "default"],
+    companyMemberships: undefined,
+  };
+  assert.deepEqual(getEmployeeCompanyIds(empWithAliases), ["default"]);
+});
+
 

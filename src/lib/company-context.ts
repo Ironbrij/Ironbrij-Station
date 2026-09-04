@@ -9,6 +9,15 @@ import {
 
 const DEFAULT_REQUIRED_WORK_MINUTES = 8 * 60;
 
+export function normalizeCompanyId(companyId?: string | null): string {
+  if (!companyId) return COMPANY_ID;
+  const trimmed = companyId.trim();
+  if (trimmed.toLowerCase() === "ironbrij" || trimmed.toLowerCase() === "default") {
+    return COMPANY_ID;
+  }
+  return trimmed;
+}
+
 export function calculateShiftMinutes(startTime: string, endTime: string): number {
   if (!startTime || !endTime) return DEFAULT_REQUIRED_WORK_MINUTES;
   const [startH, startM] = startTime.split(":").map(Number);
@@ -35,7 +44,7 @@ export function calculateTotalShiftMinutes(
       dayOfWeek !== undefined && dayOfWeek >= 0 && dayOfWeek <= 6
         ? shifts.filter((s) => {
             if (!Array.isArray(s.workingDays) || s.workingDays.length === 0) return true;
-            return s.workingDays.includes(dayOfWeek);
+            return s.workingDays.map(Number).includes(Number(dayOfWeek));
           })
         : shifts;
     return activeShifts.reduce((sum, s) => sum + calculateShiftMinutes(s.startTime, s.endTime), 0);
@@ -56,36 +65,54 @@ export function calculateShiftEndTime(startTime: string, shiftHours = 8): string
 export function getEmployeeCompanyIds(employee: Employee | null | undefined): string[] {
   if (!employee) return [];
   const ids = new Set<string>();
-  if (employee.companyId) ids.add(employee.companyId);
-  employee.companyIds?.forEach((companyId) => companyId && ids.add(companyId));
-  if (Array.isArray(employee.companyMemberships)) {
+
+  if (Array.isArray(employee.companyMemberships) && employee.companyMemberships.length > 0) {
     (employee.companyMemberships as unknown as CompanyMembership[]).forEach((membership) => {
       if (membership && membership.status !== "inactive" && membership.companyId) {
-        ids.add(membership.companyId);
+        ids.add(normalizeCompanyId(membership.companyId));
       }
     });
-  } else if (employee.companyMemberships && typeof employee.companyMemberships === "object") {
+  } else if (
+    employee.companyMemberships &&
+    typeof employee.companyMemberships === "object" &&
+    Object.keys(employee.companyMemberships).length > 0
+  ) {
     Object.entries(employee.companyMemberships).forEach(([companyId, membership]) => {
-      if (membership && membership.status !== "inactive") ids.add(membership.companyId || companyId);
+      if (membership && membership.status !== "inactive") {
+        ids.add(normalizeCompanyId(membership.companyId || companyId));
+      }
     });
   }
+
+  // Only fall back to companyIds / companyId if companyMemberships was not provided
+  if (ids.size === 0) {
+    if (employee.companyId) ids.add(normalizeCompanyId(employee.companyId));
+    employee.companyIds?.forEach((companyId) => companyId && ids.add(normalizeCompanyId(companyId)));
+  }
+
   if (ids.size === 0) ids.add(COMPANY_ID);
   return [...ids];
 }
 
 export function getCompanyMembership(employee: Employee, companyId: string): CompanyMembership {
+  const normTarget = normalizeCompanyId(companyId);
   let configured: CompanyMembership | undefined;
   if (Array.isArray(employee.companyMemberships)) {
     configured = (employee.companyMemberships as unknown as CompanyMembership[]).find(
-      (m) => m && m.companyId === companyId,
+      (m) => m && normalizeCompanyId(m.companyId) === normTarget,
     );
   } else if (employee.companyMemberships && typeof employee.companyMemberships === "object") {
-    configured = employee.companyMemberships[companyId];
+    for (const [key, mem] of Object.entries(employee.companyMemberships)) {
+      if (normalizeCompanyId(mem?.companyId || key) === normTarget) {
+        configured = mem;
+        break;
+      }
+    }
   }
-  if (configured) return { ...configured, companyId };
+  if (configured) return { ...configured, companyId: normTarget };
 
   return {
-    companyId,
+    companyId: normTarget,
     role: "employee",
     status: "active",
     requiredWorkMinutes: employee.requiredWorkMinutes,
@@ -136,11 +163,11 @@ export function getRequiredWorkMinutes(
       }
 
       if (dayOfWeek >= 0 && dayOfWeek <= 6) {
-        const fallbackDays = employee.workingDays || company?.workingDays || [0, 1, 2, 3, 4, 5];
+        const fallbackDays = (employee.workingDays || company?.workingDays || [0, 1, 2, 3, 4, 5]).map(Number);
         const activeShifts = employee.shifts.filter((s) => {
           const shiftDays =
-            Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
-          return shiftDays.includes(dayOfWeek);
+            Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays.map(Number) : fallbackDays;
+          return shiftDays.includes(Number(dayOfWeek));
         });
         if (activeShifts.length > 0) {
           return activeShifts.reduce(
@@ -164,7 +191,8 @@ export function getRequiredWorkMinutes(
 }
 
 export function getPunchCompanyId(punch: Punch, employee?: Employee | null): string {
-  return punch.companyId || employee?.companyIds?.[0] || employee?.companyId || COMPANY_ID;
+  const rawId = punch.companyId || employee?.companyIds?.[0] || employee?.companyId || COMPANY_ID;
+  return normalizeCompanyId(rawId);
 }
 
 export function getEmployeePunchesForCompany(
@@ -175,12 +203,13 @@ export function getEmployeePunchesForCompany(
   const empIds = employee
     ? new Set([employee.id, employee.authUid].filter(Boolean) as string[])
     : null;
+  const targetCId = normalizeCompanyId(companyId);
 
   return punches.filter((punch) => {
     if (empIds && punch.employeeId && !empIds.has(punch.employeeId)) {
       return false;
     }
-    return getPunchCompanyId(punch, employee) === companyId;
+    return normalizeCompanyId(getPunchCompanyId(punch, employee)) === targetCId;
   });
 }
 
@@ -189,14 +218,14 @@ export function buildCompanyMembership(
   input: Partial<CompanyMembership>,
 ): CompanyMembership {
   const isMultipleShift = Boolean(input.isMultipleShift);
-  const fallbackWorkingDays = input.workingDays || [0, 1, 2, 3, 4, 5];
+  const fallbackWorkingDays = (input.workingDays || [0, 1, 2, 3, 4, 5]).map(Number);
   const shifts =
     input.shifts && input.shifts.length > 0
       ? input.shifts.map((s) => ({
           ...s,
           workingDays:
             Array.isArray(s.workingDays) && s.workingDays.length > 0
-              ? s.workingDays
+              ? s.workingDays.map(Number)
               : fallbackWorkingDays,
         }))
       : isMultipleShift
@@ -220,7 +249,7 @@ export function buildCompanyMembership(
     const daysSet = new Set<number>();
     shifts.forEach((s) => {
       if (Array.isArray(s.workingDays)) {
-        s.workingDays.forEach((d) => daysSet.add(d));
+        s.workingDays.forEach((d) => daysSet.add(Number(d)));
       }
     });
     if (daysSet.size > 0) {
@@ -229,7 +258,7 @@ export function buildCompanyMembership(
   }
 
   return {
-    companyId: companyId || COMPANY_ID,
+    companyId: normalizeCompanyId(companyId),
     role: input.role || "employee",
     status: input.status || "active",
     requiredWorkMinutes,
