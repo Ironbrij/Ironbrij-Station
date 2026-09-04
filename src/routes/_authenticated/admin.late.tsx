@@ -157,6 +157,23 @@ function LateArrivalsPage() {
       // Check if employee has ANY punch-in today across any company
       const empTimezone = getShiftTimezone(employee);
       const todayDateKey = zonedDateKey(today, empTimezone);
+
+      // Robust fallback: check if latest punch across ALL companies is an active "in" type (within 24h)
+      // This catches cases where getActiveWorkingSession fails due to timezone/dateKey mismatches
+      const sortedAllPunches = allEmpPunches
+        .filter((p) => p.timestamp)
+        .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+      const latestGlobalPunch = sortedAllPunches.at(-1);
+      const isGloballyPunchedIn = Boolean(
+        latestGlobalPunch &&
+        (latestGlobalPunch.type === "in" ||
+          latestGlobalPunch.type === "extra_in" ||
+          latestGlobalPunch.type === "lunch_start" ||
+          latestGlobalPunch.type === "lunch_end") &&
+        toDate(latestGlobalPunch.timestamp) &&
+        (today.getTime() - (toDate(latestGlobalPunch.timestamp)?.getTime() ?? 0)) < 24 * 60 * 60 * 1000,
+      );
+
       const hasAnyPunchToday = allEmpPunches.some((p) => {
         if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
         const pTime = toDate(p.timestamp);
@@ -281,13 +298,26 @@ function LateArrivalsPage() {
           }
 
           // 3. If employee is currently punched in / working at ANY company:
-          if (isEmployeeCurrentlyWorking) {
+          if (isEmployeeCurrentlyWorking || isGloballyPunchedIn) {
             continue;
           }
 
           // 4. If employee has already punched in on today's date across ANY company:
           if (hasAnyPunchToday) {
             continue;
+          }
+
+          // 5. Double-check with company-specific timezone (may differ from employee default)
+          const cTodayKey = zonedDateKey(today, shiftTimezone);
+          if (cTodayKey !== todayDateKey) {
+            const hasAnyPunchTodayAlt = allEmpPunches.some((p) => {
+              if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
+              const pTime = toDate(p.timestamp);
+              if (!pTime) return false;
+              const pDateKey = p.attendanceDate || p.date || zonedDateKey(pTime, shiftTimezone);
+              return pDateKey === cTodayKey;
+            });
+            if (hasAnyPunchTodayAlt) continue;
           }
 
           result.push({

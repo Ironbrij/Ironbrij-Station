@@ -1348,6 +1348,7 @@ export function PromoteModal({
         <Field label="Full name" value={name} onChange={setName} />
         <Field label="Email address" type="email" value={email} onChange={setEmail} />
         <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
+        {selectedCompanyIds.length <= 1 && (
         <div>
           <label className="text-sm font-medium">Department</label>
           <select
@@ -1381,6 +1382,7 @@ export function PromoteModal({
             ))}
           </select>
         </div>
+        )}
         <div>
           <label className="text-sm font-medium">Company Allocation</label>
           <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
@@ -1494,10 +1496,10 @@ function NewEmployeeForm({
   const [email, setEmail] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [deptId, setDeptId] = useState(departments[0]?.id ?? "");
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([COMPANY_ID]);
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([activeCompanyId || COMPANY_ID]);
   const [companyMemberships, setCompanyMemberships] = useState<Record<string, CompanyMembership>>(
     () =>
-      initialMemberships(null, [COMPANY_ID], {
+      initialMemberships(null, [activeCompanyId || COMPANY_ID], {
         requiredWorkMinutes: 480,
         shiftStartTime: "09:00",
         shiftEndTime: "17:00",
@@ -1516,7 +1518,7 @@ function NewEmployeeForm({
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [createdEmpId, setCreatedEmpId] = useState<string | null>(null);
   const [inviteEmailSent, setInviteEmailSent] = useState<boolean | null>(null);
-  const { user, company } = useAuth();
+  const { user, company, activeCompanyId } = useAuth();
   const navigate = useNavigate();
 
   async function submit(e: React.FormEvent) {
@@ -1735,6 +1737,7 @@ function NewEmployeeForm({
           <Field label="Full name" value={name} onChange={setName} />
           <Field label="Email" type="email" value={email} onChange={setEmail} />
           <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
+          {selectedCompanyIds.length <= 1 && (
           <div>
             <label className="text-sm font-medium">Department</label>
             <select
@@ -1770,6 +1773,7 @@ function NewEmployeeForm({
               ))}
             </select>
           </div>
+          )}
           <div>
             <label className="text-sm font-medium">Company Allocation</label>
             <div className="mt-1 space-y-1.5 rounded-md border bg-background p-2.5 max-h-36 overflow-y-auto">
