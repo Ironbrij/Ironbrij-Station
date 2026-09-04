@@ -5,6 +5,7 @@ import {
   isPunchOutReminderDue,
 } from "../src/lib/attendance-calculation.ts";
 import {
+  computeEmployeeLateness,
   computeRegularWorkedMsForDay,
   getEffectiveEmployeeWorkingDays,
   getEmployeeShiftWindow,
@@ -533,6 +534,36 @@ test("getLiveAttendanceStatus correctly identifies scheduled day for Monday & Fr
   const tuesdayStatus = getLiveAttendanceStatus(emp, [], tuesdayInstant, 5);
   assert.equal(tuesdayStatus.isScheduledDay, false);
 });
+
+test("computeEmployeeLateness marks on-time arrivals as NOT naturally late", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+    shiftTimezone: "Australia/Sydney",
+  });
+
+  // Punch in at 08:58 Sydney (2 mins early)
+  const punchTime = new Date("2026-09-03T22:58:00.000Z");
+  const late = computeEmployeeLateness(punchTime, emp, 5);
+  assert.equal(late.naturallyLate, false);
+  assert.equal(late.isEarly, true);
+  assert.equal(late.rawMinutes, 0);
+});
+
+test("computeEmployeeLateness marks 20 min late punch as naturally late with 20 minutes", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+    shiftTimezone: "Australia/Sydney",
+  });
+
+  // Punch in at 09:20 Sydney (20 mins late)
+  const punchTime = new Date("2026-09-03T23:20:00.000Z");
+  const late = computeEmployeeLateness(punchTime, emp, 5);
+  assert.equal(late.naturallyLate, true);
+  assert.equal(late.rawMinutes, 20);
+});
+
 
 
 
