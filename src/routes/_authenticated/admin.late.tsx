@@ -144,11 +144,14 @@ function LateArrivalsPage() {
       const allEmpPunches = punches.filter(
         (p) =>
           p.employeeId === employee.id ||
-          Boolean(employee.authUid && p.employeeId === employee.authUid),
+          Boolean(employee.authUid && p.employeeId === employee.authUid) ||
+          Boolean((p as any).userId && ((p as any).userId === employee.id || (p as any).userId === employee.authUid)),
       );
       const activeSession = getActiveWorkingSession(allEmpPunches, employee, today, companies);
       const isEmployeeCurrentlyWorking = Boolean(
-        activeSession.activeCompanyId && activeSession.status?.isPunchedIn,
+        (activeSession.activeCompanyId && activeSession.status?.isPunchedIn) ||
+        activeSession.sessionType === "in" ||
+        activeSession.sessionType === "break",
       );
 
       // Check if employee has ANY punch-in today across any company
@@ -173,8 +176,11 @@ function LateArrivalsPage() {
           (normalizeCompanyId(cId) === COMPANY_ID
             ? companies.find((c) => c.id === COMPANY_ID || c.isMain || c.name?.trim().toLowerCase() === "ironbrij")
             : undefined) ||
-          company;
-        const compName = comp?.name || (cId === COMPANY_ID ? "Main Company" : cId);
+          (normalizeCompanyId(company?.id) === normalizeCompanyId(cId) ? company : undefined) ||
+          companies.find((c) => normalizeCompanyId(c.id) === COMPANY_ID);
+        const compName =
+          comp?.name ||
+          (normalizeCompanyId(cId) === COMPANY_ID ? "Main Company" : cId);
         const cPunches = getEmployeePunchesForCompany(punches, employee, cId);
         const shiftTimezone = getShiftTimezone(cEmp);
         const todayKey = zonedDateKey(today, shiftTimezone);
@@ -255,28 +261,30 @@ function LateArrivalsPage() {
           !approvedLeaveToday &&
           status.isMissingLate
         ) {
-          // 1. If employee is currently punched in / working at ANY company:
-          //    They are actively on shift and NOT missing punch-in.
+          // 1. If already punched in for this company/shift: NEVER show as missing!
+          if (firstByShiftDate.has(todayKey) || firstByShiftDate.has(status.shift.dateKey)) {
+            continue;
+          }
+
+          // 2. If employee already has an arrival record in results for today: NEVER show as missing!
+          if (
+            result.some(
+              (r) =>
+                r.employee.id === employee.id &&
+                (r.dateKey === todayKey || r.dateKey === status.shift.dateKey),
+            )
+          ) {
+            continue;
+          }
+
+          // 3. If employee is currently punched in / working at ANY company:
           if (isEmployeeCurrentlyWorking) {
             continue;
           }
 
-          // 2. If employee has already punched in on today's date across ANY of their companies:
+          // 4. If employee has already punched in on today's date across ANY company:
           if (hasAnyPunchToday) {
-            // Check if there is an overlapping or covering punch
-            const shiftStartMs = status.shift.start.getTime();
-            const shiftEndMs = status.shift.end.getTime();
-            const hasPunchCoveringShift = allEmpPunches.some((p) => {
-              if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
-              const pTime = toDate(p.timestamp)?.getTime();
-              if (!pTime) return false;
-              return pTime >= shiftStartMs - 4 * 3600 * 1000 && pTime <= shiftEndMs;
-            });
-
-            // Suppress phantom missing record if punch covers this shift, or if employee has multiple company memberships
-            if (hasPunchCoveringShift || companyIds.length > 1) {
-              continue;
-            }
+            continue;
           }
 
           result.push({

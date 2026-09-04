@@ -351,9 +351,19 @@ function AdminHome() {
     }
 
     const cEmp = getEmployeeForCompany(emp, activeCompanyId);
+    const targetCompId = cEmp.companyId || emp.companyId || (activeCompanyId !== "all" ? activeCompanyId : COMPANY_ID);
+    const empComp =
+      companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(targetCompId)) ||
+      companies.find((c) => c.name?.trim().toLowerCase() === targetCompId?.trim().toLowerCase()) ||
+      (normalizeCompanyId(targetCompId) === COMPANY_ID
+        ? companies.find((c) => c.id === COMPANY_ID || c.isMain || c.name?.trim().toLowerCase() === "ironbrij")
+        : undefined) ||
+      (normalizeCompanyId(company?.id) === normalizeCompanyId(targetCompId) ? company : undefined) ||
+      companies.find((c) => normalizeCompanyId(c.id) === COMPANY_ID);
+
     const employeeToday = zonedDateKey(now, getEmployeeTimezone(cEmp));
     const shiftToday = zonedDateKey(now, getShiftTimezone(cEmp));
-    const holiday = getEmployeeHoliday(company, cEmp, shiftToday);
+    const holiday = getEmployeeHoliday(empComp || company, cEmp, shiftToday);
     if (holiday) {
       return {
         type: "holiday" as const,
@@ -382,15 +392,11 @@ function AdminHome() {
       ...(empTodayPunches.get(cEmp.id) || []),
       ...(cEmp.authUid ? empTodayPunches.get(cEmp.authUid) || [] : []),
     ];
-    const empComp =
-      companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(cEmp.companyId)) ||
-      companies.find((c) => c.name?.trim().toLowerCase() === cEmp.companyId?.trim().toLowerCase()) ||
-      company;
     const status = getLiveAttendanceStatus(
       cEmp,
       list,
       now,
-      company?.lateGraceMinutes ?? 5,
+      empComp?.lateGraceMinutes ?? company?.lateGraceMinutes ?? 5,
       empComp?.workingDays,
       getEmployeeHolidayDates(empComp, cEmp),
     );

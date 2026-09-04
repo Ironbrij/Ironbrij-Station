@@ -11,10 +11,12 @@ import {
   getEmployeeShiftWindow,
   getFirstRegularPunchInForShift,
   getLiveAttendanceStatus,
+  getActiveWorkingSession,
   getShiftTimeout,
   zonedDateTimeToDate,
 } from "../src/lib/attendance.ts";
-import type { Company, Employee } from "../src/lib/types.ts";
+import { getEmployeeForCompany } from "../src/lib/company-context.ts";
+import type { Company, Employee, Punch } from "../src/lib/types.ts";
 
 const timezone = "Australia/Sydney";
 const company: Company = {
@@ -563,6 +565,58 @@ test("computeEmployeeLateness marks 20 min late punch as naturally late with 20 
   assert.equal(late.naturallyLate, true);
   assert.equal(late.rawMinutes, 20);
 });
+
+test("getActiveWorkingSession matches company alias default and ironbrij with normalizeCompanyId", () => {
+  const emp = employee({
+    id: "andre1",
+    companyId: "ironbrij",
+    shiftStartTime: "08:00",
+    shiftEndTime: "17:00",
+    shiftTimezone: "Australia/Sydney",
+  });
+
+  const punch: Punch = {
+    id: "p-andre",
+    employeeId: "andre1",
+    companyId: "default",
+    type: "in",
+    timestamp: { seconds: new Date("2026-09-04T00:00:00.000Z").getTime() / 1000, nanoseconds: 0 } as any,
+    date: "2026-09-04",
+    attendanceDate: "2026-09-04",
+  };
+
+  const companies: Company[] = [
+    {
+      id: "default",
+      name: "ironbrij",
+      workingDays: [1, 2, 3, 4, 5],
+      lateGraceMinutes: 1,
+    } as any,
+  ];
+
+  const session = getActiveWorkingSession([punch], emp, new Date("2026-09-04T02:00:00.000Z"), companies);
+  assert.equal(session.activeCompanyId, "default");
+  assert.equal(session.activeCompanyName, "ironbrij");
+  assert.equal(session.sessionType, "in");
+  assert.equal(session.status?.isPunchedIn, true);
+});
+
+test("getEmployeeForCompany falls back to base employee workingDays if membership.workingDays is empty array", () => {
+  const emp = employee({
+    id: "jonathan1",
+    workingDays: [1, 2, 3, 4, 5],
+    companyMemberships: {
+      client1: {
+        companyId: "client1",
+        workingDays: [],
+      } as any,
+    },
+  });
+
+  const resolved = getEmployeeForCompany(emp, "client1");
+  assert.deepEqual(resolved.workingDays, [1, 2, 3, 4, 5]);
+});
+
 
 
 

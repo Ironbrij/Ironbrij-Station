@@ -7,7 +7,7 @@ import {
   type Punch,
 } from "./types.ts";
 import { toDate, toMillis } from "./time.ts";
-import { getEmployeeForCompany, getPunchCompanyId } from "./company-context.ts";
+import { getEmployeeForCompany, getPunchCompanyId, normalizeCompanyId } from "./company-context.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -209,10 +209,10 @@ export function isHolidayAssignedToEmployee(
       Boolean,
     ) as string[];
 
-    const matchesCompany = empCompanyIds.some(
-      (cId) =>
-        holiday.companyIds?.includes(cId) ||
-        (cId === "default" && holiday.companyIds?.includes(COMPANY_ID)),
+    const matchesCompany = empCompanyIds.some((cId) =>
+      holiday.companyIds?.some(
+        (hId) => normalizeCompanyId(hId) === normalizeCompanyId(cId),
+      ),
     );
     if (!matchesCompany) return false;
   }
@@ -849,9 +849,11 @@ export function getActiveWorkingSession(
   const activeCompanyId = getPunchCompanyId(latestGlobal, employee);
   const companyEmployee = getEmployeeForCompany(employee, activeCompanyId);
   const companyPunches = sorted.filter((p) => getPunchCompanyId(p, employee) === activeCompanyId);
-  const comp = companies.find((c) => (c.id || COMPANY_ID) === activeCompanyId);
+  const comp = companies.find(
+    (c) => normalizeCompanyId(c.id) === normalizeCompanyId(activeCompanyId),
+  );
   const activeCompanyName =
-    comp?.name || (activeCompanyId === COMPANY_ID ? "Main Company" : activeCompanyId);
+    comp?.name || (normalizeCompanyId(activeCompanyId) === COMPANY_ID ? "Main Company" : activeCompanyId);
 
   const status = getLiveAttendanceStatus(
     companyEmployee,

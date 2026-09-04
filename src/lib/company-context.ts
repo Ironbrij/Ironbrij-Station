@@ -138,7 +138,10 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
     shiftStartTime: membership.shiftStartTime || employee.shiftStartTime,
     shiftEndTime: membership.shiftEndTime || employee.shiftEndTime,
     shiftTimezone: membership.shiftTimezone || employee.shiftTimezone,
-    workingDays: membership.workingDays || employee.workingDays,
+    workingDays:
+      Array.isArray(membership.workingDays) && membership.workingDays.length > 0
+        ? membership.workingDays
+        : employee.workingDays,
     deptId: membership.departmentId || employee.deptId,
   };
 }
