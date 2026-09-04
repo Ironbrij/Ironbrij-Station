@@ -335,7 +335,11 @@ export function getShiftWindow(
   return { start, end, crossesMidnight, dateKey, timezone };
 }
 
-export function getEmployeeShiftWindow(employee: Employee, instant = new Date()) {
+export function getEmployeeShiftWindow(
+  employee: Employee,
+  instant = new Date(),
+  punches?: Punch[],
+) {
   const shiftTimezone = getShiftTimezone(employee);
   const dateKey = zonedDateKey(instant, shiftTimezone);
   let startTime = employee.shiftStartTime || "09:00";
@@ -352,21 +356,40 @@ export function getEmployeeShiftWindow(employee: Employee, instant = new Date())
     });
 
     if (activeShifts.length > 0) {
-      const shiftWindows = activeShifts.map((s) => {
+      const shiftWindows = activeShifts.map((s, index) => {
         const win = getShiftWindow(dateKey, s.startTime, s.endTime, shiftTimezone);
-        return { shift: s, win };
+        return { shift: s, win, index };
       });
 
-      const currentSlot = shiftWindows.find(
+      // If punches are provided, filter out shift slots already completed today
+      let uncompletedSlots = shiftWindows;
+      if (Array.isArray(punches) && punches.length > 0) {
+        const todayPunches = punches.filter((p) => {
+          const pDate =
+            p.attendanceDate ||
+            p.date ||
+            (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? instant, shiftTimezone) : "");
+          return pDate === dateKey;
+        });
+        const completedShiftsCount = todayPunches.filter(
+          (p) => p.type === "out" && !p.isAuto,
+        ).length;
+        if (completedShiftsCount > 0 && completedShiftsCount < shiftWindows.length) {
+          uncompletedSlots = shiftWindows.slice(completedShiftsCount);
+        }
+      }
+
+      // Check if instant falls inside an uncompleted shift window
+      const currentSlot = uncompletedSlots.find(
         ({ win }) =>
-          instant.getTime() >= win.start.getTime() && instant.getTime() <= win.end.getTime(),
+          instant.getTime() >= win.start.getTime() && instant.getTime() < win.end.getTime(),
       );
 
       if (currentSlot) {
         startTime = currentSlot.shift.startTime;
         endTime = currentSlot.shift.endTime;
       } else {
-        const upcomingSlot = shiftWindows.find(
+        const upcomingSlot = uncompletedSlots.find(
           ({ win }) => instant.getTime() < win.start.getTime(),
         );
 
@@ -374,7 +397,8 @@ export function getEmployeeShiftWindow(employee: Employee, instant = new Date())
           startTime = upcomingSlot.shift.startTime;
           endTime = upcomingSlot.shift.endTime;
         } else {
-          const lastSlot = shiftWindows[shiftWindows.length - 1];
+          const lastSlot =
+            uncompletedSlots[uncompletedSlots.length - 1] || shiftWindows[shiftWindows.length - 1];
           startTime = lastSlot.shift.startTime;
           endTime = lastSlot.shift.endTime;
         }
@@ -642,20 +666,19 @@ export function getLiveAttendanceStatus(
   const latest = sorted.at(-1);
   const shiftTimezone = getShiftTimezone(employee);
   const todayDateKey = zonedDateKey(now, shiftTimezone);
-  const shift = getEmployeeShiftWindow(employee, now);
+  const shift = getEmployeeShiftWindow(employee, now, sorted);
 
   const latestPunchDate =
     latest?.attendanceDate ||
     latest?.date ||
     (latest?.timestamp ? zonedDateKey(toDate(latest?.timestamp) ?? now, shiftTimezone) : "");
   const isStaleFromPastDay = latestPunchDate ? latestPunchDate < todayDateKey : false;
-  const isPastShiftEnd = now.getTime() >= shift.end.getTime();
 
-  // If latest punch is regular 'in' or 'lunch_start' but shift is already finished or from a previous day, consider shift auto-completed
+  // An active session is regular if latest punch is 'in' or lunch break, and not from a stale past day.
+  // Clocked-in work past shift end remains active so employee can punch out cleanly.
   const isRegularActive =
     (latest?.type === "in" || latest?.type === "lunch_start" || latest?.type === "lunch_end") &&
-    !isStaleFromPastDay &&
-    !isPastShiftEnd;
+    !isStaleFromPastDay;
 
   const isExtraActive = latest?.type === "extra_in";
   const isPunchedIn = Boolean(isRegularActive || isExtraActive);
@@ -667,6 +690,48 @@ export function getLiveAttendanceStatus(
   const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(employee, workingDays);
   const isScheduledDay =
     effectiveWorkingDays.includes(shiftWeekday) && !holidays.includes(shift.dateKey);
+
+  // Multi-shift progress tracking
+  const todayPunches = sorted.filter((p) => {
+    const pDate =
+      p.attendanceDate ||
+      p.date ||
+      (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? now, shiftTimezone) : "");
+    return pDate === todayDateKey;
+  });
+
+  const fallbackDays = employee.workingDays || [0, 1, 2, 3, 4, 5];
+  const activeShiftsForToday =
+    employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0
+      ? employee.shifts.filter((s) => {
+          const days =
+            Array.isArray(s.workingDays) && s.workingDays.length > 0 ? s.workingDays : fallbackDays;
+          return days.includes(shiftWeekday);
+        })
+      : [];
+
+  const completedRegularShiftsCount = todayPunches.filter(
+    (p) => p.type === "out" && !p.isAuto,
+  ).length;
+  const hasMultipleShiftsToday = activeShiftsForToday.length > 1;
+  const totalShiftsToday = hasMultipleShiftsToday ? activeShiftsForToday.length : 1;
+  const remainingShiftsCount = hasMultipleShiftsToday
+    ? Math.max(0, activeShiftsForToday.length - completedRegularShiftsCount - (isPunchedIn ? 1 : 0))
+    : isPunchedIn || completedRegularShiftsCount > 0
+      ? 0
+      : 1;
+
+  const hasCompletedAllShiftsToday = hasMultipleShiftsToday
+    ? completedRegularShiftsCount >= activeShiftsForToday.length
+    : completedRegularShiftsCount > 0;
+
+  // Only consider shift completed (for triggering post-shift overtime) if all scheduled shifts
+  // for today have actually been worked & punched out, and now >= shift.end.
+  // If the employee hasn't worked yet today or has shifts remaining, isPastShiftEnd is false
+  // so the employee can start their regular shift without being forced into overtime.
+  const isPastShiftEnd = hasCompletedAllShiftsToday && now.getTime() >= shift.end.getTime();
+  const isShiftCompleted = isPastShiftEnd;
+
   const effectiveGraceMinutes = getEffectiveLateGraceMinutes(graceMinutes);
   const isExcused = Boolean(firstIn?.isExcused);
   const lateness =
@@ -680,7 +745,11 @@ export function getLiveAttendanceStatus(
       : null;
   const missingMinutes = Math.max(0, Math.floor((now.getTime() - shift.start.getTime()) / 60000));
   const isMissingLate =
-    isScheduledDay && !firstIn && missingMinutes > effectiveGraceMinutes && now <= shift.end;
+    isScheduledDay &&
+    !firstIn &&
+    missingMinutes > effectiveGraceMinutes &&
+    now <= shift.end &&
+    !hasCompletedAllShiftsToday;
   const isEarly = Boolean(lateness?.isEarly);
   const minutesEarly =
     isEarly && firstIn && lateness
@@ -690,8 +759,6 @@ export function getLiveAttendanceStatus(
           ) / 60,
         )
       : 0;
-
-  const isShiftCompleted = isPastShiftEnd;
 
   return {
     latest,
@@ -712,6 +779,10 @@ export function getLiveAttendanceStatus(
     isMissingLate,
     isScheduledDay,
     shift,
+    completedRegularShiftsCount,
+    totalShiftsToday,
+    remainingShiftsCount,
+    hasCompletedAllShiftsToday,
   };
 }
 

@@ -253,26 +253,30 @@ function EmployeesListPage() {
     }
   });
 
-  const filtered = Array.from(uniqueEmps.values()).filter((e) => {
-    if (filterCompany !== "all") {
-      const matchComp =
-        e.companyId === filterCompany ||
-        e.companyIds?.includes(filterCompany) ||
-        (!e.companyId &&
-          (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
-      if (!matchComp) return false;
-    }
-    if (filterDept && e.deptId !== filterDept) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = (e.name || "").toLowerCase().includes(q);
-      const matchEmail = (e.email || "").toLowerCase().includes(q);
-      const matchTitle = (e.jobTitle || "").toLowerCase().includes(q);
-      const matchId = (e.id || "").toLowerCase().includes(q);
-      return matchName || matchEmail || matchTitle || matchId;
-    }
-    return true;
-  });
+  const filtered = Array.from(uniqueEmps.values())
+    .filter((e) => {
+      if (filterCompany !== "all") {
+        const matchComp =
+          e.companyId === filterCompany ||
+          e.companyIds?.includes(filterCompany) ||
+          (!e.companyId &&
+            (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
+        if (!matchComp) return false;
+      }
+      if (filterDept && e.deptId !== filterDept) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (e.name || "").toLowerCase().includes(q);
+        const matchEmail = (e.email || "").toLowerCase().includes(q);
+        const matchTitle = (e.jobTitle || "").toLowerCase().includes(q);
+        const matchId = (e.id || "").toLowerCase().includes(q);
+        return matchName || matchEmail || matchTitle || matchId;
+      }
+      return true;
+    })
+    .sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+    );
 
   return (
     <div>

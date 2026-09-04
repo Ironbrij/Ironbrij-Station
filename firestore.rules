@@ -46,7 +46,14 @@ service cloud.firestore {
         employeeId == request.auth.uid ||
         (
           exists(/databases/$(database)/documents/employees/$(employeeId)) &&
-          get(/databases/$(database)/documents/employees/$(employeeId)).data.authUid == request.auth.uid
+          (
+            get(/databases/$(database)/documents/employees/$(employeeId)).data.authUid == request.auth.uid ||
+            (
+              request.auth.token.email != null &&
+              'email' in get(/databases/$(database)/documents/employees/$(employeeId)).data &&
+              get(/databases/$(database)/documents/employees/$(employeeId)).data.email == request.auth.token.email
+            )
+          )
         )
       );
     }
@@ -99,7 +106,8 @@ service cloud.firestore {
     // HR Announcements & Notices Collection
     match /notices/{id} {
       allow read: if isAuthed();
-      allow write: if isAdmin();
+      allow create: if isAuthed();
+      allow update, delete: if isAdmin();
     }
 
     // Payroll Payouts Records Collection

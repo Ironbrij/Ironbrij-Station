@@ -5,6 +5,7 @@ import {
   onSnapshot,
   query,
   runTransaction,
+  setDoc,
   Timestamp,
   where,
 } from "firebase/firestore";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 import { auth, db } from "./firebase";
 import { formatInTimezone, getShiftTimeout } from "./attendance";
 import {
+  cleanFirestoreData,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
@@ -71,56 +73,72 @@ export async function reconcileEmployeeShift(
       const requiredWorkMinutes = getRequiredWorkMinutes(cCompanyEmployee, company);
       const autoReason = subsequentOtherPunch ? "switch_company" : "forgot_punch_out";
 
-      const created = await runTransaction(db(), async (transaction) => {
-        const existingPunch = await transaction.get(punchRef);
-        if (existingPunch.exists()) return false;
+      let created = false;
+      try {
+        created = await runTransaction(db(), async (transaction) => {
+          const existingPunch = await transaction.get(punchRef);
+          if (existingPunch.exists()) return false;
 
-        transaction.set(punchRef, {
-          employeeId: employee.id,
-          employeeName: employee.name,
-          companyId: cId,
-          companyName: cId === activeCompanyId ? company?.name || "Company" : cId,
-          date: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
-          attendanceDate: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
-          type: "out",
-          timestamp: Timestamp.fromDate(autoOutDate),
-          source: "auto",
-          isAuto: true,
-          autoReason,
-          notes: subsequentOtherPunch
-            ? `Auto punched out upon starting work in another company`
-            : "Auto punched out at shift end",
-          scheduledShiftStart: timeout?.shift.start.toISOString(),
-          scheduledShiftEnd: timeout?.shift.end.toISOString(),
-          shiftTimezone: timeout?.shift.timezone,
-          requiredWorkMinutes,
-          normalWorkMinutes: requiredWorkMinutes,
-          overtimeMinutes: 0,
-          totalEligibleMinutes: requiredWorkMinutes,
-          attendanceStatus: "complete",
+          transaction.set(
+            punchRef,
+            cleanFirestoreData({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              companyId: cId,
+              companyName: cId === activeCompanyId ? company?.name || "Company" : cId,
+              date: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
+              attendanceDate: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
+              type: "out",
+              timestamp: Timestamp.fromDate(autoOutDate),
+              source: "auto",
+              isAuto: true,
+              autoReason,
+              notes: subsequentOtherPunch
+                ? `Auto punched out upon starting work in another company`
+                : "Auto punched out at shift end",
+              scheduledShiftStart: timeout?.shift.start.toISOString(),
+              scheduledShiftEnd: timeout?.shift.end.toISOString(),
+              shiftTimezone: timeout?.shift.timezone,
+              requiredWorkMinutes,
+              normalWorkMinutes: requiredWorkMinutes,
+              overtimeMinutes: 0,
+              totalEligibleMinutes: requiredWorkMinutes,
+              attendanceStatus: "complete",
+            }),
+          );
+
+          return true;
         });
-
-        if (!subsequentOtherPunch && timeout) {
-          transaction.set(noticeRef, {
-            title: "We think you forgot to punch out",
-            message: `You remained clocked in past your scheduled shift, so SavyTimes automatically clocked you out at ${formatInTimezone(
-              autoOutDate,
-              timeout.shift.timezone,
-            )} to preserve accurate shift records. If you worked overtime, your extra hours can be approved by your admin in the Overtime tab.`,
-            priority: "info",
-            targetType: "employee",
-            targetEmployeeId: employee.id,
-            companyId: cId,
-            createdAt: new Date().toISOString(),
-            authorName: "SavyTimes",
-          });
-        }
-
-        return true;
-      });
+      } catch (txError) {
+        console.error("Shift auto punch-out transaction failed:", txError);
+      }
 
       if (created) {
         anyCreated = true;
+
+        if (!subsequentOtherPunch && timeout) {
+          try {
+            await setDoc(
+              noticeRef,
+              cleanFirestoreData({
+                title: "We think you forgot to punch out",
+                message: `You remained clocked in past your scheduled shift, so SavyTimes automatically clocked you out at ${formatInTimezone(
+                  autoOutDate,
+                  timeout.shift.timezone,
+                )} to preserve accurate shift records. If you worked overtime, your extra hours can be approved by your admin in the Overtime tab.`,
+                priority: "info",
+                targetType: "employee",
+                targetEmployeeId: employee.id,
+                companyId: cId,
+                createdAt: new Date().toISOString(),
+                authorName: "SavyTimes",
+              }),
+            );
+          } catch (noticeError) {
+            console.warn("Failed to create auto punch-out notice:", noticeError);
+          }
+        }
+
         if (announceToCurrentUser && cId === activeCompanyId && !subsequentOtherPunch) {
           toast.info("Shift ended: You were automatically clocked out.", {
             description: "Shift period concluded.",
@@ -171,10 +189,13 @@ export function useShiftAutoPunchOut({
       }
     }
 
-    const punchesQuery = query(
-      collection(db(), "punches"),
-      where("employeeId", "==", activeEmployee.id),
+    const employeeIds = Array.from(
+      new Set([activeEmployee.id, activeEmployee.authUid].filter((v): v is string => Boolean(v))),
     );
+    const punchesQuery =
+      employeeIds.length > 1
+        ? query(collection(db(), "punches"), where("employeeId", "in", employeeIds))
+        : query(collection(db(), "punches"), where("employeeId", "==", activeEmployee.id));
     const unsubscribe = onSnapshot(
       punchesQuery,
       (snapshot) => {

@@ -58,15 +58,30 @@ export function getEmployeeCompanyIds(employee: Employee | null | undefined): st
   const ids = new Set<string>();
   if (employee.companyId) ids.add(employee.companyId);
   employee.companyIds?.forEach((companyId) => companyId && ids.add(companyId));
-  Object.entries(employee.companyMemberships || {}).forEach(([companyId, membership]) => {
-    if (membership.status !== "inactive") ids.add(membership.companyId || companyId);
-  });
+  if (Array.isArray(employee.companyMemberships)) {
+    (employee.companyMemberships as unknown as CompanyMembership[]).forEach((membership) => {
+      if (membership && membership.status !== "inactive" && membership.companyId) {
+        ids.add(membership.companyId);
+      }
+    });
+  } else if (employee.companyMemberships && typeof employee.companyMemberships === "object") {
+    Object.entries(employee.companyMemberships).forEach(([companyId, membership]) => {
+      if (membership && membership.status !== "inactive") ids.add(membership.companyId || companyId);
+    });
+  }
   if (ids.size === 0) ids.add(COMPANY_ID);
   return [...ids];
 }
 
 export function getCompanyMembership(employee: Employee, companyId: string): CompanyMembership {
-  const configured = employee.companyMemberships?.[companyId];
+  let configured: CompanyMembership | undefined;
+  if (Array.isArray(employee.companyMemberships)) {
+    configured = (employee.companyMemberships as unknown as CompanyMembership[]).find(
+      (m) => m && m.companyId === companyId,
+    );
+  } else if (employee.companyMemberships && typeof employee.companyMemberships === "object") {
+    configured = employee.companyMemberships[companyId];
+  }
   if (configured) return { ...configured, companyId };
 
   return {
@@ -85,6 +100,7 @@ export function getCompanyMembership(employee: Employee, companyId: string): Com
 }
 
 export function getEmployeeForCompany(employee: Employee, companyId: string): Employee {
+  if (!companyId || companyId === "all") return employee;
   const membership = getCompanyMembership(employee, companyId);
   return {
     ...employee,
@@ -261,10 +277,24 @@ export function getEmployeeBreakSettings(
 
 export function cleanFirestoreData<T extends Record<string, any>>(data: T): T {
   if (data === null || data === undefined) return {} as T;
+  if (typeof data !== "object") return data;
+  if (data instanceof Date) return data;
+  if (
+    typeof (data as any).toMillis === "function" ||
+    (data.constructor && data.constructor.name !== "Object" && data.constructor.name !== "Array")
+  ) {
+    return data;
+  }
   const result: any = Array.isArray(data) ? [] : {};
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) continue;
-    if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      !(value instanceof Date) &&
+      typeof (value as any).toMillis !== "function" &&
+      (!value.constructor || value.constructor.name === "Object" || value.constructor.name === "Array")
+    ) {
       result[key] = cleanFirestoreData(value);
     } else {
       result[key] = value;

@@ -8,6 +8,7 @@ import {
   computeRegularWorkedMsForDay,
   getEffectiveEmployeeWorkingDays,
   getEmployeeShiftWindow,
+  getLiveAttendanceStatus,
   getShiftTimeout,
   zonedDateTimeToDate,
 } from "../src/lib/attendance.ts";
@@ -331,3 +332,123 @@ test("lunch break punches pause shift timer and exclude lunch duration from regu
   const afterLunchMs = computeRegularWorkedMsForDay(emp, punches, at("13:30"), at("13:30"));
   assert.equal(afterLunchMs, 4 * 60 * 60 * 1000);
 });
+
+test("multi-shift employee progresses to Shift 2 after Shift 1 without being forced into overtime", () => {
+  const multiEmp = employee({
+    isMultipleShift: true,
+    shifts: [
+      { startTime: "08:00", endTime: "12:00", workingDays: [1, 2, 3, 4, 5] },
+      { startTime: "14:00", endTime: "18:00", workingDays: [1, 2, 3, 4, 5] },
+    ],
+  });
+
+  const punchesShift1Completed: Punch[] = [
+    {
+      id: "p1",
+      employeeId: multiEmp.id,
+      companyId: "alpha",
+      type: "in",
+      timestamp: { seconds: at("08:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+      scheduledShiftStart: at("08:00").toISOString(),
+      scheduledShiftEnd: at("12:00").toISOString(),
+    },
+    {
+      id: "p2",
+      employeeId: multiEmp.id,
+      companyId: "alpha",
+      type: "out",
+      timestamp: { seconds: at("12:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+      scheduledShiftStart: at("08:00").toISOString(),
+      scheduledShiftEnd: at("12:00").toISOString(),
+    },
+  ];
+
+  // At 13:00 (after Shift 1 ended at 12:00, but before Shift 2 starts at 14:00):
+  const shiftWindow = getEmployeeShiftWindow(multiEmp, at("13:00"), punchesShift1Completed);
+  // Shift window must be Shift 2 (14:00 - 18:00)
+  assert.equal(shiftWindow.start.getTime(), at("14:00").getTime());
+  assert.equal(shiftWindow.end.getTime(), at("18:00").getTime());
+
+  const status = getLiveAttendanceStatus(multiEmp, punchesShift1Completed, at("13:00"), 5);
+  assert.equal(status.completedRegularShiftsCount, 1);
+  assert.equal(status.totalShiftsToday, 2);
+  assert.equal(status.remainingShiftsCount, 1);
+  assert.equal(status.hasCompletedAllShiftsToday, false);
+  assert.equal(status.isPastShiftEnd, false);
+  assert.equal(status.isPunchedIn, false);
+
+  // When Shift 2 completes as well:
+  const allShiftsCompletedPunches: Punch[] = [
+    ...punchesShift1Completed,
+    {
+      id: "p3",
+      employeeId: multiEmp.id,
+      companyId: "alpha",
+      type: "in",
+      timestamp: { seconds: at("14:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+      scheduledShiftStart: at("14:00").toISOString(),
+      scheduledShiftEnd: at("18:00").toISOString(),
+    },
+    {
+      id: "p4",
+      employeeId: multiEmp.id,
+      companyId: "alpha",
+      type: "out",
+      timestamp: { seconds: at("18:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+      scheduledShiftStart: at("14:00").toISOString(),
+      scheduledShiftEnd: at("18:00").toISOString(),
+    },
+  ];
+
+  // At 18:30 (after Shift 2 has finished):
+  const endOfDayStatus = getLiveAttendanceStatus(multiEmp, allShiftsCompletedPunches, at("18:30"), 5);
+  assert.equal(endOfDayStatus.completedRegularShiftsCount, 2);
+  assert.equal(endOfDayStatus.totalShiftsToday, 2);
+  assert.equal(endOfDayStatus.remainingShiftsCount, 0);
+  assert.equal(endOfDayStatus.hasCompletedAllShiftsToday, true);
+  assert.equal(endOfDayStatus.isPastShiftEnd, true);
+});
+
+test("switching to second client company with zero punches today does not trigger overtime even if nominal shift end passed", () => {
+  // Client 2 with morning shift hours 08:00 - 12:00
+  const client2Emp = employee({
+    companyId: "beta",
+    shiftStartTime: "08:00",
+    shiftEndTime: "12:00",
+  });
+
+  // At 13:00, VA switches to Client 2. 0 punches have occurred today for Client 2.
+  const status = getLiveAttendanceStatus(client2Emp, [], at("13:00"), 5);
+  assert.equal(status.completedRegularShiftsCount, 0);
+  assert.equal(status.hasCompletedAllShiftsToday, false);
+  assert.equal(status.isPastShiftEnd, false);
+  assert.equal(status.isPunchedIn, false);
+});
+
+test("active regular work session past scheduled shift end stays clocked in (does not kick user to overtime)", () => {
+  const emp = employee({
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+
+  const punches: Punch[] = [
+    {
+      id: "p1",
+      employeeId: emp.id,
+      companyId: "alpha",
+      type: "in",
+      timestamp: { seconds: at("09:00").getTime() / 1000, nanoseconds: 0 } as any,
+      source: "app",
+    },
+  ];
+
+  // At 17:30 (30 mins past shift end), employee is still working
+  const status = getLiveAttendanceStatus(emp, punches, at("17:30"), 5);
+  assert.equal(status.isPunchedIn, true);
+  assert.equal(status.isPastShiftEnd, false);
+});
+

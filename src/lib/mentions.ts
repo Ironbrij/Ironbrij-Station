@@ -78,9 +78,11 @@ export function buildMentionCandidates(
   const deptMap = new Map<string, string>();
   departments.forEach((d) => deptMap.set(d.id, d.name));
 
-  const scopedEmployees = employees.filter(
-    (e) => e.status !== "inactive" && isEmployeeInCompany(e, userCompanyIds),
-  );
+  const scopedEmployees = employees
+    .filter((e) => e.status !== "inactive" && isEmployeeInCompany(e, userCompanyIds))
+    .sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+    );
 
   const scopedDepartments = departments.filter((d) => isDepartmentInCompany(d, userCompanyIds));
 

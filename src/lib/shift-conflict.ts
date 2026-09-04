@@ -156,37 +156,40 @@ export function getEmployeeAllShiftDefinitions(
   }
 
   // 2. Cross-company memberships
-  if (Array.isArray(employee.companyMemberships)) {
-    employee.companyMemberships.forEach((m, mIdx) => {
-      const cName = companyMap.get(m.companyId) || `Company ${mIdx + 1}`;
-      if (m.isMultipleShift && Array.isArray(m.shifts) && m.shifts.length > 0) {
-        m.shifts.forEach((s: ShiftInterval, idx: number) => {
-          definitions.push({
-            id: `membership-${m.companyId}-${idx}`,
-            name: s.name || `${cName} Shift ${idx + 1}`,
-            startTime: s.startTime || "09:00",
-            endTime: s.endTime || "17:00",
-            workingDays:
-              Array.isArray(s.workingDays) && s.workingDays.length > 0
-                ? s.workingDays
-                : m.workingDays || [0, 1, 2, 3, 4, 5],
-            companyId: m.companyId,
-            companyName: cName,
-          });
-        });
-      } else if (m.shiftStartTime && m.shiftEndTime) {
+  const memberships: CompanyMembership[] = Array.isArray(employee.companyMemberships)
+    ? employee.companyMemberships
+    : Object.values(employee.companyMemberships || {});
+
+  memberships.forEach((m, mIdx) => {
+    if (!m || !m.companyId) return;
+    const cName = companyMap.get(m.companyId) || `Company ${mIdx + 1}`;
+    if (m.isMultipleShift && Array.isArray(m.shifts) && m.shifts.length > 0) {
+      m.shifts.forEach((s: ShiftInterval, idx: number) => {
         definitions.push({
-          id: `membership-${m.companyId}`,
-          name: `${cName} Shift`,
-          startTime: m.shiftStartTime,
-          endTime: m.shiftEndTime,
-          workingDays: m.workingDays || [0, 1, 2, 3, 4, 5],
+          id: `membership-${m.companyId}-${idx}`,
+          name: s.name || `${cName} Shift ${idx + 1}`,
+          startTime: s.startTime || "09:00",
+          endTime: s.endTime || "17:00",
+          workingDays:
+            Array.isArray(s.workingDays) && s.workingDays.length > 0
+              ? s.workingDays
+              : m.workingDays || [0, 1, 2, 3, 4, 5],
           companyId: m.companyId,
           companyName: cName,
         });
-      }
-    });
-  }
+      });
+    } else if (m.shiftStartTime && m.shiftEndTime) {
+      definitions.push({
+        id: `membership-${m.companyId}`,
+        name: `${cName} Shift`,
+        startTime: m.shiftStartTime,
+        endTime: m.shiftEndTime,
+        workingDays: m.workingDays || [0, 1, 2, 3, 4, 5],
+        companyId: m.companyId,
+        companyName: cName,
+      });
+    }
+  });
 
   return definitions;
 }

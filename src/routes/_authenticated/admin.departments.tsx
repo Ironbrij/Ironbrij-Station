@@ -637,9 +637,13 @@ function DepartmentsPage() {
         )}
 
         {visibleDepartments.map((d) => {
-          const deptEmployees = employees.filter(
-            (e) => e.deptId === d.id && e.status === "active" && e.inviteStatus === "accepted",
-          );
+          const deptEmployees = employees
+            .filter(
+              (e) => e.deptId === d.id && e.status === "active" && e.inviteStatus === "accepted",
+            )
+            .sort((a, b) =>
+              (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+            );
           const isExpanded = expandedDeptId === d.id || visibleDepartments.length <= 2;
           const selectedDays = reportDaysMap[d.id] || 30; // Default to 30 days (1 month)
 

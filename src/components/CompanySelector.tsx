@@ -9,6 +9,7 @@ interface CompanySelectorProps {
   className?: string;
   onCompanyChange?: (companyId: string) => void;
   activeShiftCompanyIds?: string[];
+  allowAll?: boolean;
 }
 
 export function CompanySelector({
@@ -16,8 +17,10 @@ export function CompanySelector({
   className = "",
   onCompanyChange,
   activeShiftCompanyIds = [],
+  allowAll,
 }: CompanySelectorProps) {
-  const { companies, activeCompanyId, setActiveCompanyId } = useAuth();
+  const { companies, activeCompanyId, setActiveCompanyId, isAdmin } = useAuth();
+  const showAllOption = allowAll ?? (isAdmin || variant === "dashboard");
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,6 +34,12 @@ export function CompanySelector({
   }, [open]);
 
   const activeCompany = useMemo(() => {
+    if (activeCompanyId === "all") {
+      return {
+        id: "all",
+        name: "All Companies",
+      };
+    }
     return (
       companies.find((c) => (c.id || COMPANY_ID) === activeCompanyId) ||
       companies[0] || {
@@ -58,7 +67,11 @@ export function CompanySelector({
       return;
     }
 
-    if (activeShiftCompanyIds.length > 0 && !activeShiftCompanyIds.includes(targetId)) {
+    if (
+      targetId !== "all" &&
+      activeShiftCompanyIds.length > 0 &&
+      !activeShiftCompanyIds.includes(targetId)
+    ) {
       const activeName =
         companies.find((item) => (item.id || COMPANY_ID) === activeShiftCompanyIds[0])?.name ||
         "another company";
@@ -75,8 +88,8 @@ export function CompanySelector({
     setOpen(false);
   }
 
-  // If there's only 1 company, show a simple static badge
-  if (companies.length <= 1) {
+  // If there's only 1 company and no 'all' option allowed, show a simple static badge
+  if (companies.length <= 1 && !showAllOption) {
     return (
       <div
         className={`flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs font-bold text-foreground ${className}`}
@@ -104,7 +117,7 @@ export function CompanySelector({
                   Company Context
                 </span>
                 <span className="truncate font-extrabold text-foreground text-xs block leading-tight mt-0.5">
-                  {activeCompany.name}
+                  {activeCompanyId === "all" ? `All Companies (${companies.length})` : activeCompany.name}
                 </span>
               </div>
             </div>
@@ -118,7 +131,7 @@ export function CompanySelector({
           >
             <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
             <span className="max-w-[130px] sm:max-w-[180px] truncate text-left">
-              {activeCompany.name}
+              {activeCompanyId === "all" ? "All Companies" : activeCompany.name}
             </span>
             <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 opacity-70" />
           </button>
@@ -163,7 +176,50 @@ export function CompanySelector({
 
         {/* Company Options List */}
         <div className="max-h-64 overflow-y-auto p-1.5 divide-y divide-border/40">
-          {filteredCompanies.length === 0 ? (
+          {showAllOption &&
+            (!search.trim() ||
+              "all companies".includes(search.toLowerCase().trim()) ||
+              "all".includes(search.toLowerCase().trim())) && (
+              <button
+                type="button"
+                onClick={() => handleSelect("all")}
+                className={`w-full text-left p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs transition-all ${
+                  activeCompanyId === "all"
+                    ? "bg-primary/10 text-primary font-extrabold shadow-2xs"
+                    : "hover:bg-accent/60 text-foreground font-medium"
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`flex h-7 w-7 items-center justify-center rounded-lg border text-xs shrink-0 font-bold ${
+                      activeCompanyId === "all"
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" />
+                  </div>
+
+                  <div className="truncate">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate block font-bold">All Companies</span>
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-primary/15 text-primary">
+                        All ({companies.length})
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground block truncate">
+                      Consolidated view of all team members & activity
+                    </span>
+                  </div>
+                </div>
+
+                {activeCompanyId === "all" && (
+                  <Check className="h-4 w-4 text-primary shrink-0 font-bold" />
+                )}
+              </button>
+            )}
+
+          {filteredCompanies.length === 0 && !showAllOption ? (
             <div className="py-6 text-center text-xs text-muted-foreground font-medium">
               No companies match "{search}".
             </div>

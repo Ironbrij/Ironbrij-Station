@@ -1608,6 +1608,10 @@ function ReportsPage() {
               <option value="">All employees</option>
               {employees
                 .filter((emp) => !departmentId || emp.deptId === departmentId)
+                .slice()
+                .sort((a, b) =>
+                  (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+                )
                 .map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.name}

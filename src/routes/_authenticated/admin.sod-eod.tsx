@@ -497,7 +497,9 @@ function AdminSodEodPage() {
                       );
                     }
                     return true;
-                  });
+                  }).sort((a, b) =>
+                    (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+                  );
 
                   if (filteredEmployees.length === 0) {
                     return (

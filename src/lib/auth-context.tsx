@@ -116,6 +116,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             authUid: u.uid,
             photoUrl: authPhotoUrl || resolveProfilePhoto(empData as Omit<Employee, "id">) || "",
           };
+          if (empData.authUid !== u.uid) {
+            setDoc(
+              doc(db(), "employees", matchDoc.id),
+              { authUid: u.uid, email: userEmail },
+              { merge: true },
+            ).catch((e) => console.warn("Failed to persist authUid to employee doc:", e));
+          }
           setEmployee(updatedEmp as Employee);
         } else {
           setEmployee(null);
@@ -209,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const availableCompanyIds = useMemo(() => {
     if (isAdmin && companies.length > 0) {
-      return companies.map((item) => item.id || COMPANY_ID);
+      return ["all", ...companies.map((item) => item.id || COMPANY_ID)];
     }
     return getEmployeeCompanyIds(employee);
   }, [companies, employee, isAdmin]);
@@ -238,10 +245,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [availableCompanyIds, user],
   );
 
-  const company = useMemo(
-    () => companies.find((item) => (item.id || COMPANY_ID) === activeCompanyId) || null,
-    [activeCompanyId, companies],
-  );
+  const company = useMemo(() => {
+    if (activeCompanyId === "all") {
+      return {
+        id: "all",
+        name: "All Companies",
+        defaultShiftHours: 8,
+        workingDays: [1, 2, 3, 4, 5],
+        holidays: [],
+      } as Company;
+    }
+    return companies.find((item) => (item.id || COMPANY_ID) === activeCompanyId) || null;
+  }, [activeCompanyId, companies]);
+
   const scopedEmployee = useMemo(() => {
     if (employee) return getEmployeeForCompany(employee, activeCompanyId);
     if (isAdmin && user) {

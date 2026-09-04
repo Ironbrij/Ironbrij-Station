@@ -71,6 +71,7 @@ import { format } from "date-fns";
 import { getNoticeDeliveryTime, isNoticePublished, noticeMatchesEmployee } from "@/lib/notices";
 import { publishPersonalAttendanceEvent } from "@/lib/personal-automation";
 import {
+  cleanFirestoreData,
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
@@ -189,7 +190,13 @@ function PunchPage() {
   // Fetch all punches for this employee (Index-free, real-time sync)
   useEffect(() => {
     if (!employee) return;
-    const q = query(collection(db(), "punches"), where("employeeId", "==", employee.id));
+    const employeeIds = Array.from(
+      new Set([employee.id, employee.authUid].filter((v): v is string => Boolean(v))),
+    );
+    const q =
+      employeeIds.length > 1
+        ? query(collection(db(), "punches"), where("employeeId", "in", employeeIds))
+        : query(collection(db(), "punches"), where("employeeId", "==", employee.id));
     return onSnapshot(
       q,
       (snap) => {
@@ -206,7 +213,13 @@ function PunchPage() {
   // Keep leave and scheduled break requests in sync.
   useEffect(() => {
     if (!employee) return;
-    const q = query(collection(db(), "leaveRequests"), where("employeeId", "==", employee.id));
+    const employeeIds = Array.from(
+      new Set([employee.id, employee.authUid].filter((v): v is string => Boolean(v))),
+    );
+    const q =
+      employeeIds.length > 1
+        ? query(collection(db(), "leaveRequests"), where("employeeId", "in", employeeIds))
+        : query(collection(db(), "leaveRequests"), where("employeeId", "==", employee.id));
     return onSnapshot(
       q,
       (snap) => {
@@ -455,14 +468,17 @@ function PunchPage() {
             latestPrev.type === "lunch_start" ||
             latestPrev.type === "lunch_end")
         ) {
-          await addDoc(collection(db(), "punches"), {
-            employeeId: employee.id,
-            companyId: prevCompanyId,
-            type: "out",
-            timestamp: new Date().toISOString(),
-            source: "web",
-            notes: `Auto punched out on switching to ${company?.name || "another company"}`,
-          });
+          await addDoc(
+            collection(db(), "punches"),
+            cleanFirestoreData({
+              employeeId: employee.id,
+              companyId: prevCompanyId,
+              type: "out",
+              timestamp: new Date().toISOString(),
+              source: "web",
+              notes: `Auto punched out on switching to ${company?.name || "another company"}`,
+            }),
+          );
           toast.info(`Clocked out from ${activeOtherCompany.companyName}`);
         }
       }
@@ -519,37 +535,40 @@ function PunchPage() {
 
       const recordedOvertimeMinutes = calculation?.overtimeMinutes ?? extraOvertimeMinutes ?? 0;
 
-      const punchRef = await addDoc(collection(db(), "punches"), {
-        employeeId: employee.id,
-        employeeName: employee.name,
-        companyId: activeCompanyId,
-        companyName: company?.name || "Company",
-        date: targetAttendanceDate,
-        attendanceDate: targetAttendanceDate,
-        type: punchType,
-        timestamp: serverTimestamp(),
-        source: "app",
-        scheduledShiftStart: shiftWindow.start.toISOString(),
-        scheduledShiftEnd: shiftWindow.end.toISOString(),
-        shiftTimezone: shiftWindow.timezone,
-        requiredWorkMinutes,
-        isOffShiftDay,
-        ...(calculation
-          ? {
-              normalWorkMinutes: calculation.normalWorkMinutes,
-              overtimeMinutes: calculation.overtimeMinutes,
-              totalEligibleMinutes: calculation.totalEligibleMinutes,
-              attendanceStatus: calculation.status,
-            }
-          : extraOvertimeMinutes !== null
+      const punchRef = await addDoc(
+        collection(db(), "punches"),
+        cleanFirestoreData({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          companyId: activeCompanyId,
+          companyName: company?.name || "Company",
+          date: targetAttendanceDate,
+          attendanceDate: targetAttendanceDate,
+          type: punchType,
+          timestamp: serverTimestamp(),
+          source: "app",
+          scheduledShiftStart: shiftWindow.start.toISOString(),
+          scheduledShiftEnd: shiftWindow.end.toISOString(),
+          shiftTimezone: shiftWindow.timezone,
+          requiredWorkMinutes,
+          isOffShiftDay,
+          ...(calculation
             ? {
-                normalWorkMinutes: 0,
-                overtimeMinutes: extraOvertimeMinutes,
-                totalEligibleMinutes: extraOvertimeMinutes,
-                attendanceStatus: "complete",
+                normalWorkMinutes: calculation.normalWorkMinutes,
+                overtimeMinutes: calculation.overtimeMinutes,
+                totalEligibleMinutes: calculation.totalEligibleMinutes,
+                attendanceStatus: calculation.status,
               }
-            : { attendanceStatus: "in_progress" }),
-      });
+            : extraOvertimeMinutes !== null
+              ? {
+                  normalWorkMinutes: 0,
+                  overtimeMinutes: extraOvertimeMinutes,
+                  totalEligibleMinutes: extraOvertimeMinutes,
+                  attendanceStatus: "complete",
+                }
+              : { attendanceStatus: "in_progress" }),
+        }),
+      );
 
       // 1. If overtime was worked on regular punch-out or extra_out, save OvertimeRequest for Admin
       if (targetType === "out" && recordedOvertimeMinutes > 0) {
@@ -561,30 +580,33 @@ function PunchPage() {
               ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
               : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
 
-          const otDoc = await addDoc(collection(db(), "overtimeRequests"), {
-            employeeId: employee.id,
-            employeeName: employee.name,
-            companyId: activeCompanyId,
-            date: targetAttendanceDate,
-            requestType:
-              isExtraOut || isOffShiftDay
-                ? isOffShiftDay
-                  ? "off_shift_work"
-                  : "overtime"
-                : "overtime",
-            punchOutId: punchRef.id,
-            punchInId: latestPunch?.id || "",
-            overtimeMinutes: recordedOvertimeMinutes,
-            normalWorkMinutes: calculation?.normalWorkMinutes || 0,
-            isOffShiftDay,
-            reason,
-            status: "pending",
-            createdAt: new Date().toISOString(),
-          });
+          const otDoc = await addDoc(
+            collection(db(), "overtimeRequests"),
+            cleanFirestoreData({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              companyId: activeCompanyId,
+              date: targetAttendanceDate,
+              requestType:
+                isExtraOut || isOffShiftDay
+                  ? isOffShiftDay
+                    ? "off_shift_work"
+                    : "overtime"
+                  : "overtime",
+              punchOutId: punchRef.id,
+              punchInId: latestPunch?.id || "",
+              overtimeMinutes: recordedOvertimeMinutes,
+              normalWorkMinutes: calculation?.normalWorkMinutes || 0,
+              isOffShiftDay,
+              reason,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            }),
+          );
 
           await setDoc(
             doc(db(), "punches", punchRef.id),
-            { overtimeRequestId: otDoc.id },
+            cleanFirestoreData({ overtimeRequestId: otDoc.id }),
             { merge: true },
           );
         } catch (otErr) {
@@ -603,24 +625,27 @@ function PunchPage() {
           isEarlyPunchIn = true;
           try {
             const earlyReason = `Early clock-in: started work ${formatWorkMinutes(earlyPunchMinutes)} before scheduled shift at ${format(shiftWindow.start, "h:mm a")}`;
-            const earlyOtDoc = await addDoc(collection(db(), "overtimeRequests"), {
-              employeeId: employee.id,
-              employeeName: employee.name,
-              companyId: activeCompanyId,
-              date: punchDate,
-              requestType: "early_clock_in",
-              punchInId: punchRef.id,
-              overtimeMinutes: earlyPunchMinutes,
-              normalWorkMinutes: 0,
-              isOffShiftDay: false,
-              reason: earlyReason,
-              status: "pending",
-              createdAt: new Date().toISOString(),
-            });
+            const earlyOtDoc = await addDoc(
+              collection(db(), "overtimeRequests"),
+              cleanFirestoreData({
+                employeeId: employee.id,
+                employeeName: employee.name,
+                companyId: activeCompanyId,
+                date: punchDate,
+                requestType: "early_clock_in",
+                punchInId: punchRef.id,
+                overtimeMinutes: earlyPunchMinutes,
+                normalWorkMinutes: 0,
+                isOffShiftDay: false,
+                reason: earlyReason,
+                status: "pending",
+                createdAt: new Date().toISOString(),
+              }),
+            );
 
             await setDoc(
               doc(db(), "punches", punchRef.id),
-              { overtimeRequestId: earlyOtDoc.id, earlyPunchMinutes },
+              cleanFirestoreData({ overtimeRequestId: earlyOtDoc.id, earlyPunchMinutes }),
               { merge: true },
             );
           } catch (earlyErr) {
@@ -633,23 +658,26 @@ function PunchPage() {
       if (targetType === "extra_in") {
         try {
           const postShiftReason = customReason || "Post-shift overtime session";
-          const otDoc = await addDoc(collection(db(), "overtimeRequests"), {
-            employeeId: employee.id,
-            employeeName: employee.name,
-            companyId: activeCompanyId,
-            date: punchDate,
-            requestType: "overtime",
-            punchInId: punchRef.id,
-            overtimeMinutes: 0,
-            normalWorkMinutes: 0,
-            isOffShiftDay,
-            reason: postShiftReason,
-            status: "pending",
-            createdAt: new Date().toISOString(),
-          });
+          const otDoc = await addDoc(
+            collection(db(), "overtimeRequests"),
+            cleanFirestoreData({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              companyId: activeCompanyId,
+              date: punchDate,
+              requestType: "overtime",
+              punchInId: punchRef.id,
+              overtimeMinutes: 0,
+              normalWorkMinutes: 0,
+              isOffShiftDay,
+              reason: postShiftReason,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+            }),
+          );
           await setDoc(
             doc(db(), "punches", punchRef.id),
-            { overtimeRequestId: otDoc.id },
+            cleanFirestoreData({ overtimeRequestId: otDoc.id }),
             { merge: true },
           );
         } catch (otErr) {
@@ -755,23 +783,26 @@ function PunchPage() {
         getEmployeeHolidayDates(company, employee),
       );
 
-      await addDoc(collection(db(), "punches"), {
-        employeeId: employee.id,
-        employeeName: employee.name,
-        companyId: activeCompanyId,
-        companyName: company?.name || "Company",
-        date: targetAttendanceDate,
-        attendanceDate: targetAttendanceDate,
-        type: targetType,
-        timestamp: serverTimestamp(),
-        source: "app",
-        scheduledShiftStart: schedule.shift.start.toISOString(),
-        scheduledShiftEnd: schedule.shift.end.toISOString(),
-        shiftTimezone: schedule.shift.timezone,
-        requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
-        attendanceStatus: "in_progress",
-        createdAt: new Date().toISOString(),
-      });
+      await addDoc(
+        collection(db(), "punches"),
+        cleanFirestoreData({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          companyId: activeCompanyId,
+          companyName: company?.name || "Company",
+          date: targetAttendanceDate,
+          attendanceDate: targetAttendanceDate,
+          type: targetType,
+          timestamp: serverTimestamp(),
+          source: "app",
+          scheduledShiftStart: schedule.shift.start.toISOString(),
+          scheduledShiftEnd: schedule.shift.end.toISOString(),
+          shiftTimezone: schedule.shift.timezone,
+          requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+          attendanceStatus: "in_progress",
+          createdAt: new Date().toISOString(),
+        }),
+      );
 
       if (targetType === "lunch_start") {
         toast.success("Break started. Shift timer paused.");
@@ -891,7 +922,8 @@ function PunchPage() {
     shiftWindow?.start &&
     new Date(now).getTime() < shiftWindow.start.getTime() &&
     !isOffShiftDayToday &&
-    !attendanceStatus?.isPunchedIn,
+    !attendanceStatus?.isPunchedIn &&
+    !attendanceStatus?.hasCompletedAllShiftsToday,
   );
   const earlyMinutes =
     isEarlyBeforeShift && shiftWindow?.start
@@ -902,14 +934,20 @@ function PunchPage() {
     if (isPunchedIn) {
       doPunch("out");
     } else {
-      // 1. If shift has totally ended (now >= shiftWindow.end), prompt for post-shift overtime
-      if (attendanceStatus?.isPastShiftEnd) {
+      // If switching from another company where employee is active, directly start shift here (doPunch("in") auto-closes previous company)
+      if (activeOtherCompany) {
+        doPunch("in");
+        return;
+      }
+
+      // 1. If shift has totally ended (now >= shiftWindow.end) AND all shifts for today are completed, prompt for post-shift overtime
+      if (attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday) {
         setShowOvertimeModal(true);
         return;
       }
 
-      // 2. If punching in early before scheduled shift start, prompt for early clock-in confirmation
-      if (isEarlyBeforeShift) {
+      // 2. If punching in early before scheduled shift start, prompt for early clock-in confirmation (only if earlyMinutes > grace)
+      if (isEarlyBeforeShift && earlyMinutes > (company?.lateGraceMinutes ?? 5)) {
         setShowEarlyModal(true);
         return;
       }
@@ -1354,18 +1392,26 @@ function PunchPage() {
 
                     <div className="space-y-1 rounded-lg border bg-muted/40 p-5 text-foreground">
                       <div className="text-lg font-semibold">
-                        {attendanceStatus?.isPastShiftEnd
+                        {attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday
                           ? "Shift Completed"
-                          : isEarlyBeforeShift && shiftWindow?.start
-                            ? "Ready to start shift (Early)"
-                            : "Not working"}
+                          : attendanceStatus?.remainingShiftsCount !== undefined &&
+                            attendanceStatus?.totalShiftsToday > 1 &&
+                            attendanceStatus?.completedRegularShiftsCount > 0
+                            ? `Ready for Shift ${attendanceStatus.completedRegularShiftsCount + 1} of ${attendanceStatus.totalShiftsToday}`
+                            : isEarlyBeforeShift && shiftWindow?.start
+                              ? "Ready to start shift (Early)"
+                              : "Not working"}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {attendanceStatus?.isPastShiftEnd
+                        {attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday
                           ? "Your scheduled shift has ended. Ready for overtime work."
-                          : isEarlyBeforeShift && shiftWindow?.start
-                            ? `Scheduled shift starts at ${format(shiftWindow.start, "h:mm a")} (${formatWorkMinutes(earlyMinutes)} from now). Clocking in now will log Early Overtime.`
-                            : "Ready to start shift"}
+                          : attendanceStatus?.remainingShiftsCount !== undefined &&
+                            attendanceStatus?.totalShiftsToday > 1 &&
+                            attendanceStatus?.completedRegularShiftsCount > 0
+                            ? `Shift ${attendanceStatus.completedRegularShiftsCount} completed. Ready to start shift ${attendanceStatus.completedRegularShiftsCount + 1} of ${attendanceStatus.totalShiftsToday}.`
+                            : isEarlyBeforeShift && shiftWindow?.start
+                              ? `Scheduled shift starts at ${format(shiftWindow.start, "h:mm a")} (${formatWorkMinutes(earlyMinutes)} from now). Clocking in now will log Early Overtime.`
+                              : "Ready to start shift"}
                       </div>
                       <div className="mt-1 text-sm font-medium text-foreground">{deptName}</div>
                     </div>
@@ -1384,11 +1430,15 @@ function PunchPage() {
                       : "End the current shift or take break"
                     : activeOtherCompany
                       ? `Clocked in at ${activeOtherCompany.companyName}`
-                      : attendanceStatus?.isPastShiftEnd
+                      : attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday
                         ? "Start an overtime shift"
-                        : isEarlyBeforeShift && shiftWindow?.start
-                          ? "Clock in early (Early Overtime will be tracked)"
-                          : "Begin today’s shift"}
+                        : attendanceStatus?.remainingShiftsCount !== undefined &&
+                          attendanceStatus?.totalShiftsToday > 1 &&
+                          attendanceStatus?.completedRegularShiftsCount > 0
+                          ? `Start Shift ${attendanceStatus.completedRegularShiftsCount + 1} of ${attendanceStatus.totalShiftsToday}`
+                          : isEarlyBeforeShift && shiftWindow?.start
+                            ? "Clock in early (Early Overtime will be tracked)"
+                            : "Begin today’s shift"}
                 </div>
               )}
 
@@ -1412,7 +1462,7 @@ function PunchPage() {
                           ? "bg-rose-600 hover:bg-rose-700"
                           : activeOtherCompany
                             ? "bg-amber-500 hover:bg-amber-600"
-                            : attendanceStatus?.isPastShiftEnd
+                            : attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday
                               ? "bg-amber-500 hover:bg-amber-600"
                               : isEarlyBeforeShift && shiftWindow?.start
                                 ? "bg-amber-500 hover:bg-amber-600"
@@ -1434,8 +1484,12 @@ function PunchPage() {
                         <ArrowRightLeft className="h-4 w-4 shrink-0" />
                         <span>End {activeOtherCompany.companyName} Shift & Start Work Here</span>
                       </span>
-                    ) : attendanceStatus?.isPastShiftEnd ? (
+                    ) : attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday ? (
                       "⚡ Start Overtime Work"
+                    ) : attendanceStatus?.remainingShiftsCount !== undefined &&
+                      attendanceStatus?.totalShiftsToday > 1 &&
+                      attendanceStatus?.completedRegularShiftsCount > 0 ? (
+                      `Start Shift ${attendanceStatus.completedRegularShiftsCount + 1} (${attendanceStatus.completedRegularShiftsCount + 1}/${attendanceStatus.totalShiftsToday})`
                     ) : isEarlyBeforeShift && shiftWindow?.start ? (
                       `🌅 Start Work (${formatWorkMinutes(earlyMinutes)} Early)`
                     ) : (
@@ -1676,22 +1730,36 @@ function PunchPage() {
               />
             </div>
 
-            <div className="pt-3 flex items-center justify-end gap-2 border-t">
-              <button
-                type="button"
-                onClick={() => setShowOvertimeModal(false)}
-                className="rounded-xl border px-4 py-2.5 text-xs font-bold text-muted-foreground hover:bg-muted"
-              >
-                Cancel
-              </button>
+            <div className="pt-3 flex items-center justify-between gap-2 border-t">
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => doPunch("extra_in", overtimeReason)}
-                className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+                onClick={() => {
+                  setShowOvertimeModal(false);
+                  doPunch("in");
+                }}
+                className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted"
+                title="If you still have regular shift hours to work, punch in as regular work instead."
               >
-                {busy ? "Starting..." : "⚡ Yes, Start Overtime"}
+                Start as Regular Shift
               </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOvertimeModal(false)}
+                  className="rounded-xl border px-3.5 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => doPunch("extra_in", overtimeReason)}
+                  className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+                >
+                  {busy ? "Starting..." : "⚡ Yes, Start Overtime"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -273,7 +273,9 @@ function NotificationsPage() {
         if (!nameMatch && !emailMatch && !jobMatch) return false;
       }
       return true;
-    });
+    }).sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+    );
   }, [employees, empFilterCompanyId, empFilterDeptId, empSearchQuery]);
 
   const employeeFilterDepartments = useMemo(() => {

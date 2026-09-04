@@ -134,7 +134,7 @@ export function AppShell({
               <div className="text-[10px] font-medium text-muted-foreground">
                 {isAdmin ? "Admin / Owner" : employee?.jobTitle || "Employee"}
               </div>
-              {activeAttendanceCompanyIds.some((id) => id !== activeCompanyId) && (
+              {activeCompanyId !== "all" && activeAttendanceCompanyIds.some((id) => id !== activeCompanyId) && (
                 <div className="text-[10px] font-semibold text-amber-700">
                   Active shift elsewhere
                 </div>

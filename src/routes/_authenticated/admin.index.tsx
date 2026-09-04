@@ -21,9 +21,11 @@ import { StatusDot } from "@/components/StatusDot";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
+  computeEmployeeLateness,
   formatInTimezone,
   formatEmployeeShiftSummary,
   getActiveEmployeeLeave,
+  getActiveWorkingSession,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
@@ -139,14 +141,19 @@ function AdminHome() {
       setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
 
-    const un2 = onSnapshot(
-      query(collection(db(), "departments"), where("companyId", "==", activeCompanyId)),
-      (s) =>
-        setDepartments(
-          s.docs
-            .map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))
-            .filter((d) => (d.companyId || COMPANY_ID) === activeCompanyId),
-        ),
+    const deptQuery =
+      activeCompanyId === "all"
+        ? collection(db(), "departments")
+        : query(collection(db(), "departments"), where("companyId", "==", activeCompanyId));
+
+    const un2 = onSnapshot(deptQuery, (s) =>
+      setDepartments(
+        s.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))
+          .filter(
+            (d) => activeCompanyId === "all" || (d.companyId || COMPANY_ID) === activeCompanyId,
+          ),
+      ),
     );
 
     const un3 = onSnapshot(collection(db(), "punches"), (s) =>
@@ -169,14 +176,16 @@ function AdminHome() {
       }
     });
 
-    const un7 = onSnapshot(
-      query(
-        collection(db(), "overtimeRequests"),
-        where("companyId", "==", activeCompanyId),
-        where("status", "==", "pending"),
-      ),
-      (s) => setPendingOvertimeCount(s.docs.length),
-    );
+    const otQuery =
+      activeCompanyId === "all"
+        ? query(collection(db(), "overtimeRequests"), where("status", "==", "pending"))
+        : query(
+            collection(db(), "overtimeRequests"),
+            where("companyId", "==", activeCompanyId),
+            where("status", "==", "pending"),
+          );
+
+    const un7 = onSnapshot(otQuery, (s) => setPendingOvertimeCount(s.docs.length));
 
     return () => {
       un1();
@@ -192,15 +201,17 @@ function AdminHome() {
   // Load historical recent punches only when "Load History" is requested
   useEffect(() => {
     if (!showHistory) return;
-    const unsub = onSnapshot(
-      query(
-        collection(db(), "punches"),
-        where("companyId", "==", activeCompanyId),
-        orderBy("timestamp", "desc"),
-        limit(historyLimit),
-      ),
-      (s) =>
-        setHistoricalRecent(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
+    const histQuery =
+      activeCompanyId === "all"
+        ? query(collection(db(), "punches"), orderBy("timestamp", "desc"), limit(historyLimit))
+        : query(
+            collection(db(), "punches"),
+            where("companyId", "==", activeCompanyId),
+            orderBy("timestamp", "desc"),
+            limit(historyLimit),
+          );
+    const unsub = onSnapshot(histQuery, (s) =>
+      setHistoricalRecent(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
     );
     return () => unsub();
   }, [showHistory, historyLimit, activeCompanyId]);
@@ -216,9 +227,25 @@ function AdminHome() {
 
   // Filter employees belonging to activeCompanyId and scope their configuration
   const scopedEmployees = useMemo(() => {
-    return employees
-      .filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId))
-      .map((e) => getEmployeeForCompany(e, activeCompanyId));
+    let list: Employee[];
+    if (activeCompanyId === "all") {
+      const uniqueMap = new Map<string, Employee>();
+      for (const e of employees) {
+        const key = (e.email || e.authUid || e.id).toLowerCase().trim();
+        const existing = uniqueMap.get(key);
+        if (!existing || (existing.inviteStatus === "pending" && e.inviteStatus === "accepted")) {
+          uniqueMap.set(key, e);
+        }
+      }
+      list = Array.from(uniqueMap.values());
+    } else {
+      list = employees
+        .filter((e) => getEmployeeCompanyIds(e).includes(activeCompanyId))
+        .map((e) => getEmployeeForCompany(e, activeCompanyId));
+    }
+    return list.sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+    );
   }, [employees, activeCompanyId]);
 
   // Group punches by employee for fast today lookup
@@ -226,7 +253,7 @@ function AdminHome() {
     const map = new Map<string, Punch[]>();
     for (const p of todayPunches) {
       const emp = empById.get(p.employeeId);
-      if (getPunchCompanyId(p, emp) !== activeCompanyId) continue;
+      if (activeCompanyId !== "all" && getPunchCompanyId(p, emp) !== activeCompanyId) continue;
       if (!map.has(p.employeeId)) map.set(p.employeeId, []);
       map.get(p.employeeId)!.push(p);
     }
@@ -238,6 +265,65 @@ function AdminHome() {
   }, [todayPunches, activeCompanyId, empById]);
 
   function getEmpTodayStatus(emp: Employee) {
+    const getDisplayTimezone = (employee?: Employee) => {
+      if (timezoneMode === "PH") return { tz: "Asia/Manila", code: "PH", flag: "🇵🇭" };
+      if (timezoneMode === "NP") return { tz: "Asia/Kathmandu", code: "NP", flag: "🇳🇵" };
+      if (timezoneMode === "AU") return { tz: "Australia/Sydney", code: "AU", flag: "🇦🇺" };
+      if (timezoneMode === "viewer") {
+        const vTz =
+          typeof Intl !== "undefined"
+            ? Intl.DateTimeFormat().resolvedOptions().timeZone
+            : "Asia/Manila";
+        return { tz: vTz, code: "Local", flag: "💻" };
+      }
+      const empTz = getEmployeeTimezone(employee);
+      const countryCode =
+        employee?.country ||
+        (empTz.includes("Manila") ? "PH" : empTz.includes("Sydney") ? "AU" : "NP");
+      const flag = COUNTRY_TIMEZONES[countryCode as keyof typeof COUNTRY_TIMEZONES]?.flag || "🌐";
+      return { tz: empTz, code: countryCode, flag };
+    };
+
+    // When viewing "All Companies", resolve active session across any company first
+    if (activeCompanyId === "all") {
+      const activeSession = getActiveWorkingSession(todayPunches, emp, now, companies);
+      if (activeSession.status === "in" || activeSession.status === "break") {
+        const workingCompanyId = activeSession.activeCompanyId || COMPANY_ID;
+        const workingCompanyName = activeSession.activeCompanyName || "Company";
+        const targetEmp = getEmployeeForCompany(emp, workingCompanyId);
+        const targetTz = getDisplayTimezone(targetEmp);
+        const pDate = toDate(activeSession.activePunch?.timestamp);
+        const timeStr = pDate ? `${formatInTimezone(pDate, targetTz.tz)} (${targetTz.code})` : "";
+
+        if (activeSession.status === "break") {
+          const elapsed = pDate
+            ? Math.max(0, Math.floor((now.getTime() - pDate.getTime()) / 60000))
+            : 0;
+          return {
+            type: "break" as const,
+            label: `On break at ${workingCompanyName} (${elapsed > 0 ? `${elapsed}m` : "1m"})`,
+            isLate: false,
+            minutesLate: 0,
+            punchTimeStr: timeStr,
+            isAutoPunchOut: false,
+            activeCompanyName: workingCompanyName,
+          };
+        }
+
+        const lateness = computeEmployeeLateness(now, targetEmp, company?.lateGraceMinutes ?? 5);
+        return {
+          type: "in" as const,
+          label: `Punched in at ${workingCompanyName}`,
+          isLate: lateness.isLate,
+          minutesLate: lateness.minutes,
+          isExcused: false,
+          punchTimeStr: timeStr,
+          isAutoPunchOut: false,
+          activeCompanyName: workingCompanyName,
+        };
+      }
+    }
+
     const cEmp = getEmployeeForCompany(emp, activeCompanyId);
     const employeeToday = zonedDateKey(now, getEmployeeTimezone(cEmp));
     const shiftToday = zonedDateKey(now, getShiftTimezone(cEmp));
@@ -265,25 +351,6 @@ function AdminHome() {
         isAutoPunchOut: false,
       };
     }
-
-    const getDisplayTimezone = (employee?: Employee) => {
-      if (timezoneMode === "PH") return { tz: "Asia/Manila", code: "PH", flag: "🇵🇭" };
-      if (timezoneMode === "NP") return { tz: "Asia/Kathmandu", code: "NP", flag: "🇳🇵" };
-      if (timezoneMode === "AU") return { tz: "Australia/Sydney", code: "AU", flag: "🇦🇺" };
-      if (timezoneMode === "viewer") {
-        const vTz =
-          typeof Intl !== "undefined"
-            ? Intl.DateTimeFormat().resolvedOptions().timeZone
-            : "Asia/Manila";
-        return { tz: vTz, code: "Local", flag: "💻" };
-      }
-      const empTz = getEmployeeTimezone(employee);
-      const countryCode =
-        employee?.country ||
-        (empTz.includes("Manila") ? "PH" : empTz.includes("Sydney") ? "AU" : "NP");
-      const flag = COUNTRY_TIMEZONES[countryCode as keyof typeof COUNTRY_TIMEZONES]?.flag || "🌐";
-      return { tz: empTz, code: countryCode, flag };
-    };
 
     const list = [
       ...(empTodayPunches.get(cEmp.id) || []),
@@ -351,12 +418,18 @@ function AdminHome() {
     }
 
     const isAutoPunchOut = Boolean(status.latest?.isAuto);
+    const lastPunchCompanyId = status.latest ? getPunchCompanyId(status.latest, emp) : null;
+    const lastPunchCompanyName =
+      activeCompanyId === "all" && lastPunchCompanyId
+        ? ` (${companies.find((c) => (c.id || COMPANY_ID) === lastPunchCompanyId)?.name || "Company"})`
+        : "";
+
     return {
       type: "out" as const,
       label: status.isMissingLate
         ? "Not punched in"
         : status.latest
-          ? `${isAutoPunchOut ? "Auto punched out" : "Punched out"} at ${statusTimeStr}`
+          ? `${isAutoPunchOut ? "Auto punched out" : "Punched out"} at ${statusTimeStr}${lastPunchCompanyName}`
           : "Not on shift",
       isLate: status.isLate,
       minutesLate: status.minutesLate,
@@ -369,12 +442,15 @@ function AdminHome() {
 
   // All departments for activeCompanyId, including General / Unassigned if needed
   const allCompanyDepartments = useMemo(() => {
-    const compDepts = departments.filter((d) => {
-      return (
-        (d.companyId || COMPANY_ID) === activeCompanyId ||
-        (!d.companyId && activeCompanyId === COMPANY_ID)
-      );
-    });
+    const compDepts =
+      activeCompanyId === "all"
+        ? [...departments]
+        : departments.filter((d) => {
+            return (
+              (d.companyId || COMPANY_ID) === activeCompanyId ||
+              (!d.companyId && activeCompanyId === COMPANY_ID)
+            );
+          });
 
     const knownDeptIds = new Set(compDepts.map((d) => d.id));
     const hasUnassignedMembers = scopedEmployees.some(
@@ -402,7 +478,7 @@ function AdminHome() {
         if (d.id === "_unassigned") {
           const knownDeptIds = new Set(
             departments
-              .filter((x) => (x.companyId || COMPANY_ID) === activeCompanyId)
+              .filter((x) => activeCompanyId === "all" || (x.companyId || COMPANY_ID) === activeCompanyId)
               .map((x) => x.id),
           );
           return !e.deptId || !knownDeptIds.has(e.deptId);
@@ -441,12 +517,58 @@ function AdminHome() {
     timezoneMode,
   ]);
 
+  // Overall status counts across scoped employees for the KPI summary bar
+  const overallStats = useMemo(() => {
+    let working = 0;
+    let onBreak = 0;
+    let notWorking = 0;
+    let late = 0;
+
+    const activeList = scopedEmployees.filter(
+      (e) => e.status === "active" && e.inviteStatus === "accepted",
+    );
+
+    for (const emp of activeList) {
+      const status = getEmpTodayStatus(emp);
+      if (status.type === "in") {
+        working++;
+      } else if (status.type === "break") {
+        onBreak++;
+      } else {
+        notWorking++;
+      }
+      if (status.isLate) {
+        late++;
+      }
+    }
+
+    return {
+      total: activeList.length,
+      working,
+      onBreak,
+      notWorking,
+      late,
+    };
+  }, [
+    scopedEmployees,
+    todayPunches,
+    empTodayPunches,
+    now,
+    leaves,
+    company,
+    companies,
+    activeCompanyId,
+    timezoneMode,
+  ]);
+
   const todayActivityFeed = useMemo(() => {
     return todayPunches
       .filter((punch) => {
         if (!punch.timestamp) return false;
         const employee = empById.get(punch.employeeId);
-        if (getPunchCompanyId(punch, employee) !== activeCompanyId) return false;
+        if (activeCompanyId !== "all" && getPunchCompanyId(punch, employee) !== activeCompanyId) {
+          return false;
+        }
         const timezone = getShiftTimezone(employee);
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) return false;
@@ -465,7 +587,7 @@ function AdminHome() {
           </h1>
           <p className="text-sm font-medium text-muted-foreground mt-0.5">
             {format(new Date(), "EEEE d MMMM")} — real-time status for{" "}
-            <strong>{company?.name || "Company"}</strong>.
+            <strong>{activeCompanyId === "all" ? "All Companies" : company?.name || "Company"}</strong>.
           </p>
         </div>
 
@@ -481,11 +603,17 @@ function AdminHome() {
               className="bg-transparent outline-none font-bold text-primary cursor-pointer"
             >
               <option value="all">All Departments ({allCompanyDepartments.length})</option>
-              {allCompanyDepartments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              {allCompanyDepartments.map((d) => {
+                const compName =
+                  activeCompanyId === "all" && d.companyId && d.id !== "_unassigned"
+                    ? ` (${companies.find((c) => (c.id || COMPANY_ID) === d.companyId)?.name || "Company"})`
+                    : "";
+                return (
+                  <option key={d.id} value={d.id}>
+                    {d.name}{compName}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -503,23 +631,121 @@ function AdminHome() {
               <option value="viewer">💻 My Browser Time</option>
             </select>
           </div>
-
-          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
-            >
-              <option value="all">All Statuses</option>
-              <option value="in">🟢 Punched In / Working</option>
-              <option value="break">🟡 On Break / Lunch</option>
-              <option value="out">🔴 Punched Out / Off</option>
-              <option value="holiday">Holiday</option>
-              <option value="leave">On Leave</option>
-              <option value="late">⚠️ Late Arrivals Today</option>
-            </select>
-          </div>
         </div>
+      </div>
+
+      {/* Live VA Status Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <button
+          type="button"
+          onClick={() => setFilterStatus("all")}
+          className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            filterStatus === "all"
+              ? "bg-primary/10 border-primary shadow-xs ring-2 ring-primary/20"
+              : "bg-card hover:bg-secondary/40 border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Total Team
+            </span>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-foreground">{overallStats.total}</span>
+            <span className="text-[11px] text-muted-foreground font-medium">VAs</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterStatus(filterStatus === "in" ? "all" : "in")}
+          className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            filterStatus === "in"
+              ? "bg-emerald-500/15 border-emerald-500 shadow-xs ring-2 ring-emerald-500/20"
+              : "bg-card hover:bg-secondary/40 border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+              Working Now
+            </span>
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+              {overallStats.working}
+            </span>
+            <span className="text-[11px] text-muted-foreground font-medium">Clocked In</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterStatus(filterStatus === "break" ? "all" : "break")}
+          className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            filterStatus === "break"
+              ? "bg-amber-500/15 border-amber-500 shadow-xs ring-2 ring-amber-500/20"
+              : "bg-card hover:bg-secondary/40 border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+              On Break
+            </span>
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
+              {overallStats.onBreak}
+            </span>
+            <span className="text-[11px] text-muted-foreground font-medium">Break / Lunch</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterStatus(filterStatus === "out" ? "all" : "out")}
+          className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer ${
+            filterStatus === "out"
+              ? "bg-slate-500/15 border-slate-500 shadow-xs ring-2 ring-slate-500/20"
+              : "bg-card hover:bg-secondary/40 border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Not Working
+            </span>
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-400 dark:bg-slate-600" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-foreground">{overallStats.notWorking}</span>
+            <span className="text-[11px] text-muted-foreground font-medium">Out / Off</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFilterStatus(filterStatus === "late" ? "all" : "late")}
+          className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer col-span-2 sm:col-span-1 ${
+            filterStatus === "late"
+              ? "bg-rose-500/15 border-rose-500 shadow-xs ring-2 ring-rose-500/20"
+              : "bg-card hover:bg-secondary/40 border-border"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
+              Late Today
+            </span>
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-rose-600 dark:text-rose-400">
+              {overallStats.late}
+            </span>
+            <span className="text-[11px] text-muted-foreground font-medium">Late shifts</span>
+          </div>
+        </button>
       </div>
 
       {/* Pending Overtime Alert Banner */}
@@ -572,7 +798,7 @@ function AdminHome() {
               if (dept.id === "_unassigned") {
                 const knownDeptIds = new Set(
                   departments
-                    .filter((x) => (x.companyId || COMPANY_ID) === activeCompanyId)
+                    .filter((x) => activeCompanyId === "all" || (x.companyId || COMPANY_ID) === activeCompanyId)
                     .map((x) => x.id),
                 );
                 return !e.deptId || !knownDeptIds.has(e.deptId);
@@ -610,11 +836,18 @@ function AdminHome() {
                 {/* Department Card Header */}
                 <div className="flex items-center justify-between border-b pb-3">
                   <div>
-                    <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
-                      {dept.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-base text-primary">
+                        {dept.name}
+                      </h3>
+                      {activeCompanyId === "all" && dept.companyId && dept.id !== "_unassigned" && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground border">
+                          {companies.find((c) => (c.id || COMPANY_ID) === dept.companyId)?.name || "Company"}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-muted-foreground font-medium">
-                      {allMembers.length} Assigned Members
+                      {allMembers.length} Assigned Member{allMembers.length !== 1 ? "s" : ""}
                     </span>
                   </div>
 
@@ -750,9 +983,26 @@ function AdminHome() {
                                 </div>
                               </div>
 
-                              <div className="text-[11px] text-muted-foreground truncate">
-                                {m.jobTitle || "Member"} · {countryData.name} (
-                                {shiftSummary.localCode})
+                              <div className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 flex-wrap">
+                                <span>
+                                  {m.jobTitle || "Member"} · {countryData.name} ({shiftSummary.localCode})
+                                </span>
+                                {activeCompanyId === "all" && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold">
+                                    <Building2 className="h-2.5 w-2.5" />
+                                    {status.activeCompanyName ||
+                                      (m.companyIds && m.companyIds.length > 0
+                                        ? m.companyIds
+                                            .map(
+                                              (cid) =>
+                                                companies.find((c) => (c.id || COMPANY_ID) === cid)?.name ||
+                                                cid,
+                                            )
+                                            .join(", ")
+                                        : companies.find((c) => (c.id || COMPANY_ID) === (m.companyId || COMPANY_ID))?.name ||
+                                          "Company")}
+                                  </span>
+                                )}
                               </div>
                               <div
                                 className="flex items-center gap-1 font-mono text-[11px] font-semibold text-primary mt-0.5"
@@ -939,7 +1189,7 @@ function AdminHome() {
                 <div className="flex items-center gap-3">
                   <StatusDot status={dotStatus} />
                   <div>
-                    <div className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                    <div className="font-bold text-sm text-foreground flex items-center gap-1.5 flex-wrap">
                       {emp ? (
                         <Link
                           to="/admin/employees/$id"
@@ -954,6 +1204,11 @@ function AdminHome() {
                       <span className="text-[10px] text-muted-foreground font-normal">
                         ({countryData.flag} {countryData.name})
                       </span>
+                      {activeCompanyId === "all" && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground border">
+                          {companies.find((c) => (c.id || COMPANY_ID) === getPunchCompanyId(p, emp))?.name || "Company"}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span

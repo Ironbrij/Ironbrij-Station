@@ -618,11 +618,16 @@ function LateArrivalsPage() {
                   }}
                   className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
                 >
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.email})
-                    </option>
-                  ))}
+                  {employees
+                    .slice()
+                    .sort((a, b) =>
+                      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
+                    )
+                    .map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.email})
+                      </option>
+                    ))}
                 </select>
               </div>
 

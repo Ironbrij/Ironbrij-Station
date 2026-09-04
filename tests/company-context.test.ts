@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateTotalShiftMinutes,
+  cleanFirestoreData,
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
@@ -199,3 +200,44 @@ test("getActiveWorkingSession strictly resolves only the single latest active co
   );
   assert.equal(sessionAfterOut.activeCompanyId, null);
 });
+
+test("cleanFirestoreData strips undefined values while preserving Dates and Timestamp-like objects", () => {
+  const testDate = new Date("2026-09-04T08:00:00.000Z");
+  const fakeTimestamp = {
+    toMillis: () => 1788508800000,
+    seconds: 1788508800,
+    nanoseconds: 0,
+  };
+
+  const dirtyPayload = {
+    employeeId: "emp-1",
+    notes: undefined,
+    date: testDate,
+    timestamp: fakeTimestamp,
+    metadata: {
+      tags: ["punch", undefined, "test"],
+      extraInfo: undefined,
+      nested: {
+        validKey: "ok",
+        emptyKey: undefined,
+      },
+    },
+  };
+
+  const cleaned = cleanFirestoreData(dirtyPayload as any);
+  assert.equal(cleaned.employeeId, "emp-1");
+  assert.equal("notes" in cleaned, false);
+  assert.equal(cleaned.date, testDate);
+  assert.equal(cleaned.timestamp, fakeTimestamp);
+  assert.equal(cleaned.metadata.nested.validKey, "ok");
+  assert.equal("emptyKey" in cleaned.metadata.nested, false);
+  assert.equal("extraInfo" in cleaned.metadata, false);
+});
+
+test("getEmployeeForCompany returns base employee when companyId is 'all'", () => {
+  const allEmp = getEmployeeForCompany(employee, "all");
+  assert.equal(allEmp.id, employee.id);
+  assert.equal(allEmp.companyId, "alpha");
+  assert.equal(allEmp.requiredWorkMinutes, 480);
+});
+
