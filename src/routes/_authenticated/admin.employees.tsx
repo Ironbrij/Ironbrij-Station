@@ -7,6 +7,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   setDoc,
   updateDoc,
   where,
@@ -230,6 +231,34 @@ function EmployeesListPage() {
       }
     } catch (err) {
       toast.error("Failed to generate invite link: " + (err as Error).message);
+    }
+  }
+
+  async function reconnectLogin(employee: Employee) {
+    try {
+      const email = employee.email?.trim().toLowerCase();
+      if (!email) throw new Error("This profile needs an email address first.");
+      const users = await getDocs(query(collection(db(), "users"), where("email", "==", email)));
+      if (users.size !== 1) throw new Error("A unique registered login was not found. Ask the employee to sign in, then retry.");
+      const uid = users.docs[0].id;
+      const profiles = await getDocs(collection(db(), "employees"));
+      const conflicts = profiles.docs.filter((item) => item.id !== employee.id &&
+        (item.id === uid || item.data().authUid === uid || item.data().email?.trim().toLowerCase() === email));
+      if (conflicts.length) throw new Error("Other profiles still share this login or email. Review them before reconnecting.");
+      if (!window.confirm(`Reconnect ${employee.name} (${email}) to the existing login? This marks the invitation accepted and links attendance recorded under that login. The current shifts and departments are preserved.`)) return;
+      await runTransaction(db(), async (transaction) => {
+        const ref = doc(db(), "employees", employee.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("This profile was removed. Reload Employees.");
+        const current = snapshot.data();
+        if (current.email?.trim().toLowerCase() !== email || (current.authUid && current.authUid !== uid)) {
+          throw new Error("The profile identity changed. Reload and review it first.");
+        }
+        transaction.update(ref, { authUid: uid, inviteStatus: "accepted" });
+      });
+      toast.success(`${employee.name}'s existing login is reconnected. Attendance under that login is now linked.`);
+    } catch (error) {
+      toast.error((error as Error).message);
     }
   }
 
@@ -490,6 +519,11 @@ function EmployeesListPage() {
                     </td>
                     <td className="p-3 text-right whitespace-nowrap sticky right-0 bg-card hover:bg-sky-soft/40 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                       <div className="flex items-center justify-end gap-2">
+                        {e.inviteStatus === "pending" && (
+                          <button type="button" onClick={() => reconnectLogin(e)} className="rounded border px-3 py-1 text-xs font-semibold">
+                            Reconnect login
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setEmpToPromote(e)}
@@ -520,6 +554,7 @@ function EmployeesListPage() {
             <h3 className="text-lg font-bold text-destructive">Remove Employee?</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Are you sure you want to permanently remove <strong>{empToDelete.name}</strong>?
+              This deletes only the employee profile. It does not delete their login or transfer attendance history.
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button

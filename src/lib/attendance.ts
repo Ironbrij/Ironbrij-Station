@@ -828,7 +828,8 @@ export function getActiveWorkingSession(
 
   // Sort punches chronologically ascending
   const sorted = [...allPunches]
-    .filter((p) => p.timestamp)
+    .filter((p) => p.timestamp &&
+      (p.employeeId === employee.id || Boolean(employee.authUid && p.employeeId === employee.authUid)))
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
 
   if (sorted.length === 0) {

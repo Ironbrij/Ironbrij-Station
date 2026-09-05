@@ -13,6 +13,25 @@ import {
 import { getActiveWorkingSession } from "../src/lib/attendance.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
 
+test("another employee's punch cannot make a pending profile appear clocked in", () => {
+  const pending: Employee = { id: "pending-profile", name: "Aitana", email: "aitana@example.com", status: "active", inviteStatus: "pending", companyId: "alpha", shiftTimezone: "UTC", shiftStartTime: "09:00", shiftEndTime: "17:00" };
+  const punches = [{ id: "other-in", employeeId: "other-login", companyId: "alpha", type: "in", timestamp: "2026-09-04T09:00:00Z", date: "2026-09-04" }] as unknown as Punch[];
+  assert.equal(getActiveWorkingSession(punches, pending, new Date("2026-09-04T10:00:00Z")).activeCompanyId, null);
+});
+
+test("reconnected surviving profile sees UID punches, regardless of name or other employees' activity", () => {
+  const survivor: Employee = { id: "original-invite", authUid: "existing-login", name: "Renamed Employee", email: "person@example.com", status: "active", inviteStatus: "accepted", companyId: "alpha", shiftTimezone: "UTC", shiftStartTime: "09:00", shiftEndTime: "17:00" };
+  const punches = [
+    { id: "own-in", employeeId: "existing-login", companyId: "alpha", type: "in", timestamp: "2026-09-04T09:00:00Z", date: "2026-09-04" },
+    { id: "own-break", employeeId: "existing-login", companyId: "alpha", type: "lunch_start", timestamp: "2026-09-04T12:00:00Z", date: "2026-09-04" },
+    { id: "other-out", employeeId: "other-login", companyId: "beta", type: "out", timestamp: "2026-09-04T12:05:00Z", date: "2026-09-04" },
+  ] as unknown as Punch[];
+  const session = getActiveWorkingSession(punches, survivor, new Date("2026-09-04T12:10:00Z"));
+  assert.equal(session.activeCompanyId, "alpha");
+  assert.equal(session.sessionType, "break");
+  assert.equal(session.status?.isMissingLate, false);
+});
+
 const employee: Employee = {
   id: "employee-1",
   name: "Employee One",

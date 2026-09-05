@@ -16,6 +16,7 @@ import {
   onSnapshot,
   query,
   setDoc,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "./firebase";
@@ -91,7 +92,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const empSnap = empResult.status === "fulfilled" ? empResult.value : null;
       if (empSnap && empSnap.exists()) {
         const empData = empSnap.data() as Omit<Employee, "id">;
-        const employeeUpdates: Partial<Employee> = {};
+        const employeeUpdates: Partial<Employee> = {
+          authUid: u.uid,
+          inviteStatus: "accepted",
+        };
         if (userEmail && empData.email?.toLowerCase() !== userEmail) {
           employeeUpdates.email = userEmail;
         }
@@ -100,29 +104,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (Object.keys(employeeUpdates).length) {
           Object.assign(empData, employeeUpdates);
-          setDoc(doc(db(), "employees", u.uid), employeeUpdates, { merge: true }).catch(() => {});
+          await updateDoc(empSnap.ref, employeeUpdates);
         }
         setEmployee({ id: empSnap.id, ...empData });
       } else if (userEmail) {
         const q = query(collection(db(), "employees"), where("email", "==", userEmail));
         const querySnap = await getDocs(q);
         if (!querySnap.empty) {
-          const matchDoc = querySnap.docs[0];
+          const matches = querySnap.docs.filter((item) =>
+            !item.data().authUid || item.data().authUid === u.uid,
+          );
+          const linked = matches.filter((item) => item.data().authUid === u.uid);
+          const candidates = linked.length ? linked : matches;
+          if (candidates.length !== 1) {
+            setEmployee(null);
+            console.error("Employee identity needs administrator review: multiple or conflicting profiles");
+            return;
+          }
+          const matchDoc = candidates[0];
           const empData = matchDoc.data();
           const updatedEmp = {
             id: matchDoc.id,
             ...empData,
             email: userEmail,
             authUid: u.uid,
+            inviteStatus: "accepted",
             photoUrl: authPhotoUrl || resolveProfilePhoto(empData as Omit<Employee, "id">) || "",
           };
-          if (empData.authUid !== u.uid) {
-            setDoc(
-              doc(db(), "employees", matchDoc.id),
-              { authUid: u.uid, email: userEmail },
-              { merge: true },
-            ).catch((e) => console.warn("Failed to persist authUid to employee doc:", e));
-          }
+          await updateDoc(matchDoc.ref, {
+            authUid: u.uid, email: userEmail, inviteStatus: "accepted",
+          });
           setEmployee(updatedEmp as Employee);
         } else {
           setEmployee(null);
@@ -131,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setEmployee(null);
       }
     } catch (err) {
+      setEmployee(null);
       console.error("Hydration error:", err);
       setIsAdmin(isEmailAdmin);
     }
@@ -145,6 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setEmployee((prev) =>
           prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data },
         );
+      } else {
+        // Removing a duplicate must invalidate open sessions using that document.
+        setEmployee(null);
+        void hydrate(user);
       }
     });
     return unsub;
