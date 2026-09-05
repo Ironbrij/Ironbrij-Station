@@ -606,7 +606,7 @@ function initialMemberships(
         companyId,
         buildCompanyMembership(companyId, {
           ...existing,
-          departmentId: existing.departmentId || fallbackDeptId,
+          departmentId: existing.departmentId ?? fallbackDeptId,
         }),
       ];
     }),
@@ -1301,7 +1301,7 @@ export function PromoteModal({
       const normalizedMemberships = Object.fromEntries(
         finalCompanyIds.map((companyId) => {
           const mem = companyMemberships[companyId] || {};
-          const resolvedDeptId = mem.departmentId || deptId;
+          const resolvedDeptId = mem.departmentId ?? deptId;
           return [
             companyId,
             buildCompanyMembership(companyId, {
@@ -1319,7 +1319,7 @@ export function PromoteModal({
           name: cleanName,
           email: cleanEmail || emp.email,
           jobTitle: jobTitle.trim() || emp.jobTitle,
-          deptId: primaryMembership?.departmentId || deptId || "",
+          deptId: primaryMembership?.departmentId ?? deptId ?? "",
           companyId: finalCompanyIds[0],
           companyIds: finalCompanyIds,
           companyMemberships: normalizedMemberships,
@@ -1567,7 +1567,7 @@ function NewEmployeeForm({
       const normalizedMemberships = Object.fromEntries(
         finalCompanyIds.map((companyId) => {
           const mem = companyMemberships[companyId] || {};
-          const resolvedDeptId = mem.departmentId || deptId;
+          const resolvedDeptId = mem.departmentId ?? deptId;
           return [
             companyId,
             buildCompanyMembership(companyId, {
@@ -1620,7 +1620,7 @@ function NewEmployeeForm({
             companyId: finalCompanyIds[0],
             companyIds: finalCompanyIds,
             companyMemberships: normalizedMemberships,
-            deptId: primaryMembership?.departmentId || deptId || "",
+            deptId: primaryMembership?.departmentId ?? deptId ?? "",
             name: cleanName,
             email: cleanEmail,
             jobTitle: jobTitle.trim() || "Virtual Assistant",

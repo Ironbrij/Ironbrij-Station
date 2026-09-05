@@ -142,7 +142,7 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
       Array.isArray(membership.workingDays) && membership.workingDays.length > 0
         ? membership.workingDays
         : employee.workingDays,
-    deptId: membership.departmentId || employee.deptId,
+    deptId: membership.departmentId ?? employee.deptId,
   };
 }
 
@@ -275,6 +275,7 @@ export function buildCompanyMembership(
 
   return {
     companyId: normalizeCompanyId(companyId),
+    departmentId: input.departmentId ?? "",
     role: input.role || "employee",
     status: input.status || "active",
     requiredWorkMinutes,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateTotalShiftMinutes,
+  buildCompanyMembership,
   cleanFirestoreData,
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
@@ -12,6 +13,16 @@ import {
 } from "../src/lib/company-context.ts";
 import { getActiveWorkingSession } from "../src/lib/attendance.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
+
+test("department survives dropdown rebuild, schedule edits and an explicit clear", () => {
+  const selected = buildCompanyMembership("alpha", { departmentId: "creatives", workingDays: [6] });
+  const edited = buildCompanyMembership("alpha", { ...selected, shiftStartTime: "08:00" });
+  assert.equal(edited.departmentId, "creatives");
+  assert.deepEqual(edited.workingDays, [6]);
+  const cleared = buildCompanyMembership("alpha", { ...edited, departmentId: "" });
+  const profile = { id: "a", name: "A", email: "a@example.com", status: "active", inviteStatus: "accepted", deptId: "old-dept", companyMemberships: { alpha: cleared } } as Employee;
+  assert.equal(getEmployeeForCompany(profile, "alpha").deptId, "");
+});
 
 test("another employee's punch cannot make a pending profile appear clocked in", () => {
   const pending: Employee = { id: "pending-profile", name: "Aitana", email: "aitana@example.com", status: "active", inviteStatus: "pending", companyId: "alpha", shiftTimezone: "UTC", shiftStartTime: "09:00", shiftEndTime: "17:00" };

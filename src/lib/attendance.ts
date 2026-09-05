@@ -651,13 +651,7 @@ export function getEffectiveEmployeeWorkingDays(
   const normalizedEmployeeDays = normalizeDays(employee?.workingDays);
 
   if (normalizedEmployeeDays.length > 0) {
-    // If employee has the exact default [0,1,2,3,4,5], prefer the company's working days
-    if (
-      normalizedEmployeeDays.join(",") === "0,1,2,3,4,5" &&
-      normalizedCompanyDays.length > 0
-    ) {
-      return normalizedCompanyDays;
-    }
+    // Explicit employee/company-membership schedules override company defaults.
     return normalizedEmployeeDays;
   }
   if (normalizedCompanyDays.length > 0) {

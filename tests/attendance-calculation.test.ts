@@ -19,6 +19,23 @@ import { getEmployeeForCompany } from "../src/lib/company-context.ts";
 import type { Company, Employee, Punch } from "../src/lib/types.ts";
 
 const timezone = "Australia/Sydney";
+
+test("Saturday remains an off day for an explicit Sun-Fri schedule, and off-day work is overtime", () => {
+  const emp = employee({ workingDays: [0, 1, 2, 3, 4, 5] });
+  const saturday = new Date("2026-09-05T00:00:00Z");
+  const status = getLiveAttendanceStatus(emp, [], saturday, 5, [1, 2, 3, 4, 5, 6]);
+  assert.equal(status.isScheduledDay, false);
+  assert.equal(status.isMissingLate, false);
+  const session = calculateAttendanceSession({ employee: emp, company, punchIn: saturday, punchOut: new Date("2026-09-05T01:00:00Z"), isOffShiftDay: !status.isScheduledDay });
+  assert.equal(session.normalWorkMinutes, 0);
+  assert.equal(session.overtimeMinutes, 60);
+});
+
+test("Saturday-only schedule is respected independently of company defaults", () => {
+  const emp = employee({ workingDays: [6] });
+  assert.equal(getLiveAttendanceStatus(emp, [], new Date("2026-09-05T00:00:00Z"), 5, [1, 2, 3, 4, 5]).isScheduledDay, true);
+  assert.equal(getLiveAttendanceStatus(emp, [], new Date("2026-09-04T00:00:00Z"), 5, [1, 2, 3, 4, 5]).isScheduledDay, false);
+});
 const company: Company = {
   id: "alpha",
   name: "Alpha",
