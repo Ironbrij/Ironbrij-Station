@@ -42,7 +42,6 @@ import {
   getPunchCompanyId,
   normalizeCompanyId,
 } from "@/lib/company-context";
-import { CompanySelector } from "@/components/CompanySelector";
 import {
   Users,
   Clock,
@@ -90,6 +89,9 @@ function AdminHome() {
   // Dashboard UI States
   const [filterDeptId, setFilterDeptId] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  useEffect(() => {
+    setFilterDeptId("all");
+  }, [activeCompanyId]);
   const [timezoneMode, setTimezoneMode] = useState<"country" | "PH" | "NP" | "AU" | "viewer">(
     "country",
   );
@@ -652,7 +654,7 @@ function AdminHome() {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Top Header & Quick Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
@@ -663,18 +665,17 @@ function AdminHome() {
           </p>
         </div>
 
-        {/* Global Filters & Company Selector */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <CompanySelector variant="dashboard" />
-
-          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
+        {/* Company selection lives in the shared navigation. */}
+        <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Dashboard display filters">
+          <div className="flex min-w-0 items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold">
             <Filter className="h-3.5 w-3.5 text-muted-foreground" />
             <select
+              aria-label="Department"
               value={filterDeptId}
               onChange={(e) => setFilterDeptId(e.target.value)}
-              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
+              className="min-w-0 max-w-64 bg-transparent font-medium text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <option value="all">All Departments ({allCompanyDepartments.length})</option>
+              <option value="all">All departments</option>
               {allCompanyDepartments.map((d) => {
                 const compName =
                   activeCompanyId === "all" && d.companyId && d.id !== "_unassigned"
@@ -689,18 +690,19 @@ function AdminHome() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm">
+          <div className="flex min-w-0 items-center gap-1.5 bg-card border px-3 py-1.5 rounded-lg text-xs font-semibold">
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
             <select
+              aria-label="Display timezone"
               value={timezoneMode}
               onChange={(e) => setTimezoneMode(e.target.value as any)}
-              className="bg-transparent outline-none font-bold text-primary cursor-pointer"
+              className="min-w-0 bg-transparent font-medium text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <option value="country">🌍 Respective Country Time (PH / NP / AU)</option>
-              <option value="PH">🇵🇭 Philippines Time (PHT)</option>
-              <option value="NP">🇳🇵 Nepal Time (NPT)</option>
-              <option value="AU">🇦🇺 Australia Time (AEST)</option>
-              <option value="viewer">💻 My Browser Time</option>
+              <option value="country">Employee local time</option>
+              <option value="PH">Philippines time</option>
+              <option value="NP">Nepal time</option>
+              <option value="AU">Sydney time</option>
+              <option value="viewer">My local time</option>
             </select>
           </div>
         </div>
