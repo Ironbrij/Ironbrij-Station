@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function Guard() {
-  const { user, loading } = useAuth();
+  const { user, employee, isAdmin, loading } = useAuth();
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -14,6 +14,8 @@ function Guard() {
       </div>
     );
   }
-  if (!user) return <Navigate to="/login" />;
+  if (!user || (!isAdmin && (!employee || employee.status !== "active" || employee.inviteStatus !== "accepted"))) {
+    return <Navigate to="/login" />;
+  }
   return <Outlet />;
 }

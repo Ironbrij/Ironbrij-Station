@@ -22,6 +22,7 @@ import {
 import { auth, db, firebaseConfigured } from "./firebase";
 import { COMPANY_ID, type Company, type Employee } from "./types";
 import { resolveProfilePhoto } from "./profile-photo";
+import { toast } from "sonner";
 import { getEmployeeCompanyIds, getEmployeeForCompany } from "./company-context";
 
 interface AuthState {
@@ -57,8 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ];
     const isEmailAdmin = Boolean(userEmail && ADMIN_EMAILS.includes(userEmail));
 
-    // Auto-save user to users collection in Firestore
-    setDoc(
+    // Only admitted accounts should be recorded as registered application users.
+    const saveAdmittedUser = () => setDoc(
       doc(db(), "users", u.uid),
       {
         uid: u.uid,
@@ -69,6 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       { merge: true },
     ).catch(() => {});
+
+    const rejectLogin = async () => {
+      setEmployee(null);
+      setIsAdmin(false);
+      toast.error("This account has no active invitation or its profile needs administrator review. Sign in with your invited email.");
+      await signOut(auth());
+    };
 
     try {
       // Parallelize Firestore queries for maximum speed
@@ -92,6 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const empSnap = empResult.status === "fulfilled" ? empResult.value : null;
       if (empSnap && empSnap.exists()) {
         const empData = empSnap.data() as Omit<Employee, "id">;
+        if (!adminStatus && (empData.status !== "active" ||
+          empData.email?.trim().toLowerCase() !== userEmail ||
+          (empData.authUid && empData.authUid !== u.uid))) {
+          await rejectLogin();
+          return;
+        }
         const employeeUpdates: Partial<Employee> = {
           authUid: u.uid,
           inviteStatus: "accepted",
@@ -117,12 +131,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const linked = matches.filter((item) => item.data().authUid === u.uid);
           const candidates = linked.length ? linked : matches;
           if (candidates.length !== 1) {
-            setEmployee(null);
-            console.error("Employee identity needs administrator review: multiple or conflicting profiles");
+            if (!adminStatus) await rejectLogin();
             return;
           }
           const matchDoc = candidates[0];
           const empData = matchDoc.data();
+          if (!adminStatus && empData.status !== "active") {
+            await rejectLogin();
+            return;
+          }
           const updatedEmp = {
             id: matchDoc.id,
             ...empData,
@@ -137,14 +154,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setEmployee(updatedEmp as Employee);
         } else {
           setEmployee(null);
+          if (!adminStatus) { await rejectLogin(); return; }
         }
       } else {
         setEmployee(null);
+        if (!adminStatus) { await rejectLogin(); return; }
       }
+      await saveAdmittedUser();
     } catch (err) {
       setEmployee(null);
       console.error("Hydration error:", err);
       setIsAdmin(isEmailAdmin);
+      if (!isEmailAdmin) await signOut(auth());
     }
   }
 
@@ -154,6 +175,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onSnapshot(doc(db(), "employees", employee.id), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Omit<Employee, "id">;
+        if (!isAdmin && data.status !== "active") {
+          setEmployee(null);
+          void signOut(auth());
+          return;
+        }
         setEmployee((prev) =>
           prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data },
         );
@@ -182,8 +208,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ];
         const isEmailAdmin = Boolean(userEmail && ADMIN_EMAILS.includes(userEmail));
         setIsAdmin(isEmailAdmin);
-        setLoading(false); // Unblock UI immediately (0ms wait)
-        hydrate(u).catch(() => {});
+        setLoading(true);
+        hydrate(u).finally(() => setLoading(false));
       } else {
         setIsAdmin(false);
         setEmployee(null);

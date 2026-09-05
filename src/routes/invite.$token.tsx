@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 import { doc, getDoc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "@/lib/firebase";
 import { toast } from "sonner";
@@ -94,6 +94,7 @@ function AcceptInvite() {
       const inviteEmail = invite.email.toLowerCase().trim();
 
       if (userEmail !== inviteEmail) {
+        await signOut(auth());
         toast.error(
           `This invite was issued for ${invite.email}. You signed in with ${cred.user.email || "a different email"}.`,
         );
