@@ -849,3 +849,76 @@ test("break-adjusted calculations preserve configured schedule and original punc
   assert.equal(JSON.stringify({ emp, punches }), original);
   assert.equal(getEmployeeShiftWindow(emp, at("06:00")).end.getTime(), at("14:00").getTime());
 });
+
+test("fresh punch with clock skew, optimistic null timestamp, or cross-company membership marks employee as punched in", () => {
+  const emp = employee({
+    id: "emp-cross",
+    companyId: "default",
+    companyIds: ["default", "savykids"],
+    companyMemberships: {
+      savykids: { role: "employee", status: "active" },
+    },
+    shiftStartTime: "09:00",
+    shiftEndTime: "17:00",
+  });
+  const now = at("10:00");
+
+  // 1. Clock skew: punch timestamp is 5 seconds in the future
+  const skewedPunches: Punch[] = [
+    {
+      id: "p-skew",
+      employeeId: emp.id,
+      companyId: "savykids",
+      type: "in",
+      timestamp: new Date(now.getTime() + 5000) as unknown as Punch["timestamp"],
+      attendanceDate: "2026-08-10",
+      source: "app",
+    },
+  ];
+  const statusSkew = getLiveAttendanceStatus(emp, skewedPunches, now);
+  assert.equal(statusSkew.isPunchedIn, true);
+  assert.equal(statusSkew.isMissingLate, false);
+
+  // 2. Optimistic local write: timestamp is null but createdAt is present
+  const optimisticPunches: Punch[] = [
+    {
+      id: "p-opt",
+      employeeId: emp.id,
+      companyId: "savykids",
+      type: "in",
+      timestamp: null as unknown as Punch["timestamp"],
+      createdAt: now.toISOString(),
+      attendanceDate: "2026-08-10",
+      source: "app",
+    },
+  ];
+  const statusOpt = getLiveAttendanceStatus(emp, optimisticPunches, now);
+  assert.equal(statusOpt.isPunchedIn, true);
+  assert.equal(statusOpt.isMissingLate, false);
+
+  // 3. Stale break from 4 days ago does not hijack today's shift window
+  const stalePunches: Punch[] = [
+    {
+      id: "p-old-in",
+      employeeId: emp.id,
+      companyId: "default",
+      type: "in",
+      timestamp: zonedDateTimeToDate("2026-08-05", "09:00", timezone) as unknown as Punch["timestamp"],
+      attendanceDate: "2026-08-05",
+      source: "app",
+    },
+    {
+      id: "p-old-lunch",
+      employeeId: emp.id,
+      companyId: "default",
+      type: "lunch_start",
+      timestamp: zonedDateTimeToDate("2026-08-05", "12:00", timezone) as unknown as Punch["timestamp"],
+      attendanceDate: "2026-08-05",
+      source: "app",
+    },
+  ];
+  const statusStale = getLiveAttendanceStatus(emp, stalePunches, now);
+  assert.equal(statusStale.shift.dateKey, "2026-08-10");
+  assert.equal(statusStale.isPunchedIn, false);
+});
+

@@ -507,12 +507,12 @@ function PunchPage() {
           ? (toDate(latestPunch.timestamp) ?? punchTime)
           : punchTime;
       const schedule = getLiveAttendanceStatus(
-        employee,
+        effectiveEmployee || employee,
         companyPunches,
         shiftScheduleTime,
         company?.lateGraceMinutes ?? 5,
         company?.workingDays,
-        getEmployeeHolidayDates(company, employee),
+        getEmployeeHolidayDates(company, effectiveEmployee || employee),
       );
       const isOffShiftDayToday = !schedule.isScheduledDay || Boolean(holiday);
       const isOffShiftDay =
@@ -783,12 +783,12 @@ function PunchPage() {
         zonedDateKey(toDate(latestPunch?.timestamp) ?? punchTime, getShiftTimezone(employee));
       const targetAttendanceDate = inPunchDate || punchDate;
       const schedule = getLiveAttendanceStatus(
-        employee,
+        effectiveEmployee || employee,
         companyPunches,
         punchTime,
         company?.lateGraceMinutes ?? 5,
         company?.workingDays,
-        getEmployeeHolidayDates(company, employee),
+        getEmployeeHolidayDates(company, effectiveEmployee || employee),
       );
 
       await addDoc(

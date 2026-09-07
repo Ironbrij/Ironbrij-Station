@@ -197,6 +197,7 @@ export interface Punch {
   excuseReason?: string;
   isOffShiftDay?: boolean;
   overtimeRequestId?: string;
+  createdAt?: string;
 }
 
 export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";

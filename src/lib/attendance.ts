@@ -7,7 +7,12 @@ import {
   type Punch,
 } from "./types.ts";
 import { toDate, toMillis } from "./time.ts";
-import { getEmployeeForCompany, getPunchCompanyId, normalizeCompanyId } from "./company-context.ts";
+import {
+  getEmployeeCompanyIds,
+  getEmployeeForCompany,
+  getPunchCompanyId,
+  normalizeCompanyId,
+} from "./company-context.ts";
 
 export const ATTENDANCE_TIMEZONES = [
   { value: "Australia/Sydney", label: "Sydney, Australia", short: "Sydney" },
@@ -354,10 +359,14 @@ export function getEmployeeShiftWindow(
     }
   }
   if (activeIn) {
-    const activeShift = getEmployeeShiftWindow(employee, toDate(activeIn.timestamp)!);
-    const adjusted = extendShiftForBreaks(employee, activeShift, sorted, now);
-    if (activeShift.dateKey === dateKey || now.getTime() <= adjusted.effectiveEnd.getTime()) {
-      return adjusted;
+    const activeInTime =
+      toDate(activeIn.timestamp) || (activeIn.createdAt ? new Date(activeIn.createdAt) : null);
+    if (activeInTime && Math.abs(now.getTime() - activeInTime.getTime()) <= 24 * 60 * 60 * 1000) {
+      const activeShift = getEmployeeShiftWindow(employee, activeInTime);
+      const adjusted = extendShiftForBreaks(employee, activeShift, sorted, now);
+      if (activeShift.dateKey === dateKey || now.getTime() <= adjusted.effectiveEnd.getTime()) {
+        return adjusted;
+      }
     }
   }
   let startTime = employee.shiftStartTime || "09:00";
@@ -433,17 +442,38 @@ export function getEmployeeShiftWindow(
 }
 
 function getShiftPunches(employee: Employee, punches: Punch[], now: Date): Punch[] {
+  const allowedCompanyIds = new Set(
+    [employee.companyId, ...getEmployeeCompanyIds(employee)]
+      .filter((v): v is string => Boolean(v))
+      .map(normalizeCompanyId),
+  );
+
   return punches
-    .filter(
-      (punch) =>
-        (punch.employeeId === employee.id ||
-          Boolean(employee.authUid && punch.employeeId === employee.authUid)) &&
-        (!punch.companyId ||
-          normalizeCompanyId(punch.companyId) === normalizeCompanyId(employee.companyId)) &&
-        toDate(punch.timestamp) !== null &&
-        toMillis(punch.timestamp) <= now.getTime(),
-    )
-    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+    .filter((punch) => {
+      const punchEmpId = punch.employeeId;
+      const empMatches =
+        !punchEmpId ||
+        punchEmpId === employee.id ||
+        Boolean(employee.authUid && punchEmpId === employee.authUid);
+      if (!empMatches) return false;
+
+      if (punch.companyId) {
+        const punchCId = normalizeCompanyId(punch.companyId);
+        if (allowedCompanyIds.size > 0 && !allowedCompanyIds.has(punchCId)) return false;
+      }
+
+      const pDate =
+        toDate(punch.timestamp) || (punch.createdAt ? new Date(punch.createdAt) : null);
+      if (!pDate) return false;
+
+      // Allow 5 minutes clock skew tolerance so client machine drift does not drop fresh punches
+      return pDate.getTime() <= now.getTime() + 5 * 60 * 1000;
+    })
+    .sort((a, b) => {
+      const tA = toMillis(a.timestamp) || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const tB = toMillis(b.timestamp) || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return tA - tB;
+    });
 }
 
 function extendShiftForBreaks(
@@ -461,7 +491,8 @@ function extendShiftForBreaks(
   };
 
   for (const punch of sorted) {
-    const timestamp = toMillis(punch.timestamp);
+    const timestamp =
+      toMillis(punch.timestamp) || (punch.createdAt ? new Date(punch.createdAt).getTime() : 0);
     if (punch.type === "in") {
       closeBreak(timestamp);
       const sessionShift = getEmployeeShiftWindow(employee, new Date(timestamp));
@@ -478,7 +509,11 @@ function extendShiftForBreaks(
     }
   }
   // An ongoing break keeps pushing the deadline back; it never counts as work.
-  closeBreak(now.getTime());
+  // Cap ongoing break extension at 12 hours max to prevent an abandoned break from pushing deadline forever
+  if (breakStart !== null) {
+    const ongoingBreakEnd = Math.min(now.getTime(), breakStart + 12 * 60 * 60 * 1000);
+    closeBreak(ongoingBreakEnd);
+  }
   // Scheduled start/end are immutable schedule metadata. Only this runtime
   // deadline includes breaks; never persist it as scheduledShiftEnd.
   return { ...shift, effectiveEnd: new Date(shift.end.getTime() + totalBreakMs) };
@@ -533,8 +568,16 @@ export function computeRegularWorkedMsForDay(
   });
 
   const sorted = [...dayPunches]
-    .filter((punch) => punch.timestamp && toMillis(punch.timestamp) <= now.getTime())
-    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+    .filter((punch) => {
+      const ms =
+        toMillis(punch.timestamp) || (punch.createdAt ? new Date(punch.createdAt).getTime() : 0);
+      return ms > 0 && ms <= now.getTime() + 5 * 60 * 1000;
+    })
+    .sort((a, b) => {
+      const tA = toMillis(a.timestamp) || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const tB = toMillis(b.timestamp) || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return tA - tB;
+    });
 
   let openIn: number | null = null;
   let openType: string = "in";
