@@ -41,7 +41,9 @@ export async function reconcileEmployeeShift(
 
   for (const cId of companyIds) {
     const cCompanyEmployee = getEmployeeForCompany(employee, cId);
-    const companyPunches = punches.filter((punch) => getPunchCompanyId(punch, employee) === cId);
+    const companyPunches = punches
+      .filter((punch) => getPunchCompanyId(punch, employee) === cId)
+      .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
     const latest = companyPunches.at(-1);
     if (
       !latest?.timestamp ||
@@ -50,7 +52,18 @@ export async function reconcileEmployeeShift(
       continue;
     }
 
-    const punchedInAt = toDate(latest.timestamp);
+    // Lunch punches pause the original session; they do not start a new shift.
+    const sessionIn = [...companyPunches]
+      .reverse()
+      .find(
+        (punch) =>
+          punch.type === "in" ||
+          punch.type === "out" ||
+          punch.type === "extra_in" ||
+          punch.type === "extra_out",
+      );
+    if (sessionIn?.type !== "in") continue;
+    const punchedInAt = toDate(sessionIn.timestamp);
     if (!punchedInAt) continue;
 
     // Check if there was a subsequent punch in ANY OTHER company after this punch-in
@@ -60,14 +73,14 @@ export async function reconcileEmployeeShift(
       return pTime && pTime.getTime() > punchedInAt.getTime();
     });
 
-    const timeout = getShiftTimeout(cCompanyEmployee, punchedInAt, new Date(), 0);
+    const timeout = getShiftTimeout(cCompanyEmployee, punchedInAt, new Date(), 0, companyPunches);
 
     if (subsequentOtherPunch || timeout) {
       const autoOutDate = subsequentOtherPunch
         ? toDate(subsequentOtherPunch.timestamp) || new Date()
-        : timeout?.shift.end || timeout?.punchOutAt || new Date();
+        : timeout!.punchOutAt;
 
-      const recordId = timeoutDocumentId(latest.id);
+      const recordId = timeoutDocumentId(sessionIn.id);
       const punchRef = doc(db(), "punches", recordId);
       const noticeRef = doc(db(), "notices", recordId);
       const requiredWorkMinutes = getRequiredWorkMinutes(cCompanyEmployee, company);

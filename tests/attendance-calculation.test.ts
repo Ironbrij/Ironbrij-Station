@@ -638,3 +638,214 @@ test("getEmployeeForCompany falls back to base employee workingDays if membershi
 
 
 
+
+function shiftPunch(
+  emp: Employee,
+  type: Punch["type"],
+  time: Date,
+  overrides: Partial<Punch> = {},
+): Punch {
+  return {
+    id: type + "-" + time.toISOString(),
+    employeeId: emp.id,
+    companyId: emp.companyId,
+    type,
+    timestamp: { seconds: time.getTime() / 1000, nanoseconds: 0 } as Punch["timestamp"],
+    source: "app",
+    ...overrides,
+  };
+}
+
+for (const [breakMinutes, expectedEnd] of [
+  [0, "14:00"],
+  [30, "14:30"],
+  [80, "15:20"],
+] as const) {
+  test("6am shift extends by " + breakMinutes + " break minutes with eight hours of work", () => {
+    const emp = employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" });
+    const punches = [shiftPunch(emp, "in", at("06:00"))];
+    if (breakMinutes)
+      punches.push(
+        shiftPunch(emp, "lunch_start", at("10:00")),
+        shiftPunch(emp, "lunch_end", new Date(at("10:00").getTime() + breakMinutes * 60_000)),
+      );
+    const end = at(expectedEnd);
+    const beforeEnd = new Date(end.getTime() - 1);
+    assert.equal(getShiftTimeout(emp, at("06:00"), beforeEnd, 0, punches), null);
+    const timeout = getShiftTimeout(emp, at("06:00"), end, 0, punches);
+    assert.ok(timeout);
+    assert.equal(timeout.shift.start.getTime(), at("06:00").getTime());
+    assert.equal(timeout.punchOutAt.getTime(), end.getTime());
+    assert.equal(timeout.shift.end.getTime(), at("14:00").getTime());
+    assert.equal(timeout.shift.effectiveEnd.getTime(), end.getTime());
+    assert.equal(timeout.shiftDurationMs, 8 * 3_600_000);
+    assert.equal(computeRegularWorkedMsForDay(emp, punches, end, end), 8 * 3_600_000);
+    const active = getLiveAttendanceStatus(emp, punches, beforeEnd);
+    assert.equal(active.isPunchedIn, true);
+    assert.equal(active.isShiftCompleted, false);
+    assert.equal(active.shift.end.getTime(), at("14:00").getTime());
+    assert.equal(active.shift.effectiveEnd.getTime(), end.getTime());
+    const done = getLiveAttendanceStatus(
+      emp,
+      [...punches, shiftPunch(emp, "out", end, { isAuto: true })],
+      end,
+    );
+    assert.equal(done.isShiftCompleted, true);
+    assert.equal(done.isPunchedIn, false);
+    // Delayed reconciliation must persist the deadline, not the polling time.
+    assert.equal(
+      getShiftTimeout(emp, at("06:00"), at("16:00"), 0, punches)?.punchOutAt.getTime(),
+      end.getTime(),
+    );
+  });
+}
+
+test("multiple breaks accumulate, including a break during the extension", () => {
+  const emp = employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" });
+  const punches = [
+    shiftPunch(emp, "in", at("06:00")),
+    shiftPunch(emp, "lunch_start", at("10:00")),
+    shiftPunch(emp, "lunch_end", at("10:30")),
+    shiftPunch(emp, "lunch_start", at("14:10")),
+    shiftPunch(emp, "lunch_end", at("15:00")),
+  ].reverse();
+  assert.equal(getShiftTimeout(emp, at("06:00"), at("15:19"), 0, punches), null);
+  assert.equal(
+    getShiftTimeout(emp, at("06:00"), at("15:20"), 0, punches)?.punchOutAt.getTime(),
+    at("15:20").getTime(),
+  );
+  assert.equal(computeRegularWorkedMsForDay(emp, punches, at("15:20"), at("15:20")), 8 * 3_600_000);
+});
+
+test("ongoing lunch keeps work paused past the original end and ignores future punches", () => {
+  const emp = employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" });
+  const punches = [
+    shiftPunch(emp, "in", at("06:00")),
+    shiftPunch(emp, "lunch_start", at("13:30")),
+    shiftPunch(emp, "lunch_end", at("15:00")),
+  ];
+  assert.equal(getShiftTimeout(emp, at("06:00"), at("14:30"), 0, punches), null);
+  const status = getLiveAttendanceStatus(emp, punches, at("14:30"));
+  assert.equal(status.isOnLunch, true);
+  assert.equal(status.isShiftCompleted, false);
+  assert.equal(status.shift.end.getTime(), at("14:00").getTime());
+  assert.equal(status.shift.effectiveEnd.getTime(), at("15:00").getTime());
+  assert.equal(
+    computeRegularWorkedMsForDay(emp, punches, at("14:30"), at("14:30")),
+    7.5 * 3_600_000,
+  );
+  assert.equal(getShiftTimeout(emp, at("06:00"), at("15:29"), 0, punches), null);
+  assert.equal(
+    getShiftTimeout(emp, at("06:00"), at("15:30"), 0, punches)?.punchOutAt.getTime(),
+    at("15:30").getTime(),
+  );
+});
+
+test("breaks do not move shift start for early or late arrivals", () => {
+  const emp = employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" });
+  for (const start of ["05:30", "06:15"]) {
+    const punches = [
+      shiftPunch(emp, "in", at(start)),
+      shiftPunch(emp, "lunch_start", at("10:00")),
+      shiftPunch(emp, "lunch_end", at("10:30")),
+    ];
+    const timeout = getShiftTimeout(emp, at(start), at("14:30"), 0, punches);
+    assert.equal(timeout?.shift.start.getTime(), at("06:00").getTime());
+    assert.equal(timeout?.punchOutAt.getTime(), at("14:30").getTime());
+  }
+});
+
+test("break calculation ignores other employees, companies, days, and orphan or duplicate break punches", () => {
+  const emp = employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" });
+  const previousDay = (time: string) => zonedDateTimeToDate("2026-08-09", time, timezone);
+  const punches = [
+    shiftPunch(emp, "in", previousDay("06:00")),
+    shiftPunch(emp, "lunch_start", previousDay("10:00")),
+    shiftPunch(emp, "lunch_end", previousDay("11:00")),
+    shiftPunch(emp, "out", previousDay("15:00")),
+    shiftPunch(emp, "in", at("06:00")),
+    shiftPunch(emp, "lunch_end", at("08:00")),
+    shiftPunch(emp, "lunch_start", at("09:00"), { employeeId: "other" }),
+    shiftPunch(emp, "lunch_end", at("09:45"), { employeeId: "other" }),
+    shiftPunch(emp, "lunch_start", at("09:00"), { companyId: "beta" }),
+    shiftPunch(emp, "lunch_end", at("09:45"), { companyId: "beta" }),
+    shiftPunch(emp, "lunch_start", at("10:00")),
+    shiftPunch(emp, "lunch_start", at("10:05")),
+    shiftPunch(emp, "lunch_end", at("10:30")),
+    shiftPunch(emp, "lunch_end", at("10:35")),
+  ];
+  assert.equal(
+    getShiftTimeout(emp, at("06:00"), at("14:30"), 0, punches)?.punchOutAt.getTime(),
+    at("14:30").getTime(),
+  );
+});
+
+test("an extended first shift keeps its original slot and does not extend the second shift", () => {
+  const emp = employee({
+    isMultipleShift: true,
+    shifts: [
+      { startTime: "06:00", endTime: "10:00", workingDays: [1] },
+      { startTime: "10:30", endTime: "14:30", workingDays: [1] },
+    ],
+  });
+  const punches = [
+    shiftPunch(emp, "in", at("06:00")),
+    shiftPunch(emp, "lunch_start", at("08:00")),
+    shiftPunch(emp, "lunch_end", at("09:00")),
+  ];
+  const first = getLiveAttendanceStatus(emp, punches, at("10:45"));
+  assert.equal(first.shift.start.getTime(), at("06:00").getTime());
+  assert.equal(first.shift.end.getTime(), at("10:00").getTime());
+  assert.equal(first.shift.effectiveEnd.getTime(), at("11:00").getTime());
+  assert.equal(getShiftTimeout(emp, at("06:00"), at("10:45"), 0, punches), null);
+  punches.push(
+    shiftPunch(emp, "out", at("11:00"), { isAuto: true }),
+    shiftPunch(emp, "in", at("11:01")),
+  );
+  const second = getLiveAttendanceStatus(emp, punches, at("11:05"));
+  assert.equal(second.shift.start.getTime(), at("10:30").getTime());
+  assert.equal(second.shift.end.getTime(), at("14:30").getTime());
+  assert.equal(second.completedRegularShiftsCount, 1);
+});
+
+test("breaks spanning midnight extend the original overnight session", () => {
+  const emp = employee({ shiftStartTime: "18:00", shiftEndTime: "02:00" });
+  const nextDay = (time: string) => zonedDateTimeToDate("2026-08-11", time, timezone);
+  const punches = [
+    shiftPunch(emp, "in", at("18:00")),
+    shiftPunch(emp, "lunch_start", at("23:30")),
+    shiftPunch(emp, "lunch_end", nextDay("00:30")),
+  ];
+  assert.equal(getShiftTimeout(emp, at("18:00"), nextDay("02:30"), 0, punches), null);
+  const status = getLiveAttendanceStatus(emp, punches, nextDay("02:30"));
+  assert.equal(status.isPunchedIn, true);
+  assert.equal(status.shift.end.getTime(), nextDay("02:00").getTime());
+  assert.equal(status.shift.effectiveEnd.getTime(), nextDay("03:00").getTime());
+  assert.equal(
+    getShiftTimeout(emp, at("18:00"), nextDay("03:00"), 0, punches)?.punchOutAt.getTime(),
+    nextDay("03:00").getTime(),
+  );
+});
+
+test("break-adjusted calculations preserve configured schedule and original punch metadata", () => {
+  const emp = Object.freeze(employee({ shiftStartTime: "06:00", shiftEndTime: "14:00" }));
+  const punches = [
+    shiftPunch(emp, "in", at("06:00"), {
+      scheduledShiftStart: at("06:00").toISOString(),
+      scheduledShiftEnd: at("14:00").toISOString(),
+    }),
+    shiftPunch(emp, "lunch_start", at("10:00")),
+    shiftPunch(emp, "lunch_end", at("10:30")),
+  ];
+  const original = JSON.stringify({ emp, punches });
+  const scheduled = getEmployeeShiftWindow(emp, at("14:30"), punches);
+  const live = getLiveAttendanceStatus(emp, punches, at("14:30"));
+  const timeout = getShiftTimeout(emp, at("06:00"), at("14:30"), 0, punches);
+  for (const shift of [scheduled, live.shift, timeout!.shift]) {
+    assert.equal(shift.start.getTime(), at("06:00").getTime());
+    assert.equal(shift.end.getTime(), at("14:00").getTime());
+    assert.equal(shift.effectiveEnd.getTime(), at("14:30").getTime());
+  }
+  assert.equal(JSON.stringify({ emp, punches }), original);
+  assert.equal(getEmployeeShiftWindow(emp, at("06:00")).end.getTime(), at("14:00").getTime());
+});

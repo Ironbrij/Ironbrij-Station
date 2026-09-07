@@ -41,6 +41,11 @@ import {
 } from "@/lib/company-context";
 import { findShiftConflicts, type ShiftDefinition } from "@/lib/shift-conflict";
 import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
+import {
+  filterEmployeeList,
+  GENERAL_DEPARTMENT_FILTER,
+  getEmployeeListDepartmentLabel,
+} from "@/lib/employee-list";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -148,6 +153,7 @@ function EmployeesListPage() {
 
   useEffect(() => {
     setFilterCompany(activeCompanyId);
+    setFilterDept("");
   }, [activeCompanyId]);
 
   useEffect(() => {
@@ -273,30 +279,20 @@ function EmployeesListPage() {
     }
   }
 
-  const filtered = (employees ?? [])
-    .filter((e) => {
-      if (filterCompany !== "all") {
-        const matchComp =
-          e.companyId === filterCompany ||
-          e.companyIds?.includes(filterCompany) ||
-          (!e.companyId &&
-            (filterCompany === COMPANY_ID || companies.find((c) => c.id === filterCompany)?.isMain));
-        if (!matchComp) return false;
-      }
-      if (filterDept && e.deptId !== filterDept) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchName = (e.name || "").toLowerCase().includes(q);
-        const matchEmail = (e.email || "").toLowerCase().includes(q);
-        const matchTitle = (e.jobTitle || "").toLowerCase().includes(q);
-        const matchId = (e.id || "").toLowerCase().includes(q);
-        return matchName || matchEmail || matchTitle || matchId;
-      }
-      return true;
-    })
-    .sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
-    );
+  const visibleDepartments = depts.filter(
+    (department) =>
+      filterCompany === "all" ||
+      !department.companyId ||
+      normalizeCompanyId(department.companyId) === normalizeCompanyId(filterCompany),
+  );
+  const filtered = filterEmployeeList(
+    employees ?? [],
+    companies,
+    depts,
+    filterCompany,
+    filterDept,
+    searchQuery,
+  );
 
   const duplicateGroups = useMemo(() => {
     const groups = new Map<string, Employee[]>();
@@ -347,7 +343,10 @@ function EmployeesListPage() {
         </div>
         <select
           value={filterCompany}
-          onChange={(e) => setFilterCompany(e.target.value)}
+          onChange={(e) => {
+            setFilterCompany(e.target.value);
+            setFilterDept("");
+          }}
           className="rounded-md border bg-background px-3 py-2 text-sm font-semibold sm:w-48 cursor-pointer"
         >
           <option value="all">All companies ({companies.length})</option>
@@ -363,7 +362,8 @@ function EmployeesListPage() {
           className="rounded-md border px-3 py-2 text-sm font-medium"
         >
           <option value="">All departments</option>
-          {depts.map((d) => (
+          <option value={GENERAL_DEPARTMENT_FILTER}>No department / General</option>
+          {visibleDepartments.filter((d) => d.name?.trim().toLowerCase() !== "general").map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}
             </option>
@@ -425,7 +425,9 @@ function EmployeesListPage() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                      No employees yet.
+                      {employees.length
+                        ? "No employees match the selected filters."
+                        : "No employees yet."}
                     </td>
                   </tr>
                 )}
@@ -448,7 +450,7 @@ function EmployeesListPage() {
                       </div>
                     </td>
                     <td className="p-3">{e.jobTitle?.trim() || "—"}</td>
-                    <td className="p-3">{depts.find((d) => d.id === e.deptId)?.name ?? "—"}</td>
+                    <td className="p-3">{getEmployeeListDepartmentLabel(e, filterCompany, depts)}</td>
                     <td className="p-3 text-xs max-w-xs">
                       <div className="font-mono font-semibold text-slate-700 dark:text-slate-300 break-words">
                         ⏰{" "}
