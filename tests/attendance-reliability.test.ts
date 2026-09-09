@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Timestamp } from "firebase/firestore";
-import { getActiveWorkingSession, getLiveAttendanceStatus, computeRegularWorkedMsForDay, getEmployeeShiftWindow } from "../src/lib/attendance.ts";
+import { getActiveWorkingSession, getLiveAttendanceStatus, computeRegularWorkedMsForDay, getEmployeeShiftWindow, zonedDateTimeToDate } from "../src/lib/attendance.ts";
 import { calculateAttendanceSession } from "../src/lib/attendance-calculation.ts";
 import { planManualClockIn } from "../src/lib/manual-clock-in.ts";
 import { buildLateRecords, lateRecordInPeriod } from "../src/lib/late-records.ts";
@@ -94,4 +94,39 @@ test("server clock calibration ignores a wrong or changed device wall clock", ()
     Date.now = () => at("01:00").getTime();
     assert.ok(Math.abs(attendanceNow().getTime() - at("06:00").getTime()) < 1000);
   } finally { Date.now = original; }
+});
+
+
+test("optimized late-log periods match filtering full history, including overnight dates", () => {
+  const worker = { ...emp, shiftStartTime: "22:00", shiftEndTime: "06:00" };
+  const entries = Array.from({ length: 40 }, (_, i) => {
+    const timestamp = new Date(at("22:15").getTime() - i * 86400000);
+    return { ...punch("in", "22:15"), id: `history-${i}`, timestamp: Timestamp.fromDate(timestamp) };
+  });
+  const now = at("01:00", "2026-09-10");
+  const full = buildLateRecords([worker], entries, [], [], now);
+  for (const period of ["today", "week", "month", "all"] as const) {
+    const optimized = buildLateRecords([worker], entries, [], [], now, { period });
+    assert.deepEqual(optimized, full.filter((record) => lateRecordInPeriod(record, period, now)));
+  }
+});
+
+test("timezone memoization never exposes a shared mutable date", () => {
+  const first = zonedDateTimeToDate("2026-09-09", "05:00", "Asia/Manila");
+  first.setTime(0);
+  assert.equal(zonedDateTimeToDate("2026-09-09", "05:00", "Asia/Manila").getTime(), at("05:00").getTime());
+});
+
+test("live status retains a last-seen punch while the timer ignores old shift history", () => {
+  const previous = { ...punch("out", "14:00"), timestamp: Timestamp.fromDate(at("14:00", "2026-08-01")) };
+  assert.equal(getLiveAttendanceStatus(emp, [previous], at("06:00")).latest?.id, previous.id);
+  const current = punch("in", "05:00");
+  assert.equal(computeRegularWorkedMsForDay(emp, [previous, current], at("06:00"), at("06:00")), 3600000);
+});
+
+
+test("live history pruning preserves the right employee's old last-seen record", () => {
+  const own = { ...punch("out", "14:00"), id: "own-old", timestamp: Timestamp.fromDate(at("14:00", "2026-08-01")) };
+  const other = { ...own, id: "other-old", employeeId: "someone-else", timestamp: Timestamp.fromDate(at("14:00", "2026-08-02")) };
+  assert.equal(getLiveAttendanceStatus(emp, [own, other], at("06:00")).latest?.id, own.id);
 });

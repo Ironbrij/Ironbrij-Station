@@ -142,8 +142,8 @@ function LateArrivalsPage() {
     };
   }, []);
 
-  const records = useMemo(() => buildLateRecords(employees, punches, leaves, companies, now),
-    [employees, punches, leaves, companies, now]);
+  const records = useMemo(() => buildLateRecords(employees, punches, leaves, companies, now, { period: filterPeriod }),
+    [employees, punches, leaves, companies, now, filterPeriod]);
 
   const filtered = useMemo(
     () =>

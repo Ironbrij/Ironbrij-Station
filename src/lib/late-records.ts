@@ -9,20 +9,35 @@ export type LateRecord = {
   minutesLate: number; kind: "arrival" | "missing"; isExcused?: boolean; excuseReason?: string;
   punch?: Punch; isEarly?: boolean; minutesEarly?: number; companyId: string; companyName: string; shiftLabel?: string;
 };
-export function buildLateRecords(employees: Employee[], punches: Punch[], leaves: LeaveRequest[], companies: Company[], now: Date): LateRecord[] {
+export function buildLateRecords(employees: Employee[], punches: Punch[], leaves: LeaveRequest[], companies: Company[], now: Date, options: { period?: "today" | "week" | "month" | "all" } = {}): LateRecord[] {
   const result: LateRecord[] = [];
+  const period = options.period || "all";
+  const byEmployee = new Map<string, Punch[]>();
+  for (const punch of punches) {
+    const list = byEmployee.get(punch.employeeId);
+    if (list) list.push(punch); else byEmployee.set(punch.employeeId, [punch]);
+  }
   for (const employee of employees.filter((e) => e.status === "active" && e.inviteStatus === "accepted")) {
-    const active = getActiveWorkingSession(punches, employee, now, companies);
+    const employeePunches = [...(byEmployee.get(employee.id) || []),
+      ...(employee.authUid && employee.authUid !== employee.id ? byEmployee.get(employee.authUid) || [] : [])];
+    const active = getActiveWorkingSession(employeePunches, employee, now, companies);
     for (const companyId of getEmployeeCompanyIds(employee)) {
       const scoped = getEmployeeForCompany(employee, companyId);
       const company = companies.find((c) => normalizeCompanyId(c.id) === companyId);
       const companyName = company?.name || companyId;
-      const ownPunches = getEmployeePunchesForCompany(punches, employee, companyId, company?.name);
+      const ownPunches = getEmployeePunchesForCompany(employeePunches, employee, companyId, company?.name);
       const firstByShift = new Map<number, Punch>();
+      const todayKey = zonedDateKey(now, getShiftTimezone(scoped));
+      const from = new Date(`${todayKey}T12:00:00Z`);
+      from.setUTCDate(from.getUTCDate() - (period === "today" ? 0 : period === "week" ? 6 : 29));
+      const fromKey = from.toISOString().slice(0, 10);
+      const coarseCutoff = from.getTime() - 48 * 60 * 60 * 1000;
       for (const punch of ownPunches) {
         const at = toDate(punch.timestamp);
         if (punch.type !== "in" || !at || at > now) continue;
+        if (period !== "all" && at.getTime() < coarseCutoff) continue;
         const shift = getEmployeeShiftWindow(scoped, at);
+        if (period !== "all" && (shift.dateKey < fromKey || shift.dateKey > todayKey)) continue;
         if (at >= shift.end || punch.isOffShiftDay) continue;
         const key = shift.start.getTime();
         const existing = firstByShift.get(key);

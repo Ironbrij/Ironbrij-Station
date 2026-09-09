@@ -1,3 +1,4 @@
+import { dateTimeFormatter } from "./intl-format.ts";
 import {
   COMPANY_ID,
   type Company,
@@ -40,7 +41,7 @@ type ZonedParts = {
 export function isValidTimezone(timezone?: string): boolean {
   if (!timezone) return false;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    dateTimeFormatter("en-US", { timeZone: timezone }).format();
     return true;
   } catch {
     return false;
@@ -269,7 +270,7 @@ export function getEmployeeHolidayDates(
   return [...dates];
 }
 export function getZonedParts(value: Date, timezone: string): ZonedParts {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = dateTimeFormatter("en-CA", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
@@ -302,7 +303,11 @@ function addCalendarDays(dateKey: string, days: number): string {
   return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
 }
 
+const zonedInstants = new Map<string, number>();
 export function zonedDateTimeToDate(dateKey: string, time: string, timezone: string): Date {
+  const cacheKey = `${dateKey}|${time}|${timezone}`;
+  const cached = zonedInstants.get(cacheKey);
+  if (cached !== undefined) return new Date(cached);
   const [year, month, day] = dateKey.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
   const target = Date.UTC(year, month - 1, day, hour || 0, minute || 0, 0);
@@ -321,6 +326,8 @@ export function zonedDateTimeToDate(dateKey: string, time: string, timezone: str
     guess += correction;
     if (correction === 0) break;
   }
+  if (zonedInstants.size >= 2048) zonedInstants.delete(zonedInstants.keys().next().value!);
+  zonedInstants.set(cacheKey, guess);
   return new Date(guess);
 }
 
@@ -375,6 +382,7 @@ export function getEmployeeShiftWindow(
     ? employee.shifts
     : [{ startTime: employee.shiftStartTime || "09:00", endTime: employee.shiftEndTime || "17:00", workingDays: employee.workingDays }];
   const previousWindow = previousSchedules
+    .filter((s) => s.endTime <= s.startTime)
     .filter((s) => (s.workingDays?.length ? s.workingDays.map(Number) : getEffectiveEmployeeWorkingDays(employee)).includes(previousWeekday))
     .map((s) => getShiftWindow(previousDate, s.startTime, s.endTime, shiftTimezone))
     .find((s) => s.crossesMidnight && instant >= s.start && instant < s.end);
@@ -568,6 +576,11 @@ export function computeRegularWorkedMsForDay(
   day = new Date(),
   now = new Date(),
 ) {
+  // Keep adjacent days for overnight shifts and break extensions.
+  punches = punches.filter((p) => {
+    const time = toMillis(p.timestamp) || toMillis(p.createdAt);
+    return Math.abs(time - day.getTime()) <= 72 * 60 * 60 * 1000;
+  });
   const timezone = getShiftTimezone(employee);
   const targetDateKey = getEmployeeShiftWindow(employee, day, punches, now).dateKey;
   const sorted = getShiftPunches(employee, punches, now);
@@ -615,7 +628,7 @@ export function formatInTimezone(
   timezone: string,
   options: Intl.DateTimeFormatOptions = {},
 ): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return dateTimeFormatter("en-US", {
     timeZone: timezone,
     hour: "numeric",
     minute: "2-digit",
@@ -771,6 +784,24 @@ export function getEffectiveEmployeeWorkingDays(
   return [0, 1, 2, 3, 4, 5]; // Default Sunday to Friday (6 days)
 }
 
+// Live status only needs recent sessions and the last older event for its
+// last-seen label. Keep full history available to reports and manual corrections.
+function livePunchHistory(punches: Punch[], now: Date): Punch[] {
+  const cutoff = now.getTime() - 72 * 60 * 60 * 1000;
+  const recent: Punch[] = [];
+  let previous: Punch | undefined;
+  let previousTime = -Infinity;
+  for (const punch of punches) {
+    if (punch.voidedAt) continue;
+    const time = toMillis(punch.timestamp) || toMillis(punch.createdAt);
+    if (!time) continue;
+    if (time >= cutoff) recent.push(punch);
+    else if (time >= previousTime) { previous = punch; previousTime = time; }
+  }
+  if (previous) recent.unshift(previous);
+  return recent;
+}
+
 export function getLiveAttendanceStatus(
   employee: Employee,
   punches: Punch[],
@@ -779,7 +810,7 @@ export function getLiveAttendanceStatus(
   workingDays?: (number | string)[],
   holidays: string[] = [],
 ) {
-  const sorted = getShiftPunches(employee, punches, now);
+  const sorted = livePunchHistory(getShiftPunches(employee, punches, now), now);
   const latest = sorted.at(-1);
   const shiftTimezone = getShiftTimezone(employee);
   const todayDateKey = zonedDateKey(now, shiftTimezone);
@@ -931,9 +962,9 @@ export function getActiveWorkingSession(
   }
 
   // Sort punches chronologically ascending
-  const sorted = getShiftPunches(employee, allPunches.filter((p) =>
+  const sorted = getShiftPunches(employee, livePunchHistory(allPunches.filter((p) =>
     p.employeeId === employee.id || Boolean(employee.authUid && p.employeeId === employee.authUid),
-  ), now);
+  ), now), now);
 
   if (sorted.length === 0) {
     return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };

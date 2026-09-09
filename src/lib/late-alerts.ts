@@ -32,7 +32,7 @@ export function buildAdminLateAlerts({
   company: Company | null;
   now: Date;
 }): AdminLateAlert[] {
-  return buildLateRecords(employees, punches, leaves, company && company.id !== "all" ? [company] : [], now)
+  return buildLateRecords(employees, punches, leaves, company && company.id !== "all" ? [company] : [], now, { period: "today" })
     .filter((record) => lateRecordInPeriod(record, "today", now) && !record.isExcused &&
       (!company || company.id === "all" || normalizeCompanyId(record.companyId) === normalizeCompanyId(company.id)))
     .map((record) => ({

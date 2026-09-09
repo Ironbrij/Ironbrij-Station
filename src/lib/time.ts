@@ -1,3 +1,4 @@
+import { dateTimeFormatter } from "./intl-format.ts";
 import { Timestamp } from "firebase/firestore";
 import type { Company, CountryCode, Employee, Punch } from "./types.ts";
 import { calculateAttendanceSession } from "./attendance-calculation.ts";
@@ -138,7 +139,7 @@ export function ymd(value: Date | Timestamp): string {
 
 export function formatLocalTime(value: Date | Timestamp, timezone?: string): string {
   const date = toDate(value) ?? new Date();
-  return new Intl.DateTimeFormat("en-US", {
+  return dateTimeFormatter("en-US", {
     timeZone: timezone,
     hour: "numeric",
     minute: "2-digit",
@@ -154,7 +155,7 @@ export function computeLateness(
 ) {
   const date = toDate(punchTimestamp) ?? new Date();
   const timezone = COUNTRY_TIMEZONES[country].timezone;
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateTimeFormatter("en-US", {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",

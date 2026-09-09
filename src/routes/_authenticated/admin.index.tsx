@@ -284,7 +284,16 @@ function AdminHome() {
     return map;
   }, [todayPunches, activeCompanyId, empById]);
 
+  const statusCache = new Map<string, ReturnType<typeof calculateEmpTodayStatus>>();
   function getEmpTodayStatus(emp: Employee) {
+    const key = `${emp.id}|${emp.authUid || ""}|${emp.companyId || ""}`;
+    const cached = statusCache.get(key);
+    if (cached) return cached;
+    const status = calculateEmpTodayStatus(emp);
+    statusCache.set(key, status);
+    return status;
+  }
+  function calculateEmpTodayStatus(emp: Employee) {
     if (!punchesReady || !runtime.ready) return {
       type: "unknown" as const, label: "Attendance syncing — status unavailable", isLate: false,
       minutesLate: 0, isExcused: false, excuseReason: undefined, punchTimeStr: "",
