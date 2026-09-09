@@ -1,3 +1,5 @@
+import { buildLateRecords, lateRecordInPeriod } from "./late-records";
+import { getEmployeePunchesForCompany, normalizeCompanyId } from "./company-context";
 import type { Company, Employee, LeaveRequest, Punch } from "./types";
 import {
   getEmployeeApprovedLeaveForDate,
@@ -30,27 +32,17 @@ export function buildAdminLateAlerts({
   company: Company | null;
   now: Date;
 }): AdminLateAlert[] {
-  return employees
-    .filter((employee) => employee.status === "active" && employee.inviteStatus === "accepted")
-    .flatMap((employee) => {
-      const shiftDate = zonedDateKey(now, getShiftTimezone(employee));
-      if (getEmployeeApprovedLeaveForDate(employee, leaves, shiftDate)) return [];
-      if (getEmployeeHoliday(company, employee, shiftDate)) return [];
-
-      const identities = new Set([employee.id, employee.authUid].filter(Boolean));
-      const employeePunches = punches.filter((punch) => identities.has(punch.employeeId));
-      const status = getLiveAttendanceStatus(
-        employee,
-        employeePunches,
-        now,
-        company?.lateGraceMinutes ?? 5,
-        company?.workingDays,
-        getEmployeeHolidayDates(company, employee),
-      );
-
-      if (!status.isLate) return [];
-      return [{ id: `late:${shiftDate}:${employee.id}`, employee, status }];
-    })
+  return buildLateRecords(employees, punches, leaves, company && company.id !== "all" ? [company] : [], now)
+    .filter((record) => lateRecordInPeriod(record, "today", now) && !record.isExcused &&
+      (!company || company.id === "all" || normalizeCompanyId(record.companyId) === normalizeCompanyId(company.id)))
+    .map((record) => ({
+      id: `late:${record.dateKey}:${record.employee.id}:${record.companyId}:${record.scheduledAt.toISOString()}`,
+      employee: record.employee,
+      status: { ...getLiveAttendanceStatus(record.employee,
+        getEmployeePunchesForCompany(punches, record.employee, record.companyId), now,
+        company?.lateGraceMinutes, company?.workingDays),
+        isLate: true, minutesLate: record.minutesLate, firstIn: record.punch },
+    }))
     .sort((a, b) => b.status.minutesLate - a.status.minutesLate);
 }
 

@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           Object.assign(empData, employeeUpdates);
           await updateDoc(empSnap.ref, employeeUpdates);
         }
-        setEmployee({ id: empSnap.id, ...empData });
+        setEmployee({ ...empData, id: empSnap.id });
       } else if (userEmail) {
         const q = query(collection(db(), "employees"), where("email", "==", userEmail));
         const querySnap = await getDocs(q);
@@ -141,8 +141,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
           const updatedEmp = {
-            id: matchDoc.id,
             ...empData,
+            id: matchDoc.id,
             email: userEmail,
             authUid: u.uid,
             inviteStatus: "accepted",
@@ -181,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         setEmployee((prev) =>
-          prev ? { ...prev, ...data, id: snap.id } : { id: snap.id, ...data },
+          prev ? { ...prev, ...data, id: snap.id } : { ...data, id: snap.id },
         );
       } else {
         // Removing a duplicate must invalidate open sessions using that document.
@@ -236,24 +236,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    let active = true;
     const companyIds = getEmployeeCompanyIds(employee);
-    Promise.all(companyIds.map((companyId) => getDoc(doc(db(), "companies", companyId))))
-      .then((snapshots) => {
-        if (!active) return;
-        setCompanies(
-          snapshots
-            .filter((snapshot) => snapshot.exists())
-            .map((snapshot) => ({
-              id: snapshot.id,
-              ...(snapshot.data() as Omit<Company, "id">),
-            })),
-        );
-      })
-      .catch((error) => console.error("Company context hydration failed:", error));
-    return () => {
-      active = false;
-    };
+    const current = new Map<string, Company>();
+    const unsubscribers = companyIds.map((companyId) => onSnapshot(doc(db(), "companies", companyId), (snapshot) => {
+      if (snapshot.exists()) current.set(companyId, { ...(snapshot.data() as Omit<Company, "id">), id: snapshot.id });
+      else current.delete(companyId);
+      setCompanies(companyIds.flatMap((id) => current.has(id) ? [current.get(id)!] : []));
+    }, (error) => console.error("Company settings could not sync:", error)));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [employee, isAdmin]);
 
   const availableCompanyIds = useMemo(() => {
@@ -266,7 +256,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || availableCompanyIds.length === 0) return;
     const storageKey = `active_company_id:${user.uid}`;
-    const saved = typeof window === "undefined" ? null : window.localStorage.getItem(storageKey);
+    let saved: string | null = null;
+    try { saved = window.localStorage.getItem(storageKey); } catch { /* Browser storage is optional. */ }
     const preferred =
       saved && availableCompanyIds.includes(saved)
         ? saved
@@ -281,7 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!availableCompanyIds.includes(companyId)) return;
       setActiveCompanyIdState(companyId);
       if (user && typeof window !== "undefined") {
-        window.localStorage.setItem(`active_company_id:${user.uid}`, companyId);
+        try { window.localStorage.setItem(`active_company_id:${user.uid}`, companyId); } catch { /* Browser storage is optional. */ }
       }
     },
     [availableCompanyIds, user],

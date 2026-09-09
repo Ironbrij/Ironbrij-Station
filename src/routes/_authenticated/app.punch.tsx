@@ -1,3 +1,5 @@
+import { useAppRuntime } from "@/lib/app-runtime";
+import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -95,12 +97,16 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 });
 
 function PunchPage() {
+  const runtime = useAppRuntime();
+  const [punchesReady, setPunchesReady] = useState(false);
+  const [punchError, setPunchError] = useState("");
   const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } =
     useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => attendanceNow().getTime());
+  useEffect(() => { if (runtime.ready) setNow(attendanceNow().getTime()); }, [runtime.ready]);
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState(randomQuote());
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
@@ -138,7 +144,7 @@ function PunchPage() {
   }
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(attendanceNow().getTime()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -146,7 +152,7 @@ function PunchPage() {
 
   const companyPunches = useMemo(
     () => getEmployeePunchesForCompany(allPunches, employee, activeCompanyId, company?.name),
-    [activeCompanyId, allPunches, employee],
+    [activeCompanyId, allPunches, employee, company?.name],
   );
 
   const companyLeaves = useMemo(
@@ -189,6 +195,9 @@ function PunchPage() {
 
   // Fetch all punches for this employee (Index-free, real-time sync)
   useEffect(() => {
+    setPunchesReady(false);
+    setPunchError("");
+    setAllPunches([]);
     if (!employee) return;
     const employeeIds = Array.from(
       new Set([employee.id, employee.authUid].filter((v): v is string => Boolean(v))),
@@ -199,16 +208,24 @@ function PunchPage() {
         : query(collection(db(), "punches"), where("employeeId", "==", employee.id));
     return onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }));
+        const list = snap.docs.map((d) => ({
+          ...(d.data({ serverTimestamps: "estimate" }) as Omit<Punch, "id">),
+          id: d.id,
+        }));
         const sorted = list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
         setAllPunches(sorted);
+        setPunchesReady(!snap.metadata.fromCache && !snap.metadata.hasPendingWrites);
+        setPunchError("");
       },
       (err) => {
         console.error("Punch snapshot error:", err);
+        setPunchesReady(false);
+        setPunchError("Attendance could not be loaded. Refresh the page to reconnect.");
       },
     );
-  }, [employee]);
+  }, [employee?.id, employee?.authUid]);
 
   // Keep leave and scheduled break requests in sync.
   useEffect(() => {
@@ -337,7 +354,7 @@ function PunchPage() {
       const pDate =
         p.attendanceDate ||
         p.date ||
-        (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? new Date(), timezone) : "");
+        (p.timestamp ? zonedDateKey(toDate(p.timestamp) ?? attendanceNow(), timezone) : "");
       return pDate === todayKey;
     });
     return todayPunches.filter((p) => p.type === "lunch_start").length;
@@ -427,17 +444,24 @@ function PunchPage() {
       employee,
       company,
       punchIn: toDate(latestRegularIn.timestamp) ?? new Date(now),
+      punches: companyPunches,
       now: new Date(now),
       requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
     });
   }, [company, companyPunches, employee, now]);
 
   async function doPunch(targetType: "in" | "out" | "extra_in", customReason?: string) {
-    if (!employee || !user) return;
+    if (!employee || !user || busy) return;
+    if (!runtime.ready || !punchesReady) {
+      toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
+      return;
+    }
 
     // Strict Double-Punch Validation
     const latestPunch = companyPunches[companyPunches.length - 1];
     const latestType = latestPunch?.type;
+    const sessionStart = [...companyPunches].reverse().find((p) =>
+      p.type === "in" || p.type === "extra_in" || p.type === "out" || p.type === "extra_out");
 
     if (
       (targetType === "in" || targetType === "extra_in") &&
@@ -482,7 +506,7 @@ function PunchPage() {
               employeeId: employee.id,
               companyId: prevCompanyId,
               type: "out",
-              timestamp: new Date().toISOString(),
+              timestamp: attendanceNow().toISOString(),
               source: "web",
               notes: `Auto punched out on switching to ${company?.name || "another company"}`,
             }),
@@ -494,7 +518,7 @@ function PunchPage() {
       const isExtraOut = latestType === "extra_in" && targetType === "out";
       const punchType =
         targetType === "extra_in" ? "extra_in" : isExtraOut ? "extra_out" : targetType;
-      const punchTime = new Date();
+      const punchTime = attendanceNow();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
       const inPunchDate =
         latestPunch?.attendanceDate ||
@@ -522,11 +546,12 @@ function PunchPage() {
 
       const shiftWindow = schedule.shift;
       const calculation =
-        punchType === "out" && latestPunch?.type === "in" && latestPunch.timestamp
+        punchType === "out" && sessionStart?.type === "in" && sessionStart.timestamp
           ? calculateAttendanceSession({
               employee,
               company,
-              punchIn: toDate(latestPunch.timestamp) ?? punchTime,
+              punchIn: toDate(sessionStart.timestamp) ?? punchTime,
+              punches: companyPunches,
               punchOut: punchTime,
               requiredWorkMinutes,
               isOffShiftDay,
@@ -554,6 +579,7 @@ function PunchPage() {
           attendanceDate: targetAttendanceDate,
           type: punchType,
           timestamp: serverTimestamp(),
+          createdAt: punchTime.toISOString(),
           source: "app",
           scheduledShiftStart: shiftWindow.start.toISOString(),
           scheduledShiftEnd: shiftWindow.end.toISOString(),
@@ -608,7 +634,7 @@ function PunchPage() {
               isOffShiftDay,
               reason,
               status: "pending",
-              createdAt: new Date().toISOString(),
+              createdAt: attendanceNow().toISOString(),
             }),
           );
 
@@ -647,7 +673,7 @@ function PunchPage() {
                 isOffShiftDay: false,
                 reason: earlyReason,
                 status: "pending",
-                createdAt: new Date().toISOString(),
+                createdAt: attendanceNow().toISOString(),
               }),
             );
 
@@ -680,7 +706,7 @@ function PunchPage() {
               isOffShiftDay,
               reason: postShiftReason,
               status: "pending",
-              createdAt: new Date().toISOString(),
+              createdAt: attendanceNow().toISOString(),
             }),
           );
           await setDoc(
@@ -711,7 +737,7 @@ function PunchPage() {
       setQuote(randomQuote());
       if (targetType === "in" || targetType === "extra_in") {
         const lateness = computeEmployeeLateness(
-          new Date(),
+          attendanceNow(),
           employee,
           company?.lateGraceMinutes ?? 5,
         );
@@ -756,7 +782,11 @@ function PunchPage() {
   }
 
   async function doLunchPunch(targetType: "lunch_start" | "lunch_end") {
-    if (!employee || !user) return;
+    if (!employee || !user || busy) return;
+    if (!runtime.ready || !punchesReady) {
+      toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
+      return;
+    }
     const latestPunch = companyPunches[companyPunches.length - 1];
 
     if (
@@ -775,7 +805,7 @@ function PunchPage() {
 
     setBusy(true);
     try {
-      const punchTime = new Date();
+      const punchTime = attendanceNow();
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
       const inPunchDate =
         latestPunch?.attendanceDate ||
@@ -808,7 +838,7 @@ function PunchPage() {
           shiftTimezone: schedule.shift.timezone,
           requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
           attendanceStatus: "in_progress",
-          createdAt: new Date().toISOString(),
+          createdAt: attendanceNow().toISOString(),
         }),
       );
 
@@ -833,7 +863,11 @@ function PunchPage() {
   const [savingNotepad, setSavingNotepad] = useState(false);
 
   async function submitNotepadReport(type: "sod" | "eod") {
-    if (!employee || !user) return;
+    if (!employee || !user || busy) return;
+    if (!runtime.ready || !punchesReady) {
+      toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
+      return;
+    }
     setSavingNotepad(true);
     try {
       const answersMap = type === "sod" ? sodAnswers : eodAnswers;
@@ -851,7 +885,7 @@ function PunchPage() {
 
       const allReportMentions = reportAnswers.flatMap((a) => a.mentions || []);
 
-      const reportDate = reportDateForEmployee(employee, new Date());
+      const reportDate = reportDateForEmployee(employee, attendanceNow());
       const reportId = reportDocumentId(user.uid, reportDate, type, activeCompanyId);
       const reportRef = doc(db(), "dailyReports", reportId);
 
@@ -1043,7 +1077,7 @@ function PunchPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             {(() => {
-              const hour = new Date().getHours();
+              const hour = attendanceNow().getHours();
               const greeting =
                 hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
               const firstName = employee.name?.split(" ")[0] || employee.name;
@@ -1051,7 +1085,7 @@ function PunchPage() {
             })()}
           </h1>
           <p className="text-sm font-medium text-muted-foreground mt-0.5">
-            {format(new Date(), "EEEE d MMMM")} — here's how the week is shaping up.
+            {format(attendanceNow(), "EEEE d MMMM")} — here's how the week is shaping up.
           </p>
         </div>
         <div className="w-fit rounded-lg border bg-card/60 px-3.5 py-1.5 text-xs font-semibold text-muted-foreground shadow-xs">
@@ -1210,7 +1244,7 @@ function PunchPage() {
               </thead>
               <tbody className="divide-y divide-border/60">
                 {recentPunchesList.map((p, idx) => {
-                  const dateObj = toDate(p.timestamp) ?? new Date();
+                  const dateObj = toDate(p.timestamp) ?? attendanceNow();
                   const isLunchStart = p.type === "lunch_start";
                   const isLunchEnd = p.type === "lunch_end";
                   const isPunchIn = p.type === "in" || p.type === "extra_in";
@@ -1311,7 +1345,7 @@ function PunchPage() {
                       ) : lastIn &&
                         attendanceStatus?.shift?.start &&
                         lastIn.getTime() < attendanceStatus.shift.start.getTime() &&
-                        new Date().getTime() < attendanceStatus.shift.start.getTime() ? (
+                        attendanceNow().getTime() < attendanceStatus.shift.start.getTime() ? (
                         <>
                           <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
                           <span>🌅 Early Start · Working since {format(lastIn, "h:mm a")}</span>
@@ -1428,6 +1462,9 @@ function PunchPage() {
               </div>
             )}
 
+            {(!punchesReady || punchError) && <p role="status" className="text-sm text-amber-700">
+              {punchError || "Syncing attendance. Please wait before recording another action."}
+            </p>}
             {/* ----- Punch Action Buttons ----- */}
             <div className="space-y-3">
               {!isOnLunch && (
@@ -1452,7 +1489,7 @@ function PunchPage() {
 
               {isOnLunch ? (
                 <button
-                  disabled={busy}
+                  disabled={busy || !runtime.ready || !punchesReady}
                   onClick={handlePunchClick}
                   className="w-full rounded-xl border border-rose-500/25 bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 font-bold py-2.5 text-xs transition-colors"
                 >
@@ -1461,7 +1498,7 @@ function PunchPage() {
               ) : (
                 <div className="space-y-2.5">
                   <button
-                    disabled={busy || (!isPunchedIn && (onLeaveToday || isHoliday))}
+                    disabled={busy || !runtime.ready || !punchesReady || (!isPunchedIn && (onLeaveToday || isHoliday))}
                     onClick={handlePunchClick}
                     className={`w-full rounded-xl px-5 py-3 text-base font-bold text-white shadow-md transition-all ${
                       !isPunchedIn && (onLeaveToday || isHoliday)
@@ -1509,7 +1546,7 @@ function PunchPage() {
                   {canTakeBreak && !latestCompanyPunch?.type?.includes("extra") && (
                     <button
                       type="button"
-                      disabled={busy}
+                      disabled={busy || !runtime.ready || !punchesReady}
                       onClick={() => doLunchPunch("lunch_start")}
                       className="btn-lift w-full rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-3 px-4 text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
@@ -1609,7 +1646,7 @@ function PunchPage() {
                     {formatDurationHMS(totalWorkedMs)} worked
                   </strong>
                 ) : (
-                  format(new Date(), "dd MMM yyyy")
+                  format(attendanceNow(), "dd MMM yyyy")
                 )}
               </span>
             </div>
@@ -1741,7 +1778,7 @@ function PunchPage() {
             <div className="pt-3 flex items-center justify-between gap-2 border-t">
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !runtime.ready || !punchesReady}
                 onClick={() => {
                   setShowOvertimeModal(false);
                   doPunch("in");
@@ -1761,7 +1798,7 @@ function PunchPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !runtime.ready || !punchesReady}
                   onClick={() => doPunch("extra_in", overtimeReason)}
                   className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
                 >
@@ -1827,7 +1864,7 @@ function PunchPage() {
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !runtime.ready || !punchesReady}
                 onClick={() => {
                   setShowEarlyModal(false);
                   doPunch("in");

@@ -369,6 +369,17 @@ export function getEmployeeShiftWindow(
       }
     }
   }
+  const previousDate = addCalendarDays(dateKey, -1);
+  const previousWeekday = new Date(`${previousDate}T12:00:00Z`).getUTCDay();
+  const previousSchedules = employee.isMultipleShift && employee.shifts?.length
+    ? employee.shifts
+    : [{ startTime: employee.shiftStartTime || "09:00", endTime: employee.shiftEndTime || "17:00", workingDays: employee.workingDays }];
+  const previousWindow = previousSchedules
+    .filter((s) => (s.workingDays?.length ? s.workingDays.map(Number) : getEffectiveEmployeeWorkingDays(employee)).includes(previousWeekday))
+    .map((s) => getShiftWindow(previousDate, s.startTime, s.endTime, shiftTimezone))
+    .find((s) => s.crossesMidnight && instant >= s.start && instant < s.end);
+  if (previousWindow) return extendShiftForBreaks(employee, previousWindow, sorted, now);
+
   let startTime = employee.shiftStartTime || "09:00";
   let endTime = employee.shiftEndTime || "17:00";
 
@@ -450,6 +461,7 @@ function getShiftPunches(employee: Employee, punches: Punch[], now: Date): Punch
 
   return punches
     .filter((punch) => {
+      if (punch.voidedAt) return false;
       const punchEmpId = punch.employeeId;
       const empMatches =
         !punchEmpId ||
@@ -535,6 +547,8 @@ export function getShiftTimeout(
   punches: Punch[] = [],
 ) {
   const completion = getShiftCompletion(employee, punchedInAt);
+  // Never close a late-started session before it began. It can be stopped manually.
+  if (punchedInAt.getTime() >= completion.shift.end.getTime()) return null;
   const shift = extendShiftForBreaks(
     employee,
     completion.shift,
@@ -555,70 +569,44 @@ export function computeRegularWorkedMsForDay(
   now = new Date(),
 ) {
   const timezone = getShiftTimezone(employee);
-  const targetDateKey = zonedDateKey(day, timezone);
-  const shift = getEmployeeShiftWindow(employee, day, punches, now);
-
-  // Filter punches belonging to targetDateKey's shift session
-  const dayPunches = punches.filter((punch) => {
-    const pDate =
-      punch.attendanceDate ||
-      punch.date ||
-      (punch.timestamp ? zonedDateKey(toDate(punch.timestamp) ?? new Date(), timezone) : "");
-    return pDate === targetDateKey;
-  });
-
-  const sorted = [...dayPunches]
-    .filter((punch) => {
-      const ms =
-        toMillis(punch.timestamp) || (punch.createdAt ? new Date(punch.createdAt).getTime() : 0);
-      return ms > 0 && ms <= now.getTime() + 5 * 60 * 1000;
-    })
-    .sort((a, b) => {
-      const tA = toMillis(a.timestamp) || (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-      const tB = toMillis(b.timestamp) || (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-      return tA - tB;
-    });
-
-  let openIn: number | null = null;
-  let openType: string = "in";
+  const targetDateKey = getEmployeeShiftWindow(employee, day, punches, now).dateKey;
+  const sorted = getShiftPunches(employee, punches, now);
+  let session: Punch[] = [];
   let workedMs = 0;
-
+  function finish(end: Date) {
+    const first = session[0];
+    if (!first) return;
+    const started = toDate(first.timestamp) || toDate(first.createdAt);
+    if (!started) return;
+    const shift = getEmployeeShiftWindow(employee, started, session.filter((p) => p.type !== "out" && p.type !== "extra_out"), end);
+    const dateKey = first.attendanceDate || first.date || shift.dateKey;
+    if (dateKey !== targetDateKey) return;
+    const extra = first.type === "extra_in" || started >= shift.end;
+    let open: number | null = started.getTime();
+    function add(until: number) {
+      if (open === null) return;
+      const from = extra ? open : Math.max(open, shift.start.getTime());
+      const to = extra ? until : Math.min(until, shift.effectiveEnd.getTime());
+      workedMs += Math.max(0, to - from);
+    }
+    for (const punch of session.slice(1)) {
+      const time = toMillis(punch.timestamp) || toMillis(punch.createdAt);
+      if (punch.type === "lunch_start" && open !== null) { add(time); open = null; }
+      else if (punch.type === "lunch_end" && open === null) open = time;
+    }
+    add(end.getTime());
+  }
   for (const punch of sorted) {
-    const timestamp = toMillis(punch.timestamp);
-    if (!timestamp) continue;
-    if (punch.type === "in" || punch.type === "extra_in" || punch.type === "lunch_end") {
-      openIn = timestamp;
-      openType = punch.type;
-    } else if (
-      (punch.type === "out" || punch.type === "extra_out" || punch.type === "lunch_start") &&
-      openIn !== null
-    ) {
-      if (openType === "in" || openType === "lunch_end") {
-        // Include make-up work through the break-adjusted shift end.
-        const effectiveStart = Math.max(openIn, shift.start.getTime());
-        const effectiveEnd = Math.min(timestamp, shift.effectiveEnd.getTime());
-        if (effectiveEnd > effectiveStart) {
-          workedMs += effectiveEnd - effectiveStart;
-        }
-      } else {
-        workedMs += Math.max(0, timestamp - openIn);
-      }
-      openIn = null;
-    }
+    const time = toDate(punch.timestamp) || toDate(punch.createdAt);
+    if (!time) continue;
+    if (punch.type === "in" || punch.type === "extra_in") {
+      if (session.length) finish(time);
+      session = [punch];
+    } else if (punch.type === "out" || punch.type === "extra_out") {
+      if (session.length) { session.push(punch); finish(time); session = []; }
+    } else if (session.length) session.push(punch);
   }
-
-  if (openIn !== null) {
-    if (openType === "in" || openType === "lunch_end") {
-      const effectiveStart = Math.max(openIn, shift.start.getTime());
-      const effectiveEnd = Math.min(now.getTime(), shift.effectiveEnd.getTime());
-      if (effectiveEnd > effectiveStart) {
-        workedMs += effectiveEnd - effectiveStart;
-      }
-    } else {
-      workedMs += Math.max(0, now.getTime() - openIn);
-    }
-  }
-
+  if (session.length) finish(now);
   return workedMs;
 }
 
@@ -729,7 +717,8 @@ export function getFirstRegularPunchInForShift(
   instant = new Date(),
 ): Punch | undefined {
   const shiftTimezone = getShiftTimezone(employee);
-  const targetDate = zonedDateKey(instant, shiftTimezone);
+  const targetShift = getEmployeeShiftWindow(employee, instant, punches, instant);
+  const targetDate = targetShift.dateKey;
   return punches
     .filter((punch) => {
       if ((punch.type !== "in" && punch.type !== "extra_in") || !punch.timestamp) return false;
@@ -737,7 +726,9 @@ export function getFirstRegularPunchInForShift(
         punch.attendanceDate ||
         punch.date ||
         zonedDateKey(toDate(punch.timestamp) ?? new Date(0), shiftTimezone);
-      return pDate === targetDate;
+      const at = toDate(punch.timestamp);
+      return !punch.voidedAt && pDate === targetDate && at !== null &&
+        getEmployeeShiftWindow(employee, at).start.getTime() === targetShift.start.getTime();
     })
     .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
 }
@@ -940,23 +931,29 @@ export function getActiveWorkingSession(
   }
 
   // Sort punches chronologically ascending
-  const sorted = [...allPunches]
-    .filter((p) => p.timestamp &&
-      (p.employeeId === employee.id || Boolean(employee.authUid && p.employeeId === employee.authUid)))
-    .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+  const sorted = getShiftPunches(employee, allPunches.filter((p) =>
+    p.employeeId === employee.id || Boolean(employee.authUid && p.employeeId === employee.authUid),
+  ), now);
 
   if (sorted.length === 0) {
     return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 
-  const latestGlobal = sorted[sorted.length - 1];
-  const isGlobalIn =
-    latestGlobal.type === "in" ||
-    latestGlobal.type === "extra_in" ||
-    latestGlobal.type === "lunch_start" ||
-    latestGlobal.type === "lunch_end";
+  // A closing punch only ends its own company's session. A switch-company
+  // auto out can arrive at the same time as (or after) the new company's in.
+  let latestGlobal: Punch | undefined;
+  for (const punch of sorted) {
+    if (punch.type === "in" || punch.type === "extra_in") {
+      latestGlobal = punch;
+    } else if (latestGlobal &&
+      getPunchCompanyId(punch, employee, companies) ===
+        getPunchCompanyId(latestGlobal, employee, companies)) {
+      if (punch.type === "out" || punch.type === "extra_out") latestGlobal = undefined;
+      else if (punch.type === "lunch_start" || punch.type === "lunch_end") latestGlobal = punch;
+    }
+  }
 
-  if (!isGlobalIn) {
+  if (!latestGlobal) {
     return { activeCompanyId: null, activePunch: null, status: null, activeCompanyName: null, sessionType: null };
   }
 

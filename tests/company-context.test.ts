@@ -292,3 +292,36 @@ test("getEmployeeCompanyIds deduplicates default and ironbrij aliases", () => {
 });
 
 
+
+
+test("switch-company closing punches cannot hide the new company's active session", () => {
+  const emp = {
+    id: "worker", companyId: "alpha", companyIds: ["alpha", "beta"],
+    shiftTimezone: "UTC", shiftStartTime: "06:00", shiftEndTime: "17:00",
+  } as Employee;
+  const oldIn = { id: "old-in", employeeId: emp.id, companyId: "alpha", type: "in", timestamp: "2026-09-09T06:00:00Z" } as unknown as Punch;
+  const newIn = { ...oldIn, id: "new-in", companyId: "beta", timestamp: "2026-09-09T08:00:00Z" } as unknown as Punch;
+  const now = new Date("2026-09-09T09:00:00Z");
+  for (const closedAt of ["2026-09-09T08:00:00Z", "2026-09-09T08:01:00Z"]) {
+    const oldOut = { ...oldIn, id: "old-out", type: "out", timestamp: closedAt, isAuto: true, autoReason: "switch_company" } as unknown as Punch;
+    for (const punches of [[oldIn, newIn, oldOut], [oldOut, newIn, oldIn]]) {
+      const session = getActiveWorkingSession(punches, emp, now);
+      assert.equal(session.activeCompanyId, "beta");
+      assert.equal(session.status?.isPunchedIn, true);
+      const stopped = getActiveWorkingSession([...punches, { ...newIn, id: "new-out", type: "out", timestamp: "2026-09-09T08:30:00Z" } as unknown as Punch], emp, now);
+      assert.equal(stopped.activeCompanyId, null);
+    }
+  }
+});
+
+test("pending Start Work and Stop Work agree with dashboard session status", () => {
+  const emp = {
+    id: "worker", companyId: "alpha", companyIds: ["alpha"],
+    shiftTimezone: "UTC", shiftStartTime: "06:00", shiftEndTime: "17:00",
+  } as Employee;
+  const now = new Date("2026-09-09T09:00:00Z");
+  const pending = { id: "pending", employeeId: emp.id, companyId: "alpha", type: "in", timestamp: null, createdAt: now.toISOString() } as unknown as Punch;
+  assert.equal(getActiveWorkingSession([pending], emp, now).status?.isPunchedIn, true);
+  const stopped = { ...pending, id: "stop", type: "out", createdAt: "2026-09-09T09:00:01Z" } as unknown as Punch;
+  assert.equal(getActiveWorkingSession([pending, stopped], emp, now).activeCompanyId, null);
+});

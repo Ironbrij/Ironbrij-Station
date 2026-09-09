@@ -1,3 +1,5 @@
+import { attendanceNow } from "./attendance-clock";
+import { useAppRuntime } from "./app-runtime";
 import { useEffect, useRef } from "react";
 import {
   collection,
@@ -36,6 +38,7 @@ export async function reconcileEmployeeShift(
   activeCompanyId: string,
   announceToCurrentUser: boolean,
 ) {
+  punches = punches.filter((punch) => !punch.voidedAt);
   const companyIds = getEmployeeCompanyIds(employee);
   let anyCreated = false;
 
@@ -66,18 +69,22 @@ export async function reconcileEmployeeShift(
     const punchedInAt = toDate(sessionIn.timestamp);
     if (!punchedInAt) continue;
 
-    // Check if there was a subsequent punch in ANY OTHER company after this punch-in
-    const subsequentOtherPunch = punches.find((p) => {
-      if (getPunchCompanyId(p, employee) === cId) return false;
-      const pTime = toDate(p.timestamp);
-      return pTime && pTime.getTime() > punchedInAt.getTime();
-    });
+    // Only a new start transfers work to another company. A delayed out or
+    // break from the old company must not close the newly started shift.
+    const subsequentOtherPunch = punches
+      .filter((p) => {
+        if (p.type !== "in" && p.type !== "extra_in") return false;
+        if (getPunchCompanyId(p, employee) === cId) return false;
+        const pTime = toDate(p.timestamp);
+        return pTime && pTime.getTime() > punchedInAt.getTime();
+      })
+      .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
 
-    const timeout = getShiftTimeout(cCompanyEmployee, punchedInAt, new Date(), 0, companyPunches);
+    const timeout = getShiftTimeout(cCompanyEmployee, punchedInAt, attendanceNow(), 0, companyPunches);
 
     if (subsequentOtherPunch || timeout) {
       const autoOutDate = subsequentOtherPunch
-        ? toDate(subsequentOtherPunch.timestamp) || new Date()
+        ? toDate(subsequentOtherPunch.timestamp) || attendanceNow()
         : timeout!.punchOutAt;
 
       const recordId = timeoutDocumentId(sessionIn.id);
@@ -90,7 +97,11 @@ export async function reconcileEmployeeShift(
       try {
         created = await runTransaction(db(), async (transaction) => {
           const existingPunch = await transaction.get(punchRef);
-          if (existingPunch.exists()) return false;
+          const sourcePunch = await transaction.get(doc(db(), "punches", sessionIn.id));
+          if (!sourcePunch.exists() || sourcePunch.data().voidedAt ||
+              (sourcePunch.data().correctedAt || "") !== ((sessionIn as Punch & { correctedAt?: string }).correctedAt || "") ||
+              toMillis(sourcePunch.data().timestamp) !== punchedInAt.getTime()) return false;
+          if (existingPunch.exists() && !existingPunch.data().voidedAt) return false;
 
           transaction.set(
             punchRef,
@@ -99,9 +110,10 @@ export async function reconcileEmployeeShift(
               employeeName: employee.name,
               companyId: cId,
               companyName: cId === activeCompanyId ? company?.name || "Company" : cId,
-              date: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
-              attendanceDate: timeout?.shift.dateKey || new Date().toISOString().slice(0, 10),
+              date: timeout?.shift.dateKey || attendanceNow().toISOString().slice(0, 10),
+              attendanceDate: timeout?.shift.dateKey || attendanceNow().toISOString().slice(0, 10),
               type: "out",
+              punchInId: sessionIn.id,
               timestamp: Timestamp.fromDate(autoOutDate),
               source: "auto",
               isAuto: true,
@@ -143,7 +155,7 @@ export async function reconcileEmployeeShift(
                 targetType: "employee",
                 targetEmployeeId: employee.id,
                 companyId: cId,
-                createdAt: new Date().toISOString(),
+                createdAt: attendanceNow().toISOString(),
                 authorName: "SavyTimes",
               }),
             );
@@ -174,11 +186,12 @@ export function useShiftAutoPunchOut({
   company: Company | null;
   activeCompanyId: string;
 }) {
+  const { ready } = useAppRuntime();
   const punchesRef = useRef<Punch[]>([]);
   const reconcilingRef = useRef(false);
 
   useEffect(() => {
-    if (!employee) return;
+    if (!employee || !ready) return;
 
     const activeEmployee = employee;
     let active = true;
@@ -211,7 +224,9 @@ export function useShiftAutoPunchOut({
         : query(collection(db(), "punches"), where("employeeId", "==", activeEmployee.id));
     const unsubscribe = onSnapshot(
       punchesQuery,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { punchesRef.current = []; return; }
         punchesRef.current = snapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
           .filter((punch) => punch.timestamp)
@@ -227,7 +242,7 @@ export function useShiftAutoPunchOut({
       unsubscribe();
       window.clearInterval(interval);
     };
-  }, [activeCompanyId, company, employee]);
+  }, [activeCompanyId, company, employee, ready]);
 }
 
 export function useCompanyShiftAutoPunchOut({
@@ -239,17 +254,19 @@ export function useCompanyShiftAutoPunchOut({
   company: Company | null;
   activeCompanyId: string;
 }) {
+  const { ready } = useAppRuntime();
   const employeesRef = useRef<Employee[]>([]);
   const companyPunchesRef = useRef<Punch[]>([]);
   const reconcilingRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !ready) return;
 
     let active = true;
+    let employeesReady = false;
 
     async function reconcileAll() {
-      if (!active || reconcilingRef.current) return;
+      if (!active || !employeesReady || reconcilingRef.current) return;
       reconcilingRef.current = true;
       try {
         const punches = companyPunchesRef.current;
@@ -281,10 +298,13 @@ export function useCompanyShiftAutoPunchOut({
 
     const unsubscribeEmployees = onSnapshot(
       collection(db(), "employees"),
+      { includeMetadataChanges: true },
       (snapshot) => {
+        employeesReady = !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites;
+        if (!employeesReady) return;
         employeesRef.current = snapshot.docs.map((item) => ({
-          id: item.id,
           ...(item.data() as Omit<Employee, "id">),
+          id: item.id,
         }));
         void reconcileAll();
       },
@@ -292,7 +312,9 @@ export function useCompanyShiftAutoPunchOut({
     );
     const unsubscribePunches = onSnapshot(
       collection(db(), "punches"),
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { companyPunchesRef.current = []; return; }
         companyPunchesRef.current = snapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
           .filter((punch) => punch.timestamp)
@@ -309,5 +331,5 @@ export function useCompanyShiftAutoPunchOut({
       unsubscribePunches();
       window.clearInterval(interval);
     };
-  }, [activeCompanyId, company, enabled]);
+  }, [activeCompanyId, company, enabled, ready]);
 }

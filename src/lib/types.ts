@@ -190,7 +190,10 @@ export interface Punch {
   attendanceStatus?: AttendanceStatus;
   isEarly?: boolean;
   isAuto?: boolean;
-  autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout";
+  autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout" | "forgot_punch_out" | "switch_company";
+  punchInId?: string;
+  voidedAt?: string;
+  voidedBy?: string;
   isExcused?: boolean;
   excusedBy?: string;
   excusedAt?: string;

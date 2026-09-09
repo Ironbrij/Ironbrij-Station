@@ -16,12 +16,13 @@ const compiled = ts.transpileModule(
 
 function harness(now: Date) {
   const records = new Map<string, Record<string, unknown>>();
+  const sourceRecords = new Map<string, Record<string, unknown>>();
   const firestore = {
     doc: (_db: unknown, collection: string, id: string) => collection + "/" + id,
     Timestamp: { fromDate: (date: Date) => date },
     runTransaction: async (_db: unknown, callback: (transaction: unknown) => unknown) =>
       callback({
-        get: async (ref: string) => ({ exists: () => records.has(ref) }),
+        get: async (ref: string) => ({ exists: () => records.has(ref) || sourceRecords.has(ref), data: () => records.get(ref) || sourceRecords.get(ref) }),
         set: (ref: string, value: Record<string, unknown>) => records.set(ref, value),
       }),
     setDoc: async (ref: string, value: Record<string, unknown>) => {
@@ -36,6 +37,8 @@ function harness(now: Date) {
     "./attendance": attendance,
     "./company-context": companyContext,
     "./time": time,
+    "./attendance-clock": { attendanceNow: () => new Date(now.getTime()) },
+    "./app-runtime": {},
     "./email-branding": {},
   };
   const exports: { reconcileEmployeeShift?: (...args: unknown[]) => Promise<boolean> } = {};
@@ -52,7 +55,10 @@ function harness(now: Date) {
     exports,
     Clock,
   );
-  return { records, reconcile: exports.reconcileEmployeeShift! };
+  return { records, reconcile: async (...args: unknown[]) => {
+    for (const punch of args[1] as Punch[]) sourceRecords.set(`punches/${punch.id}`, punch as unknown as Record<string, unknown>);
+    return exports.reconcileEmployeeShift!(...args);
+  } };
 }
 
 const emp = {
@@ -145,4 +151,37 @@ test("reconciler anchors lunch return to the original shift when the next slot h
   assert.equal((out?.timestamp as Date).getTime(), at("11:15").getTime());
   assert.equal(out?.scheduledShiftStart, at("06:00").toISOString());
   assert.equal(out?.scheduledShiftEnd, at("10:00").toISOString());
+});
+
+
+test("starting after scheduled end never creates a backdated automatic clock-out", async () => {
+  const run = harness(at("15:01"));
+  assert.equal(await run.reconcile(emp, [punch("in", "15:00")], null, "alpha", false), false);
+  assert.equal(run.records.size, 0);
+});
+
+test("only a new start in another company closes a session, using the earliest start", async () => {
+  const multi = { ...emp, companyIds: ["alpha", "beta"] };
+  const run = harness(at("09:00"));
+  const oldStart = punch("in", "06:00");
+  const delayedOut = { ...punch("out", "08:05"), companyId: "beta" };
+  const delayedBreak = { ...punch("lunch_end", "08:10"), companyId: "beta" };
+  assert.equal(await run.reconcile(multi, [oldStart, delayedOut, delayedBreak], null, "alpha", false), false);
+  const firstStart = { ...punch("in", "08:00"), companyId: "beta" };
+  const laterStart = { ...punch("in", "08:30"), companyId: "beta" };
+  await run.reconcile(multi, [laterStart, delayedOut, oldStart, firstStart], null, "alpha", false);
+  const out = run.records.get("punches/shift-timeout-in06%3A00");
+  assert.equal((out?.timestamp as Date).getTime(), at("08:00").getTime());
+  assert.equal(out?.autoReason, "switch_company");
+});
+
+test("an old company's delayed closing punch does not auto-close the new company", async () => {
+  const multi = { ...emp, companyIds: ["alpha", "beta"] };
+  const run = harness(at("09:00"));
+  await run.reconcile(multi, [
+    punch("in", "06:00"),
+    { ...punch("in", "08:00"), companyId: "beta" },
+    punch("out", "08:01"),
+  ], null, "beta", false);
+  assert.equal(run.records.size, 0);
 });

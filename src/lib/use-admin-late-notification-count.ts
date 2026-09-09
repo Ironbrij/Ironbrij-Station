@@ -1,3 +1,4 @@
+import { attendanceNow } from "./attendance-clock";
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
@@ -15,11 +16,11 @@ export function useAdminLateNotificationCount({
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => readLateAlertIds());
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => attendanceNow());
 
   useEffect(() => {
     if (!enabled) return;
-    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    const timer = window.setInterval(() => setNow(attendanceNow()), 30000);
     const unsubscribeEmployees = onSnapshot(collection(db(), "employees"), (snapshot) =>
       setEmployees(
         snapshot.docs.map((item) => ({

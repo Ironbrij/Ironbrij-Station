@@ -1,4 +1,4 @@
-export type Status = "in" | "out" | "leave" | "holiday" | "break" | "off";
+export type Status = "in" | "out" | "leave" | "holiday" | "break" | "off" | "unknown";
 
 export function StatusDot({ status }: { status: Status }) {
   const map = {
@@ -7,6 +7,7 @@ export function StatusDot({ status }: { status: Status }) {
     leave: { color: "var(--status-leave)", label: "On leave" },
     holiday: { color: "#9333ea", label: "Holiday" },
     break: { color: "#f59e0b", label: "On break" },
+    unknown: { color: "#9ca3af", label: "Attendance syncing" },
     off: { color: "#9ca3af", label: "Not scheduled" },
   }[status];
   return (

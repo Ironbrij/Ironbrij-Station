@@ -9,6 +9,8 @@ import {
 import { type ReactNode } from "react";
 import { Toaster } from "sonner";
 
+import { AppRuntimeProvider } from "../lib/app-runtime";
+
 import appCss from "../styles.css?url";
 import { AuthProvider } from "../lib/auth-context";
 
@@ -100,10 +102,12 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Outlet />
-        <Toaster position="top-right" richColors />
-      </AuthProvider>
+      <AppRuntimeProvider>
+        <AuthProvider>
+          <Outlet />
+          <Toaster position="top-right" richColors />
+        </AuthProvider>
+      </AppRuntimeProvider>
     </QueryClientProvider>
   );
 }

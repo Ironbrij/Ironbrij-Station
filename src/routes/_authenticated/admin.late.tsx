@@ -1,6 +1,10 @@
+import { buildLateRecords, lateRecordInPeriod } from "@/lib/late-records";
+import { planManualClockIn } from "@/lib/manual-clock-in";
+import { useAppRuntime } from "@/lib/app-runtime";
+import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
@@ -60,6 +64,9 @@ type LateRecord = {
 };
 
 function LateArrivalsPage() {
+  const runtime = useAppRuntime();
+  const [reopenShift, setReopenShift] = useState(true);
+  const [punchesReady, setPunchesReady] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -69,7 +76,8 @@ function LateArrivalsPage() {
   const [filterDept, setFilterDept] = useState("");
   const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => attendanceNow());
+  useEffect(() => { if (runtime.ready) setNow(attendanceNow()); }, [runtime.ready]);
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
 
   useEffect(() => {
@@ -81,7 +89,7 @@ function LateArrivalsPage() {
   const [selectedEmpId, setSelectedEmpId] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [manualTimezone, setManualTimezone] = useState("Australia/Sydney");
-  const [manualDate, setManualDate] = useState(() => zonedDateKey(new Date(), "Asia/Manila"));
+  const [manualDate, setManualDate] = useState(() => zonedDateKey(attendanceNow(), "Asia/Manila"));
   const [manualTime, setManualTime] = useState("09:00");
   const [manualNotes, setManualNotes] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
@@ -95,7 +103,7 @@ function LateArrivalsPage() {
   } | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    const timer = window.setInterval(() => setNow(attendanceNow()), 30000);
     const unsubscribers = [
       onSnapshot(collection(db(), "companies"), (snapshot) =>
         setCompanies(
@@ -104,7 +112,7 @@ function LateArrivalsPage() {
       ),
       onSnapshot(collection(db(), "employees"), (snapshot) =>
         setEmployees(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
+          snapshot.docs.map((item) => ({ ...(item.data() as Omit<Employee, "id">), id: item.id })),
         ),
       ),
       onSnapshot(collection(db(), "departments"), (snapshot) =>
@@ -115,11 +123,10 @@ function LateArrivalsPage() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "punches"), (snapshot) =>
-        setPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
-      ),
+      onSnapshot(collection(db(), "punches"), { includeMetadataChanges: true }, (snapshot) => {
+        setPunches(snapshot.docs.map((item) => ({ ...(item.data() as Omit<Punch, "id">), id: item.id })).filter((p) => !p.voidedAt));
+        setPunchesReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
+      }, () => { setPunchesReady(false); toast.error("Late logs could not sync. Refresh to reconnect."); }),
       onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
         setLeaves(
           snapshot.docs.map((item) => ({
@@ -135,244 +142,20 @@ function LateArrivalsPage() {
     };
   }, []);
 
-  const records = useMemo(() => {
-    const result: LateRecord[] = [];
-    const today = now;
-
-    for (const employee of employees.filter((item) => item.status === "active")) {
-      const companyIds = getEmployeeCompanyIds(employee);
-      const allEmpPunches = punches.filter(
-        (p) =>
-          p.employeeId === employee.id ||
-          Boolean(employee.authUid && p.employeeId === employee.authUid) ||
-          Boolean((p as any).userId && ((p as any).userId === employee.id || (p as any).userId === employee.authUid)),
-      );
-      const activeSession = getActiveWorkingSession(allEmpPunches, employee, today, companies);
-      const isEmployeeCurrentlyWorking = Boolean(
-        (activeSession.activeCompanyId && activeSession.status?.isPunchedIn) ||
-        activeSession.sessionType === "in" ||
-        activeSession.sessionType === "break",
-      );
-
-      // Check if employee has ANY punch-in today across any company
-      const empTimezone = getShiftTimezone(employee);
-      const todayDateKey = zonedDateKey(today, empTimezone);
-
-      // Robust fallback: check if latest punch across ALL companies is an active "in" type (within 24h)
-      // This catches cases where getActiveWorkingSession fails due to timezone/dateKey mismatches
-      const sortedAllPunches = allEmpPunches
-        .filter((p) => p.timestamp)
-        .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-      const latestGlobalPunch = sortedAllPunches.at(-1);
-      const isGloballyPunchedIn = Boolean(
-        latestGlobalPunch &&
-        (latestGlobalPunch.type === "in" ||
-          latestGlobalPunch.type === "extra_in" ||
-          latestGlobalPunch.type === "lunch_start" ||
-          latestGlobalPunch.type === "lunch_end") &&
-        toDate(latestGlobalPunch.timestamp) &&
-        (today.getTime() - (toDate(latestGlobalPunch.timestamp)?.getTime() ?? 0)) < 24 * 60 * 60 * 1000,
-      );
-
-      const hasAnyPunchToday = allEmpPunches.some((p) => {
-        if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
-        const pTime = toDate(p.timestamp);
-        if (!pTime) return false;
-        const pDateKey =
-          p.attendanceDate ||
-          p.date ||
-          zonedDateKey(pTime, empTimezone);
-        return pDateKey === todayDateKey;
-      });
-
-      for (const cId of companyIds) {
-        const cEmp = getEmployeeForCompany(employee, cId);
-        const comp =
-          companies.find((c) => normalizeCompanyId(c.id) === normalizeCompanyId(cId)) ||
-          companies.find((c) => c.name?.trim().toLowerCase() === cId.trim().toLowerCase()) ||
-          (normalizeCompanyId(cId) === COMPANY_ID
-            ? companies.find((c) => c.id === COMPANY_ID || c.isMain || c.name?.trim().toLowerCase() === "ironbrij")
-            : undefined) ||
-          (normalizeCompanyId(company?.id) === normalizeCompanyId(cId) ? company : undefined) ||
-          companies.find((c) => normalizeCompanyId(c.id) === COMPANY_ID);
-        const compName =
-          comp?.name ||
-          (normalizeCompanyId(cId) === COMPANY_ID ? "Main Company" : cId);
-        const cPunches = getEmployeePunchesForCompany(punches, employee, cId, comp?.name);
-        const shiftTimezone = getShiftTimezone(cEmp);
-        const todayKey = zonedDateKey(today, shiftTimezone);
-
-        const firstByShiftDate = new Map<string, Punch>();
-        for (const punch of cPunches) {
-          if ((punch.type !== "in" && punch.type !== "extra_in") || !punch.timestamp) continue;
-          const punchedAt = toDate(punch.timestamp);
-          if (!punchedAt) continue;
-          const dateKey =
-            punch.attendanceDate ||
-            punch.date ||
-            zonedDateKey(punchedAt, shiftTimezone);
-          const current = firstByShiftDate.get(dateKey);
-          if (!current || toMillis(punch.timestamp) < toMillis(current.timestamp))
-            firstByShiftDate.set(dateKey, punch);
-        }
-
-        const status = getLiveAttendanceStatus(
-          cEmp,
-          cPunches,
-          today,
-          graceMinutes,
-          comp?.workingDays,
-          getEmployeeHolidayDates(comp, cEmp),
-        );
-        const approvedLeaveToday = getEmployeeApprovedLeaveForDate(
-          cEmp,
-          leaves,
-          status.shift.dateKey,
-        );
-
-        for (const [dateKey, punch] of firstByShiftDate) {
-          // Only show today's logs
-          if (dateKey !== todayKey) continue;
-
-          // If not a scheduled working day for this company, punches are off-schedule / overtime, NOT late arrivals!
-          if (!status.isScheduledDay) continue;
-
-          const approvedLeave = getEmployeeApprovedLeaveForDate(cEmp, leaves, dateKey);
-          if (approvedLeave) continue;
-          if (getEmployeeHoliday(comp, cEmp, dateKey)) continue;
-
-          const punchedAt = toDate(punch.timestamp);
-          if (!punchedAt) continue;
-          const isExcused = Boolean(punch.isExcused);
-          const late = computeEmployeeLateness(punchedAt, cEmp, graceMinutes, isExcused);
-
-          // ONLY show in the Late Log if they were naturally late or have an excused lateness!
-          // Employees who arrive early or on-time are NOT late and must not appear in the Late Log.
-          if (late.naturallyLate || isExcused) {
-            result.push({
-              id: punch.id,
-              employee: cEmp,
-              dateKey,
-              scheduledAt: late.scheduledAt,
-              punchedAt,
-              minutesLate: late.rawMinutes,
-              minutesEarly: 0,
-              isEarly: false,
-              kind: "arrival",
-              isExcused,
-              excuseReason: punch.excuseReason,
-              punch,
-              companyId: cId,
-              companyName: compName,
-              shiftLabel: formatShiftRange(
-                cEmp.shiftStartTime,
-                cEmp.shiftEndTime,
-                cEmp.isMultipleShift,
-                cEmp.shifts,
-              ),
-            });
-          }
-        }
-
-        // An active punch in this company is authoritative. This also protects
-        // against legacy records whose attendanceDate used a different timezone.
-        const latestCompanyPunch = [...cPunches]
-          .filter((p) => p.timestamp)
-          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))
-          .at(-1);
-        const hasActiveCompanyPunch = Boolean(
-          latestCompanyPunch &&
-          (latestCompanyPunch.type === "in" ||
-            latestCompanyPunch.type === "extra_in" ||
-            latestCompanyPunch.type === "lunch_start" ||
-            latestCompanyPunch.type === "lunch_end"),
-        );
-
-        // Only show today's missing if scheduled today and overdue
-        if (
-          status.shift.dateKey === todayKey &&
-          status.isScheduledDay &&
-          !approvedLeaveToday &&
-          status.isMissingLate
-        ) {
-          // 1. If already punched in for this company/shift: NEVER show as missing!
-          if (
-            status.isPunchedIn ||
-            hasActiveCompanyPunch ||
-            firstByShiftDate.has(todayKey) ||
-            firstByShiftDate.has(status.shift.dateKey)
-          ) {
-            continue;
-          }
-
-          // 2. If employee already has an arrival record in results for today: NEVER show as missing!
-          if (
-            result.some(
-              (r) =>
-                r.employee.id === employee.id &&
-                (r.dateKey === todayKey || r.dateKey === status.shift.dateKey),
-            )
-          ) {
-            continue;
-          }
-
-          // 3. If employee is currently punched in / working at ANY company:
-          if (isEmployeeCurrentlyWorking || isGloballyPunchedIn) {
-            continue;
-          }
-
-          // 4. If employee has already punched in on today's date across ANY company:
-          if (hasAnyPunchToday) {
-            continue;
-          }
-
-          // 5. Double-check with company-specific timezone (may differ from employee default)
-          const cTodayKey = zonedDateKey(today, shiftTimezone);
-          if (cTodayKey !== todayDateKey) {
-            const hasAnyPunchTodayAlt = allEmpPunches.some((p) => {
-              if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
-              const pTime = toDate(p.timestamp);
-              if (!pTime) return false;
-              const pDateKey = p.attendanceDate || p.date || zonedDateKey(pTime, shiftTimezone);
-              return pDateKey === cTodayKey;
-            });
-            if (hasAnyPunchTodayAlt) continue;
-          }
-
-          result.push({
-            id: `missing-${employee.id}-${cId}-${status.shift.dateKey}`,
-            employee: cEmp,
-            dateKey: status.shift.dateKey,
-            scheduledAt: status.shift.start,
-            minutesLate: status.minutesLate,
-            kind: "missing",
-            companyId: cId,
-            companyName: compName,
-            shiftLabel: formatShiftRange(
-              cEmp.shiftStartTime,
-              cEmp.shiftEndTime,
-              cEmp.isMultipleShift,
-              cEmp.shifts,
-            ),
-          });
-        }
-      }
-    }
-    return result.sort(
-      (a, b) => (b.punchedAt || b.scheduledAt).getTime() - (a.punchedAt || a.scheduledAt).getTime(),
-    );
-  }, [employees, punches, leaves, graceMinutes, companies, now]);
+  const records = useMemo(() => buildLateRecords(employees, punches, leaves, companies, now),
+    [employees, punches, leaves, companies, now]);
 
   const filtered = useMemo(
     () =>
       records.filter((record) => {
+        if (!lateRecordInPeriod(record, filterPeriod, now)) return false;
         if (filterDept && record.employee.deptId !== filterDept) return false;
         if (filterCompany !== "all") {
           if (normalizeCompanyId(record.companyId) !== normalizeCompanyId(filterCompany)) return false;
         }
         return true;
       }),
-    [records, filterDept, filterCompany],
+    [records, filterDept, filterCompany, filterPeriod, now],
   );
 
   const missingCount = filtered.filter((record) => record.kind === "missing").length;
@@ -390,7 +173,7 @@ function LateArrivalsPage() {
       await updateDoc(doc(db(), "punches", punchId), {
         isExcused: !currentExcused,
         excusedBy: user?.email || "admin",
-        excusedAt: new Date().toISOString(),
+        excusedAt: attendanceNow().toISOString(),
         ...(currentExcused
           ? { excuseReason: null }
           : { excuseReason: (reason || "").trim() || "Excused by admin" }),
@@ -405,6 +188,9 @@ function LateArrivalsPage() {
   }
 
   async function saveManualClockIn() {
+    if (!runtime.ready || !punchesReady || submittingManual) {
+      toast.error(runtime.message || "Wait for attendance records to finish syncing."); return;
+    }
     if (!selectedEmpId || !manualDate || !manualTime) {
       toast.error("Please fill in employee, date, and clock-in time.");
       return;
@@ -423,9 +209,11 @@ function LateArrivalsPage() {
     try {
       const shiftTz = getShiftTimezone(targetEmpForCompany);
       const punchDateObj = zonedDateTimeToDate(manualDate, manualTime, manualTimezone);
-      const dateKey = zonedDateKey(punchDateObj, shiftTz);
-
-      await addDoc(collection(db(), "punches"), {
+      const plan = planManualClockIn(targetEmpForCompany, punches, punchDateObj, attendanceNow(), reopenShift);
+      const dateKey = plan.dateKey;
+      const batch = writeBatch(db());
+      const punchRef = plan.existing ? doc(db(), "punches", plan.existing.id) : doc(collection(db(), "punches"));
+      batch.set(punchRef, {
         employeeId: targetEmp.id,
         employeeName: targetEmp.name,
         companyId: effectiveCompanyId,
@@ -439,10 +227,17 @@ function LateArrivalsPage() {
         manualTimezoneUsed: manualTimezone,
         manualNote: manualNotes.trim() || `Manual clock-in (${manualTimezone}) by admin`,
         addedByAdmin: user?.email || "admin",
-        createdAt: new Date().toISOString(),
+        createdAt: plan.existing?.createdAt || attendanceNow().toISOString(),
+        correctedAt: attendanceNow().toISOString(),
+        scheduledShiftStart: plan.shift.start.toISOString(),
+        scheduledShiftEnd: plan.shift.end.toISOString(),
+      }, { merge: true });
+      for (const punch of plan.voided) batch.update(doc(db(), "punches", punch.id), {
+        voidedAt: attendanceNow().toISOString(), voidedBy: user?.email || "admin",
+        correctionPunchId: punchRef.id,
       });
-
-      toast.success(`Manual clock-in logged for ${targetEmp.name}!`);
+      await batch.commit();
+      toast.success(plan.voided.length ? `Clock-in corrected and automatic clock-out removed for ${targetEmp.name}.` : `Manual clock-in logged for ${targetEmp.name}!`);
       setShowManualModal(false);
       setManualNotes("");
     } catch (err) {
@@ -492,10 +287,14 @@ function LateArrivalsPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-2 w-full">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
-          ● Today's Punctuality Dashboard
+          Punctuality Dashboard
         </span>
 
         <div className="flex items-center gap-2">
+          <select aria-label="Late log period" value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value as typeof filterPeriod)} className="rounded-md border bg-card px-3 py-1.5 text-xs font-semibold">
+            <option value="today">Today</option><option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option><option value="all">All dates</option>
+          </select>
           <select
             value={filterCompany}
             onChange={(event) => setFilterCompany(event.target.value)}
@@ -876,6 +675,10 @@ function LateArrivalsPage() {
                 );
               })()}
 
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={reopenShift} onChange={(e) => setReopenShift(e.target.checked)} />
+                Employee is currently working: reopen today's shift by voiding incorrect automatic clock-outs. Past shifts stay historical.
+              </label>
               <div className="grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-foreground mb-1">

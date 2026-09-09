@@ -83,7 +83,7 @@ export function computeDay(
   punches: Punch[],
   context?: { employee: Employee; company?: Company | null; now?: Date },
 ): DayHours {
-  const sorted = [...punches].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+  const sorted = punches.filter((p) => !p.voidedAt).sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   let regularMs = 0;
   let overtimeMs = 0;
   let openIn: number | null = null;
@@ -96,6 +96,7 @@ export function computeDay(
       if (context) {
         const result = calculateAttendanceSession({
           employee: context.employee,
+          punches,
           company: context.company,
           punchIn: new Date(openIn),
           punchOut: new Date(timestamp),
@@ -116,6 +117,7 @@ export function computeDay(
   if (openIn !== null && context) {
     const result = calculateAttendanceSession({
       employee: context.employee,
+      punches,
       company: context.company,
       punchIn: new Date(openIn),
       now: context.now,

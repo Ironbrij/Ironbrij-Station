@@ -220,6 +220,7 @@ export function getEmployeePunchesForCompany(
   const targetCId = normalizeCompanyId(companyId);
 
   return punches.filter((punch) => {
+    if (punch.voidedAt) return false;
     if (empIds && punch.employeeId && !empIds.has(punch.employeeId)) {
       return false;
     }

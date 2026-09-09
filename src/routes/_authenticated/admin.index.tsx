@@ -1,3 +1,5 @@
+import { useAppRuntime } from "@/lib/app-runtime";
+import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query, limit, where } from "firebase/firestore";
@@ -75,6 +77,8 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 });
 
 function AdminHome() {
+  const runtime = useAppRuntime();
+  const [punchesReady, setPunchesReady] = useState(false);
   const { company, companies, activeCompanyId, setActiveCompanyId } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -106,7 +110,8 @@ function AdminHome() {
     dateKey: string;
   } | null>(null);
 
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => attendanceNow());
+  useEffect(() => { if (runtime.ready) setNow(attendanceNow()); }, [runtime.ready]);
   const [pendingOvertimeCount, setPendingOvertimeCount] = useState(0);
 
   const handleBadgeClick = (emp: Employee, type: "sod" | "eod", e: React.MouseEvent) => {
@@ -135,13 +140,13 @@ function AdminHome() {
   };
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    const timer = window.setInterval(() => setNow(attendanceNow()), 30000);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
     const un1 = onSnapshot(collection(db(), "employees"), (s) =>
-      setEmployees(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
+      setEmployees(s.docs.map((d) => ({ ...(d.data() as Omit<Employee, "id">), id: d.id }))),
     );
 
     const deptQuery =
@@ -159,9 +164,10 @@ function AdminHome() {
       ),
     );
 
-    const un3 = onSnapshot(collection(db(), "punches"), (s) =>
-      setTodayPunches(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
-    );
+    const un3 = onSnapshot(collection(db(), "punches"), { includeMetadataChanges: true }, (s) => {
+      setTodayPunches(s.docs.map((d) => ({ ...(d.data() as Omit<Punch, "id">), id: d.id })).filter((p) => !p.voidedAt));
+      setPunchesReady(!s.metadata.fromCache && !s.metadata.hasPendingWrites);
+    }, () => setPunchesReady(false));
 
     const un4 = onSnapshot(
       query(collection(db(), "leaveRequests"), where("status", "==", "approved")),
@@ -279,6 +285,11 @@ function AdminHome() {
   }, [todayPunches, activeCompanyId, empById]);
 
   function getEmpTodayStatus(emp: Employee) {
+    if (!punchesReady || !runtime.ready) return {
+      type: "unknown" as const, label: "Attendance syncing — status unavailable", isLate: false,
+      minutesLate: 0, isExcused: false, excuseReason: undefined, punchTimeStr: "",
+      isAutoPunchOut: false, activeCompanyName: undefined,
+    };
     const getDisplayTimezone = (employee?: Employee) => {
       if (timezoneMode === "PH") return { tz: "Asia/Manila", code: "PH", flag: "🇵🇭" };
       if (timezoneMode === "NP") return { tz: "Asia/Kathmandu", code: "NP", flag: "🇳🇵" };
@@ -585,6 +596,8 @@ function AdminHome() {
     scopedEmployees,
     departments,
     empTodayPunches,
+    punchesReady,
+    runtime.ready,
     now,
     leaves,
     company,
@@ -627,6 +640,8 @@ function AdminHome() {
     scopedEmployees,
     todayPunches,
     empTodayPunches,
+    punchesReady,
+    runtime.ready,
     now,
     leaves,
     company,
@@ -660,7 +675,7 @@ function AdminHome() {
             <ShieldCheck className="h-6 w-6 text-primary" /> Live Team Dashboard
           </h1>
           <p className="text-sm font-medium text-muted-foreground mt-0.5">
-            {format(new Date(), "EEEE d MMMM")} — real-time status for{" "}
+            {format(attendanceNow(), "EEEE d MMMM")} — real-time status for{" "}
             <strong>{activeCompanyId === "all" ? "All Companies" : company?.name || "Company"}</strong>.
           </p>
         </div>
@@ -1224,7 +1239,7 @@ function AdminHome() {
                         };
 
             const timeFormatted = p.timestamp
-              ? `${formatInTimezone(toDate(p.timestamp) ?? new Date(), targetTz.tz)} (${targetTz.code})`
+              ? `${formatInTimezone(toDate(p.timestamp) ?? attendanceNow(), targetTz.tz)} (${targetTz.code})`
               : "—";
             const dateFormatted = p.timestamp
               ? new Intl.DateTimeFormat("en-US", {
@@ -1232,7 +1247,7 @@ function AdminHome() {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
-                }).format(toDate(p.timestamp) ?? new Date())
+                }).format(toDate(p.timestamp) ?? attendanceNow())
               : "";
             const isLunchStart = p.type === "lunch_start";
             const isLunchEnd = p.type === "lunch_end";
