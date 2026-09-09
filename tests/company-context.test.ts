@@ -7,6 +7,8 @@ import {
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
+  getEmployeePortalCompanies,
+  resolveEmployeeCompanyId,
   getPunchCompanyId,
   getRequiredWorkMinutes,
   normalizeCompanyId,
@@ -324,4 +326,31 @@ test("pending Start Work and Stop Work agree with dashboard session status", () 
   assert.equal(getActiveWorkingSession([pending], emp, now).status?.isPunchedIn, true);
   const stopped = { ...pending, id: "stop", type: "out", createdAt: "2026-09-09T09:00:01Z" } as unknown as Punch;
   assert.equal(getActiveWorkingSession([pending, stopped], emp, now).activeCompanyId, null);
+});
+
+
+test("employee portal excludes the admin aggregate and unassigned companies", () => {
+  const profile = { ...employee, companyId: "alpha", companyIds: ["alpha"], companyMemberships: { alpha: { companyId: "alpha" } } } as Employee;
+  const companies = [{ id: "alpha", name: "Alpha" }, { id: "beta", name: "Beta" }, { id: "all", name: "All Companies" }];
+  assert.deepEqual(getEmployeePortalCompanies(profile, companies).map((c) => c.id), ["alpha"]);
+  for (const saved of ["all", "beta", "", null]) {
+    assert.equal(resolveEmployeeCompanyId(profile, companies, saved), "alpha");
+  }
+  const selected = resolveEmployeeCompanyId(profile, companies, "all");
+  const now = new Date("2026-09-09T10:00:00Z");
+  const scoped = { ...getEmployeeForCompany(profile, selected), shiftTimezone: "UTC" };
+  const punch = { id: "start", employeeId: profile.id, companyId: selected, type: "in", timestamp: now.toISOString() } as unknown as Punch;
+  assert.equal(getActiveWorkingSession([punch], scoped, now, companies).status?.isPunchedIn, true);
+  const stop = { ...punch, id: "stop", type: "out", timestamp: "2026-09-09T10:01:00Z" } as unknown as Punch;
+  assert.equal(getActiveWorkingSession([punch, stop], scoped, new Date("2026-09-09T10:02:00Z"), companies).activeCompanyId, null);
+});
+
+test("employee portal retains a valid assigned selection and fails closed without a company", () => {
+  const companies = [{ id: "alpha", name: "Alpha" }, { id: "beta", name: "Beta" }];
+  assert.equal(resolveEmployeeCompanyId(employee, companies, "beta"), "beta");
+  assert.equal(resolveEmployeeCompanyId(employee, companies, "all"), "alpha");
+  assert.equal(resolveEmployeeCompanyId(employee, [], "all"), "");
+  assert.equal(resolveEmployeeCompanyId(null, companies, "alpha"), "");
+  const legacy = { ...employee, companyId: "ironbrij", companyMemberships: undefined, companyIds: ["ironbrij"] };
+  assert.equal(resolveEmployeeCompanyId(legacy, [{ id: "default", name: "Ironbrij" }], "ironbrij"), "default");
 });

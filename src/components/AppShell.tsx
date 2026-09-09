@@ -73,7 +73,7 @@ export function AppShell({
   }, [employee, employeePunches, companies]);
 
   const companySwitcher = (
-    <CompanySelector variant="header" activeShiftCompanyIds={activeAttendanceCompanyIds} />
+    <CompanySelector variant="header" allowAll={isAdmin && title.includes("Admin")} activeShiftCompanyIds={activeAttendanceCompanyIds} />
   );
 
   return (

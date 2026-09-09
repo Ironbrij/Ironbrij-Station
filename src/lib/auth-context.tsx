@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import {
   collection,
@@ -23,7 +24,7 @@ import { auth, db, firebaseConfigured } from "./firebase";
 import { COMPANY_ID, type Company, type Employee } from "./types";
 import { resolveProfilePhoto } from "./profile-photo";
 import { toast } from "sonner";
-import { getEmployeeCompanyIds, getEmployeeForCompany } from "./company-context";
+import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePortalCompanies, resolveEmployeeCompanyId } from "./company-context";
 
 interface AuthState {
   user: User | null;
@@ -45,7 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [activeCompanyId, setActiveCompanyIdState] = useState(COMPANY_ID);
+  const [adminCompanyId, setAdminCompanyId] = useState(COMPANY_ID);
+  const [employeeCompanyId, setEmployeeCompanyId] = useState("");
+  const employeePortal = useRouterState({ select: (state) => state.location.pathname === "/app" || state.location.pathname.startsWith("/app/") });
+  const portalCompanies = useMemo(() => employeePortal ? getEmployeePortalCompanies(employee, companies) : companies, [employeePortal, employee, companies]);
+  // Resolve synchronously so even the first render cannot submit an aggregate punch.
+  const activeCompanyId = employeePortal
+    ? resolveEmployeeCompanyId(employee, companies, employeeCompanyId)
+    : adminCompanyId;
   const [loading, setLoading] = useState(true);
 
   async function hydrate(u: User) {
@@ -247,15 +255,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [employee, isAdmin]);
 
   const availableCompanyIds = useMemo(() => {
+    if (employeePortal) return portalCompanies.map((item) => item.id || COMPANY_ID);
     if (isAdmin && companies.length > 0) {
       return ["all", ...companies.map((item) => item.id || COMPANY_ID)];
     }
     return getEmployeeCompanyIds(employee);
-  }, [companies, employee, isAdmin]);
+  }, [companies, employee, isAdmin, employeePortal, portalCompanies]);
 
   useEffect(() => {
     if (!user || availableCompanyIds.length === 0) return;
-    const storageKey = `active_company_id:${user.uid}`;
+    const storageKey = `${employeePortal ? "employee_company_id" : "active_company_id"}:${user.uid}`;
     let saved: string | null = null;
     try { saved = window.localStorage.getItem(storageKey); } catch { /* Browser storage is optional. */ }
     const preferred =
@@ -264,18 +273,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : employee?.companyId && availableCompanyIds.includes(employee.companyId)
           ? employee.companyId
           : availableCompanyIds[0];
-    setActiveCompanyIdState(preferred);
-  }, [availableCompanyIds, employee?.companyId, user]);
+    if (employeePortal) setEmployeeCompanyId(preferred);
+    else setAdminCompanyId(preferred);
+  }, [availableCompanyIds, employee?.companyId, user, employeePortal]);
 
   const setActiveCompanyId = useCallback(
     (companyId: string) => {
       if (!availableCompanyIds.includes(companyId)) return;
-      setActiveCompanyIdState(companyId);
+      if (employeePortal) setEmployeeCompanyId(companyId);
+      else setAdminCompanyId(companyId);
       if (user && typeof window !== "undefined") {
-        try { window.localStorage.setItem(`active_company_id:${user.uid}`, companyId); } catch { /* Browser storage is optional. */ }
+        try { window.localStorage.setItem(`${employeePortal ? "employee_company_id" : "active_company_id"}:${user.uid}`, companyId); } catch { /* Browser storage is optional. */ }
       }
     },
-    [availableCompanyIds, user],
+    [availableCompanyIds, user, employeePortal],
   );
 
   const company = useMemo(() => {
@@ -319,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAdmin,
     employee: scopedEmployee,
     company,
-    companies,
+    companies: portalCompanies,
     activeCompanyId,
     setActiveCompanyId,
     loading,

@@ -452,6 +452,10 @@ function PunchPage() {
 
   async function doPunch(targetType: "in" | "out" | "extra_in", customReason?: string) {
     if (!employee || !user || busy) return;
+    if (!activeCompanyId || activeCompanyId === "all" || !company || !getEmployeeCompanyIds(employee).includes(activeCompanyId)) {
+      toast.error("Select your assigned company before recording attendance.");
+      return;
+    }
     if (!runtime.ready || !punchesReady) {
       toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
       return;
@@ -783,6 +787,10 @@ function PunchPage() {
 
   async function doLunchPunch(targetType: "lunch_start" | "lunch_end") {
     if (!employee || !user || busy) return;
+    if (!activeCompanyId || activeCompanyId === "all" || !company || !getEmployeeCompanyIds(employee).includes(activeCompanyId)) {
+      toast.error("Select your assigned company before recording attendance.");
+      return;
+    }
     if (!runtime.ready || !punchesReady) {
       toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
       return;
@@ -864,6 +872,10 @@ function PunchPage() {
 
   async function submitNotepadReport(type: "sod" | "eod") {
     if (!employee || !user || busy) return;
+    if (!activeCompanyId || activeCompanyId === "all" || !company || !getEmployeeCompanyIds(employee).includes(activeCompanyId)) {
+      toast.error("Select your assigned company before recording attendance.");
+      return;
+    }
     if (!runtime.ready || !punchesReady) {
       toast.error(punchError || runtime.message || "Wait for attendance to finish syncing before trying again.");
       return;

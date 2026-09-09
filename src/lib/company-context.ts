@@ -94,6 +94,19 @@ export function getEmployeeCompanyIds(employee: Employee | null | undefined): st
   return [...ids];
 }
 
+// Employee work must use an assigned company, never the admin aggregate selection.
+export function getEmployeePortalCompanies(employee: Employee | null, companies: Company[]): Company[] {
+  const assigned = new Set(getEmployeeCompanyIds(employee).filter((id) => id !== "all"));
+  return companies.filter((company) => company.id !== "all" && assigned.has(normalizeCompanyId(company.id)));
+}
+
+export function resolveEmployeeCompanyId(employee: Employee | null, companies: Company[], preferred?: string | null): string {
+  const ids = getEmployeePortalCompanies(employee, companies).map((company) => normalizeCompanyId(company.id));
+  if (preferred && ids.includes(normalizeCompanyId(preferred))) return normalizeCompanyId(preferred);
+  if (employee?.companyId && ids.includes(normalizeCompanyId(employee.companyId))) return normalizeCompanyId(employee.companyId);
+  return ids[0] || "";
+}
+
 export function getCompanyMembership(employee: Employee, companyId: string): CompanyMembership {
   const normTarget = normalizeCompanyId(companyId);
   let configured: CompanyMembership | undefined;
