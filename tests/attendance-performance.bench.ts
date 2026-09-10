@@ -1,6 +1,7 @@
+import { indexPunchesByEmployee, getIndexedEmployeePunches } from '../src/lib/company-context.ts';
 import { performance } from 'node:perf_hooks';
 import { buildLateRecords } from '../src/lib/late-records.ts';
-import { getLiveAttendanceStatus, computeRegularWorkedMsForDay } from '../src/lib/attendance.ts';
+import { getActiveWorkingSession, getLiveAttendanceStatus, computeRegularWorkedMsForDay } from '../src/lib/attendance.ts';
 import type { Employee, Punch } from '../src/lib/types.ts';
 const now = new Date('2026-09-09T06:00:00Z');
 const employees = Array.from({ length: Number(process.env.BENCH_EMPLOYEES || 5) }, (_, i) => ({
@@ -23,3 +24,13 @@ started = performance.now();
 getLiveAttendanceStatus(employees[0], own, now);
 computeRegularWorkedMsForDay(employees[0], own, now, now);
 console.log(JSON.stringify({employees: employees.length, punches: punches.length, records: records.length, lateMs: Math.round(lateMs), employeeTickMs: Math.round(performance.now() - started)}));
+
+started = performance.now();
+const baseline = employees.map(employee => getActiveWorkingSession(punches, employee, now).activeCompanyId);
+const dashboardScanMs = performance.now() - started;
+started = performance.now();
+const indexed = indexPunchesByEmployee(punches);
+const optimized = employees.map(employee => getActiveWorkingSession(getIndexedEmployeePunches(indexed, employee), employee, now).activeCompanyId);
+const dashboardIndexedMs = performance.now() - started;
+if (JSON.stringify(baseline) !== JSON.stringify(optimized)) throw new Error("Indexed dashboard changed active attendance");
+console.log(JSON.stringify({dashboardScanMs: Math.round(dashboardScanMs), dashboardIndexedMs: Math.round(dashboardIndexedMs), identicalStatuses: true}));

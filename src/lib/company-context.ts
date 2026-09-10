@@ -221,6 +221,24 @@ export function getPunchCompanyId(
   return normalizeCompanyId(employee?.companyId || COMPANY_ID);
 }
 
+// Build once per snapshot; callers reuse each employee's history across status checks.
+export function indexPunchesByEmployee(punches: Punch[]): Map<string, Punch[]> {
+  const index = new Map<string, Punch[]>();
+  for (const punch of punches) {
+    const list = index.get(punch.employeeId);
+    if (list) list.push(punch);
+    else index.set(punch.employeeId, [punch]);
+  }
+  return index;
+}
+
+export function getIndexedEmployeePunches(index: Map<string, Punch[]>, employee: Employee): Punch[] {
+  const profilePunches = index.get(employee.id) || [];
+  if (!employee.authUid || employee.authUid === employee.id) return profilePunches;
+  const loginPunches = index.get(employee.authUid);
+  return loginPunches?.length ? [...profilePunches, ...loginPunches] : profilePunches;
+}
+
 export function getEmployeePunchesForCompany(
   punches: Punch[],
   employee: Employee | null | undefined,

@@ -2,7 +2,6 @@ import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { ArrowLeftRight, Building2, Headphones, LogOut } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useAdminLateNotificationCount } from "@/lib/use-admin-late-notification-count";
 import { useNavigationBadgeCounts } from "@/lib/use-navigation-badge-counts";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -45,17 +44,19 @@ export function AppShell({
   } = useAuth();
   const navigate = useNavigate();
   const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
+  const adminPortal = isAdmin && title.includes("Admin");
   const navBadges = useNavigationBadgeCounts({
-    isAdmin: Boolean(isAdmin),
+    isAdmin: adminPortal,
     employee,
     company,
     activeCompanyId,
   });
-  useAutoRejectExpiredLeaves(isAdmin);
+  useAutoRejectExpiredLeaves(adminPortal);
 
   useEffect(() => {
     if (!employee) return;
-    const punchesQuery = query(collection(db(), "punches"), where("employeeId", "==", employee.id));
+    const ids = Array.from(new Set([employee.id, employee.authUid].filter((id): id is string => Boolean(id))));
+    const punchesQuery = query(collection(db(), "punches"), where("employeeId", ids.length > 1 ? "in" : "==", ids.length > 1 ? ids : ids[0]));
     return onSnapshot(punchesQuery, (snapshot) => {
       setEmployeePunches(
         snapshot.docs
@@ -64,7 +65,7 @@ export function AppShell({
           .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
       );
     });
-  }, [employee]);
+  }, [employee?.id, employee?.authUid]);
 
   const activeAttendanceCompanyIds = useMemo(() => {
     if (!employee) return [];

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { collection, doc, onSnapshot, runTransaction } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where, runTransaction } from "firebase/firestore";
 import { getEmployeeTimezone, zonedDateKey } from "./attendance";
 import { db } from "./firebase";
 import type { CompanyNotice, Employee, LeaveRequest } from "./types";
@@ -51,7 +51,7 @@ export function useAutoRejectExpiredLeaves(enabled: boolean) {
       processExpiredRequests();
     });
 
-    const unsubscribeLeaves = onSnapshot(collection(db(), "leaveRequests"), (snapshot) => {
+    const unsubscribeLeaves = onSnapshot(query(collection(db(), "leaveRequests"), where("status", "==", "pending")), (snapshot) => {
       leavesRef.current = snapshot.docs.map((item) => ({
         id: item.id,
         ...(item.data() as Omit<LeaveRequest, "id">),

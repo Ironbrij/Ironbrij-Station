@@ -143,11 +143,6 @@ function PunchPage() {
     toast.success("Announcement dismissed from main screen.");
   }
 
-  useEffect(() => {
-    const t = setInterval(() => setNow(attendanceNow().getTime()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
 
   const companyPunches = useMemo(
@@ -246,7 +241,7 @@ function PunchPage() {
         console.error("Leave snapshot error:", err);
       },
     );
-  }, [employee]);
+  }, [employee?.id, employee?.authUid]);
 
   const activeLeave = useMemo(
     () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, new Date(now)) : null),
@@ -325,6 +320,19 @@ function PunchPage() {
     );
   }, [activeWorkingSession, activeCompanyId, latestCompanyPunch, attendanceStatus]);
 
+  useEffect(() => {
+    const tick = () => {
+      if (!document.hidden) setNow(attendanceNow().getTime());
+    };
+    tick();
+    const timer = window.setInterval(tick, isPunchedIn ? 1000 : 30000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [isPunchedIn]);
+
   const isOnLunch = useMemo(() => {
     return latestCompanyPunch?.type === "lunch_start";
   }, [latestCompanyPunch]);
@@ -346,10 +354,11 @@ function PunchPage() {
     return getEmployeeBreakSettings(employee, activeCompanyId);
   }, [employee, activeCompanyId]);
 
+  const shiftTodayKey = employee ? zonedDateKey(new Date(now), getShiftTimezone(employee)) : "";
   const todayBreaksCount = useMemo(() => {
     if (!employee) return 0;
     const timezone = getShiftTimezone(employee);
-    const todayKey = zonedDateKey(new Date(now), timezone);
+    const todayKey = shiftTodayKey;
     const todayPunches = companyPunches.filter((p) => {
       const pDate =
         p.attendanceDate ||
@@ -358,7 +367,7 @@ function PunchPage() {
       return pDate === todayKey;
     });
     return todayPunches.filter((p) => p.type === "lunch_start").length;
-  }, [companyPunches, employee, now]);
+  }, [companyPunches, employee, shiftTodayKey]);
 
   const canTakeBreak = useMemo(() => {
     return (

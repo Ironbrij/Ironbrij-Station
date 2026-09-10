@@ -29,7 +29,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Papa from "papaparse";
-import { jsPDF } from "jspdf";
+import { createPdf } from "@/lib/pdf-export";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import {
@@ -1315,9 +1315,10 @@ function ReportsPage() {
   }
 
   // Export Current Reviewed/Edited Table to PDF
-  function exportSummaryPdf() {
+  async function exportSummaryPdf() {
     if (!reportRows.length) return toast.error("No report rows available to export.");
-    const pdf = new jsPDF({ orientation: "landscape" });
+    const pdf = await createPdf({ orientation: "landscape" });
+    if (!pdf) return;
 
     pdf.setFontSize(16);
     pdf.setTextColor(15, 23, 42);
@@ -1410,9 +1411,10 @@ function ReportsPage() {
   }
 
   // Export Daily Logs to PDF
-  function exportDailyPdf() {
+  async function exportDailyPdf() {
     if (!dailyRows.length) return toast.error("No daily logs available to export.");
-    const pdf = new jsPDF({ orientation: "landscape" });
+    const pdf = await createPdf({ orientation: "landscape" });
+    if (!pdf) return;
 
     pdf.setFontSize(16);
     pdf.setTextColor(15, 23, 42);

@@ -40,7 +40,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
 import Papa from "papaparse";
-import { jsPDF } from "jspdf";
+import { createPdf } from "@/lib/pdf-export";
 import { getStateOptions, normalizeState } from "@/lib/states";
 
 export const Route = createFileRoute("/_authenticated/admin/departments")({
@@ -211,7 +211,7 @@ function DepartmentsPage() {
     }
   }
 
-  function downloadDeptReport(dept: Department, daysRange: number, type: "csv" | "pdf") {
+  async function downloadDeptReport(dept: Department, daysRange: number, type: "csv" | "pdf") {
     const deptEmployees = employees.filter(
       (e) => e.deptId === dept.id && e.status === "active" && e.inviteStatus === "accepted",
     );
@@ -346,7 +346,8 @@ function DepartmentsPage() {
       URL.revokeObjectURL(url);
       toast.success(`Exported ${dept.name} CSV Report!`);
     } else {
-      const pdf = new jsPDF();
+      const pdf = await createPdf();
+      if (!pdf) return;
       pdf.setFontSize(16);
       pdf.text(`Department Report: ${dept.name}`, 14, 18);
       pdf.setFontSize(10);

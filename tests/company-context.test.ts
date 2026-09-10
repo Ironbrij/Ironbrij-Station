@@ -7,6 +7,8 @@ import {
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
+  indexPunchesByEmployee,
+  getIndexedEmployeePunches,
   getEmployeePortalCompanies,
   resolveEmployeeCompanyId,
   getPunchCompanyId,
@@ -353,4 +355,22 @@ test("employee portal retains a valid assigned selection and fails closed withou
   assert.equal(resolveEmployeeCompanyId(null, companies, "alpha"), "");
   const legacy = { ...employee, companyId: "ironbrij", companyMemberships: undefined, companyIds: ["ironbrij"] };
   assert.equal(resolveEmployeeCompanyId(legacy, [{ id: "default", name: "Ironbrij" }], "ironbrij"), "default");
+});
+
+
+test("indexed punch lookup preserves both identities, all companies, and unique rows", () => {
+  const profile = { ...employee, id: "profile", authUid: "login" };
+  const history = [
+    { id: "one", employeeId: "profile", companyId: "alpha", type: "in", timestamp: "2026-09-09T09:00:00Z" },
+    { id: "two", employeeId: "login", companyId: "beta", type: "in", timestamp: "2026-09-09T10:00:00Z" },
+    { id: "other", employeeId: "other", companyId: "alpha", type: "in", timestamp: "2026-09-09T10:00:00Z" },
+  ] as unknown as Punch[];
+  const indexed = indexPunchesByEmployee(history);
+  assert.deepEqual(getIndexedEmployeePunches(indexed, profile), history.slice(0, 2));
+  assert.deepEqual(getIndexedEmployeePunches(indexed, { ...profile, authUid: "profile" }), [history[0]]);
+  assert.deepEqual(getIndexedEmployeePunches(indexed, { ...profile, id: "absent", authUid: undefined }), []);
+  const now = new Date("2026-09-09T10:05:00Z");
+  const scoped = { ...profile, shiftTimezone: "UTC" };
+  assert.deepEqual(getActiveWorkingSession(getIndexedEmployeePunches(indexed, profile), scoped, now), getActiveWorkingSession(history, scoped, now));
+  assert.equal(history.length, 3);
 });

@@ -18,7 +18,7 @@ import {
   Wrench,
 } from "lucide-react";
 import Papa from "papaparse";
-import { jsPDF } from "jspdf";
+import { createPdf } from "@/lib/pdf-export";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import {
@@ -492,11 +492,12 @@ function EmployeeDetail() {
     toast.success("Employee CSV downloaded");
   }
 
-  function downloadPdf() {
+  async function downloadPdf() {
     if (!employee || !visibleRows.length)
       return toast.error("No attendance records for this period.");
     const timezone = getEmployeeTimezone(employee);
-    const pdf = new jsPDF();
+    const pdf = await createPdf();
+      if (!pdf) return;
     pdf.setFontSize(16);
     pdf.text(`${employee.name} — Attendance`, 14, 17);
     pdf.setFontSize(9);

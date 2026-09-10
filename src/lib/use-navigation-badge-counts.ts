@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   COMPANY_ID,
@@ -9,6 +9,10 @@ import {
   type OvertimeRequest,
 } from "./types";
 import { useAdminLateNotificationCount } from "./use-admin-late-notification-count";
+
+function readLastSeenOvertime() {
+  try { return Number(localStorage.getItem("lastSeenOvertime")) || 0; } catch { return 0; }
+}
 
 export function useNavigationBadgeCounts({
   isAdmin,
@@ -23,37 +27,31 @@ export function useNavigationBadgeCounts({
 }): Record<string, number> {
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
-  const [lastSeenOvertime, setLastSeenOvertime] = useState(() => parseInt(localStorage.getItem("lastSeenOvertime") || "0", 10));
+  const [lastSeenOvertime, setLastSeenOvertime] = useState(readLastSeenOvertime);
   const unreadLateCount = useAdminLateNotificationCount({ enabled: Boolean(isAdmin), company });
 
   useEffect(() => {
     const unsubscribers: (() => void)[] = [];
 
-    // Overtime Requests Listener
-    unsubscribers.push(
-      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) => {
-        setOvertimeRequests(
-          snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as Omit<OvertimeRequest, "id">),
-          })),
-        );
-      }),
-    );
+    setOvertimeRequests([]);
+    setLeaveRequests([]);
+    // Employee navigation needs only their leave requests, never company-wide admin data.
+    if (isAdmin) {
+      unsubscribers.push(onSnapshot(query(collection(db(), "overtimeRequests"), where("status", "==", "pending")), (snapshot) => {
+        setOvertimeRequests(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as OvertimeRequest)));
+      }));
+    }
+    const employeeIds = Array.from(new Set([employee?.id, employee?.authUid].filter((id): id is string => Boolean(id))));
+    if (isAdmin || employeeIds.length) {
+      const leavesQuery = isAdmin
+        ? query(collection(db(), "leaveRequests"), where("status", "==", "pending"))
+        : query(collection(db(), "leaveRequests"), where("employeeId", employeeIds.length > 1 ? "in" : "==", employeeIds.length > 1 ? employeeIds : employeeIds[0]));
+      unsubscribers.push(onSnapshot(leavesQuery, (snapshot) => {
+        setLeaveRequests(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as LeaveRequest)));
+      }));
+    }
 
-    // Leave Requests Listener
-    unsubscribers.push(
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) => {
-        setLeaveRequests(
-          snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as Omit<LeaveRequest, "id">),
-          })),
-        );
-      }),
-    );
-
-    const syncSeen = () => setLastSeenOvertime(parseInt(localStorage.getItem("lastSeenOvertime") || "0", 10));
+    const syncSeen = () => setLastSeenOvertime(readLastSeenOvertime());
     window.addEventListener("storage", syncSeen);
     window.addEventListener("OVERTIME_SEEN", syncSeen);
 
@@ -62,7 +60,7 @@ export function useNavigationBadgeCounts({
       window.removeEventListener("storage", syncSeen);
       window.removeEventListener("OVERTIME_SEEN", syncSeen);
     };
-  }, []);
+  }, [isAdmin, employee?.id, employee?.authUid]);
 
   return useMemo(() => {
     const badges: Record<string, number> = {};

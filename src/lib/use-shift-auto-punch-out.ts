@@ -16,6 +16,8 @@ import { auth, db } from "./firebase";
 import { formatInTimezone, getShiftTimeout } from "./attendance";
 import {
   cleanFirestoreData,
+  indexPunchesByEmployee,
+  getIndexedEmployeePunches,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getPunchCompanyId,
@@ -269,7 +271,7 @@ export function useCompanyShiftAutoPunchOut({
       if (!active || !employeesReady || reconcilingRef.current) return;
       reconcilingRef.current = true;
       try {
-        const punches = companyPunchesRef.current;
+        const punchesByEmployee = indexPunchesByEmployee(companyPunchesRef.current);
         const uniqueEmployees = new Map<string, Employee>();
         for (const employee of employeesRef.current) {
           const identity = employee.authUid || employee.id;
@@ -278,10 +280,7 @@ export function useCompanyShiftAutoPunchOut({
         }
         await Promise.allSettled(
           [...uniqueEmployees.values()].map((employee) => {
-            const employeeIds = new Set(
-              [employee.id, employee.authUid].filter((value): value is string => Boolean(value)),
-            );
-            const employeePunches = punches.filter((punch) => employeeIds.has(punch.employeeId));
+            const employeePunches = getIndexedEmployeePunches(punchesByEmployee, employee);
             return reconcileEmployeeShift(
               employee,
               employeePunches,

@@ -40,6 +40,8 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import {
   getEmployeeCompanyIds,
+  indexPunchesByEmployee,
+  getIndexedEmployeePunches,
   getEmployeeForCompany,
   getPunchCompanyId,
   normalizeCompanyId,
@@ -264,6 +266,8 @@ function AdminHome() {
     );
   }, [employees, activeCompanyId]);
 
+  const allEmployeePunches = useMemo(() => indexPunchesByEmployee(todayPunches), [todayPunches]);
+
   // Group punches by employee for fast today lookup
   const empTodayPunches = useMemo(() => {
     const map = new Map<string, Punch[]>();
@@ -319,7 +323,7 @@ function AdminHome() {
     };
 
     // Resolve active session across any company first
-    const activeSession = getActiveWorkingSession(todayPunches, emp, now, companies);
+    const activeSession = getActiveWorkingSession(getIndexedEmployeePunches(allEmployeePunches, emp), emp, now, companies);
     const isSessionActive = Boolean(
       activeSession.activeCompanyId &&
       (activeSession.status?.isPunchedIn || activeSession.sessionType === "in" || activeSession.sessionType === "break"),
@@ -420,10 +424,7 @@ function AdminHome() {
       };
     }
 
-    const list = [
-      ...(empTodayPunches.get(cEmp.id) || []),
-      ...(cEmp.authUid ? empTodayPunches.get(cEmp.authUid) || [] : []),
-    ];
+    const list = getIndexedEmployeePunches(empTodayPunches, cEmp);
     const status = getLiveAttendanceStatus(
       cEmp,
       list,
@@ -494,9 +495,7 @@ function AdminHome() {
 
     const shiftStartMs = status.shift.start.getTime();
     const shiftEndMs = status.shift.end.getTime();
-    const allEmpTodayPunches = todayPunches.filter(
-      (p) => p.employeeId === emp.id || Boolean(emp.authUid && p.employeeId === emp.authUid),
-    );
+    const allEmpTodayPunches = getIndexedEmployeePunches(allEmployeePunches, emp);
     const hasPunchCoveringShift = allEmpTodayPunches.some((p) => {
       if ((p.type !== "in" && p.type !== "extra_in") || !p.timestamp) return false;
       const pTime = toDate(p.timestamp)?.getTime();
@@ -663,6 +662,9 @@ function AdminHome() {
     return todayPunches
       .filter((punch) => {
         if (!punch.timestamp) return false;
+        // No local calendar day can include a punch older than 48 hours.
+        // Reject history before doing per-punch timezone formatting.
+        if (toMillis(punch.timestamp) < now.getTime() - 48 * 60 * 60 * 1000) return false;
         const employee = empById.get(punch.employeeId);
         if (activeCompanyId !== "all" && getPunchCompanyId(punch, employee) !== activeCompanyId) {
           return false;

@@ -67,8 +67,8 @@ export function useAdminLateNotificationCount({
   }, [enabled]);
 
   const alerts = useMemo(
-    () => buildAdminLateAlerts({ employees, punches, leaves, company, now }),
-    [employees, punches, leaves, company, now],
+    () => enabled ? buildAdminLateAlerts({ employees, punches, leaves, company, now }) : [],
+    [enabled, employees, punches, leaves, company, now],
   );
 
   if (!enabled) return 0;
