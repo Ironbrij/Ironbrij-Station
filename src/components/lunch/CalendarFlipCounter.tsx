@@ -18,7 +18,7 @@ const SingleDigitCard = memo(function SingleDigitCard({
         className={`w-20 h-24 sm:w-24 sm:h-28 rounded-2xl border shadow-lg flex items-center justify-center font-mono font-black text-4xl sm:text-5xl select-none transition-all duration-300 ${
           isOverdue
             ? "border-rose-500/40 bg-gradient-to-b from-rose-500/10 via-card to-background text-rose-600 dark:text-rose-400 shadow-rose-950/10"
-            : "border-amber-500/30 bg-gradient-to-b from-amber-500/10 via-card to-background text-amber-600 dark:text-amber-400 shadow-amber-950/10"
+            : "border-amber-500/30 bg-gradient-to-b from-amber-500/10 via-card to-background text-amber-700 dark:text-amber-400 shadow-amber-950/10"
         }`}
       >
         <span className="leading-none tracking-tight font-mono drop-shadow-xs">{digit}</span>

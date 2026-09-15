@@ -375,7 +375,7 @@ function LateArrivalsPage() {
                       </span>
                     </div>
                     {shiftTimezone !== employeeTimezone && (
-                      <div className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400">
+                      <div className="text-[11px] font-extrabold text-amber-700 dark:text-amber-400">
                         ➔ {formatInTimezone(record.scheduledAt, employeeTimezone)} (
                         {employeeTimezone.split("/")[1] || "Local"})
                       </div>
@@ -906,7 +906,7 @@ function Stat({
   tone: "rose" | "amber" | "primary";
 }) {
   const color =
-    tone === "rose" ? "text-rose-600" : tone === "amber" ? "text-amber-600" : "text-primary";
+    tone === "rose" ? "text-rose-600" : tone === "amber" ? "text-amber-700" : "text-primary";
   return (
     <div className="rounded-xl border bg-card p-5 shadow-lift">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>

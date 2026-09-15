@@ -2,6 +2,10 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* The application currently ships one light theme. Keep dark: utilities opt-in
+   so an operating-system preference cannot pair light surfaces with light text. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

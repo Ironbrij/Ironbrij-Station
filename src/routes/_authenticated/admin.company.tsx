@@ -502,7 +502,7 @@ function CompanyPage() {
               onClick={() => setCompanyFilterTab("archived")}
               className={`px-3 py-1 rounded-md transition-colors ${
                 companyFilterTab === "archived"
-                  ? "bg-background text-amber-600 dark:text-amber-400 font-bold shadow-xs"
+                  ? "bg-background text-amber-700 dark:text-amber-400 font-bold shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -582,7 +582,7 @@ function CompanyPage() {
                             </span>
                           )}
                           {isArchived && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 shrink-0">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/25 shrink-0">
                               Archived
                             </span>
                           )}
@@ -618,7 +618,7 @@ function CompanyPage() {
                           className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors flex items-center gap-1 ${
                             isArchived
                               ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
-                              : "text-muted-foreground hover:text-amber-600 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
+                              : "text-muted-foreground hover:text-amber-700 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
                           }`}
                           title={isArchived ? "Restore / Unarchive Company" : "Archive Company"}
                         >
@@ -810,7 +810,7 @@ function CompanyPage() {
               ))}
             </div>
             {visibleHolidayDepartments.length === 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 No departments belong to the selected company. You can assign this holiday to
                 &quot;Everyone in Company&quot; or assign departments to this company in the
                 Departments tab.
