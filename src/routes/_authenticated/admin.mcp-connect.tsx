@@ -584,7 +584,7 @@ export function McpConnectPage() {
               {/* Employee Management */}
               <div className="p-4 rounded-xl border bg-card space-y-3">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Sparkles className="h-4 w-4 text-amber-700" /> 4. Employee Management
+                  <Sparkles className="h-4 w-4 text-amber-600" /> 4. Employee Management
                 </div>
                 <div className="space-y-2">
                   {[

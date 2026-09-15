@@ -516,7 +516,7 @@ function LeaveRequestsPage() {
                             <span
                               className={
                                 d.paymentStatus === "unpaid"
-                                  ? "font-bold text-amber-700 dark:text-amber-400"
+                                  ? "font-bold text-amber-600 dark:text-amber-400"
                                   : "font-bold text-emerald-600 dark:text-emerald-400"
                               }
                             >

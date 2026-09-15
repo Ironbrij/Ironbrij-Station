@@ -1706,9 +1706,9 @@ function ReportsPage() {
 
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-amber-700" /> Accepted Overtime
+            <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Accepted Overtime
           </div>
-          <div className="mt-1 text-2xl font-black text-amber-700">
+          <div className="mt-1 text-2xl font-black text-amber-600">
             {reportTotals.totalOvertime > 0 ? `+${reportTotals.totalOvertime.toFixed(1)}h` : "0.0h"}
           </div>
         </div>
@@ -1913,7 +1913,7 @@ function ReportsPage() {
                             )
                           }
                           className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
-                            row.overtimeHours > 0 ? "text-amber-700" : "text-muted-foreground"
+                            row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
                         />
                         <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
@@ -2194,7 +2194,7 @@ function ReportsPage() {
                 <div className="text-[10px] uppercase font-bold text-muted-foreground">
                   Accepted Overtime
                 </div>
-                <div className="text-lg font-black text-amber-700">
+                <div className="text-lg font-black text-amber-600">
                   +{selectedIntervalEmployee.overtimeHours.toFixed(1)}h
                 </div>
               </div>
@@ -2340,7 +2340,7 @@ function ReportsPage() {
                             })
                           }
                           className={`w-16 text-right font-bold px-1.5 py-1 rounded border bg-background text-xs ${
-                            day.rawOvertimeHours > 0 ? "text-amber-700" : "text-muted-foreground"
+                            day.rawOvertimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
                         />
                       </td>
@@ -2704,7 +2704,7 @@ function ReportsPage() {
                         <div className="text-[10px] text-muted-foreground uppercase font-bold">
                           Accepted OT
                         </div>
-                        <div className="font-black text-sm text-amber-700">
+                        <div className="font-black text-sm text-amber-600">
                           +{reportTotals.totalOvertime.toFixed(1)}h
                         </div>
                       </div>
@@ -2757,7 +2757,7 @@ function ReportsPage() {
                                 <td className="p-2 text-right font-bold text-sky-600">
                                   {Number(row.regularHours).toFixed(1)}h
                                 </td>
-                                <td className="p-2 text-right font-bold text-amber-700 whitespace-nowrap">
+                                <td className="p-2 text-right font-bold text-amber-600 whitespace-nowrap">
                                   {row.overtimeHours > 0
                                     ? `+${Number(row.overtimeHours).toFixed(1)}h`
                                     : "—"}

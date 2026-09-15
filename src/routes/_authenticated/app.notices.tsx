@@ -252,7 +252,7 @@ function UserNoticesPage() {
                   {n.priority === "urgent" ? (
                     <ShieldAlert className="h-6 w-6 text-rose-600 shrink-0 mt-0.5" />
                   ) : n.priority === "warning" ? (
-                    <AlertCircle className="h-6 w-6 text-amber-700 shrink-0 mt-0.5" />
+                    <AlertCircle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
                   ) : (
                     <Megaphone className="h-6 w-6 text-primary shrink-0 mt-0.5" />
                   )}

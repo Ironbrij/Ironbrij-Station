@@ -810,7 +810,7 @@ function DepartmentsPage() {
                                     </div>
                                   </div>
                                   {summary.isCrossTimezone && (
-                                    <div className="text-[11px] font-extrabold text-amber-700 dark:text-amber-400 text-right">
+                                    <div className="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 text-right">
                                       ➔ {summary.localLabel}
                                     </div>
                                   )}
