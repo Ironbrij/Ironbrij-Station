@@ -1856,7 +1856,7 @@ function PunchPage() {
               </button>
             </div>
 
-            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 dark:text-amber-200 font-medium leading-relaxed space-y-2">
+            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 font-medium leading-relaxed space-y-2">
               <p>
                 You are starting work <strong>{formatWorkMinutes(earlyMinutes)} before</strong> your
                 scheduled shift ({format(shiftWindow.start, "h:mm a")}).
