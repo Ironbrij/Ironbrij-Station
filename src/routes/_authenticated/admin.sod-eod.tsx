@@ -9,7 +9,7 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
-import { ArrowDown, ArrowUp, Eye, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Calendar, Eye, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
@@ -22,7 +22,12 @@ import {
   reportingRequirementLabel,
   requiredReportTypes,
 } from "@/lib/daily-reports";
-import { DEFAULT_LOCAL_TIMEZONE, getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
+import {
+  DEFAULT_LOCAL_TIMEZONE,
+  addCalendarDays,
+  getEmployeeTimezone,
+  zonedDateKey,
+} from "@/lib/attendance";
 import { FormattedAnswerText } from "@/components/FormattedAnswerText";
 import { toDate } from "@/lib/time";
 import type {
@@ -87,6 +92,13 @@ function AdminSodEodPage() {
   );
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
   const [clock, setClock] = useState(() => Date.now());
+  const [selectedDate, setSelectedDate] = useState("");
+  const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_LOCAL_TIMEZONE;
+  const todayDateKey = useMemo(() => zonedDateKey(new Date(clock), viewerTz), [clock, viewerTz]);
+  const yesterdayDateKey = useMemo(() => addCalendarDays(todayDateKey, -1), [todayDateKey]);
+  const effectiveDate = selectedDate || todayDateKey;
+  const isToday = effectiveDate === todayDateKey;
+  const isYesterday = effectiveDate === yesterdayDateKey;
   const seededDefaults = useRef(false);
 
   useEffect(() => {
@@ -293,30 +305,51 @@ function AdminSodEodPage() {
       .catch((error) => toast.error("Could not reorder questions: " + error.message));
   }
 
-  const todayStats = useMemo(() => {
+  const dateStats = useMemo(() => {
     if (!employees || !reports) return { submitted: 0, missed: 0, waiting: 0 };
     let submitted = 0;
     let missed = 0;
     let waiting = 0;
-    const today = new Date(clock);
+    const now = new Date(clock);
 
     for (const employee of employees.filter((item) => item.status === "active")) {
       const tz = getEmployeeTimezone(employee);
-      const todayKey = zonedDateKey(today, tz);
+      const empTodayKey = zonedDateKey(now, tz);
+      const targetDateKey = isToday
+        ? empTodayKey
+        : isYesterday
+          ? addCalendarDays(empTodayKey, -1)
+          : effectiveDate;
       const req = employee.reportingRequirement || "none";
       const requiredTypes = requiredReportTypes(req);
 
       for (const reportType of requiredTypes) {
-        const found = findDailyReport(reports, {
-          employee,
-          date: todayKey,
-          type: reportType,
-          companyId: companyFilter,
-        });
+        const found =
+          findDailyReport(reports, {
+            employee,
+            date: targetDateKey,
+            type: reportType,
+            companyId: companyFilter,
+          }) ||
+          (targetDateKey !== effectiveDate
+            ? findDailyReport(reports, {
+                employee,
+                date: effectiveDate,
+                type: reportType,
+                companyId: companyFilter,
+              })
+            : undefined);
+
         if (found) {
           submitted++;
         } else {
-          const isMissed = isReportDeadlinePassed(employee, reportType, todayKey, settings, today);
+          const isMissed = isReportDeadlinePassed(
+            employee,
+            reportType,
+            targetDateKey,
+            settings,
+            now,
+          );
           if (isMissed) {
             missed++;
           } else {
@@ -326,7 +359,8 @@ function AdminSodEodPage() {
       }
     }
     return { submitted, missed, waiting };
-  }, [employees, reports, clock, settings, companyFilter]);
+  }, [employees, reports, clock, settings, companyFilter, isToday, isYesterday, effectiveDate]);
+  const todayStats = dateStats;
 
   return (
     <div className="space-y-8">
@@ -427,40 +461,108 @@ function AdminSodEodPage() {
       </section>
 
       <section className="rounded-xl border bg-card p-5 sm:p-6 space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
-          <div>
-            <h2 className="text-lg font-semibold">Employee Daily Reports & Requirements</h2>
-            <p className="text-sm text-muted-foreground">
-              Monitor today's SOD/EOD submissions and configure requirements per employee.
-            </p>
+        <div className="flex flex-col gap-4 border-b pb-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Employee Daily Reports & Requirements</h2>
+              <p className="text-sm text-muted-foreground">
+                {isToday
+                  ? "Monitor today's SOD/EOD submissions and configure requirements per employee."
+                  : isYesterday
+                    ? `Viewing yesterday's (${effectiveDate}) SOD/EOD submissions.`
+                    : `Viewing SOD/EOD submissions for ${effectiveDate}.`}
+              </p>
+            </div>
           </div>
-          <div className="w-full sm:w-auto flex items-center gap-2">
-            <select
-              value={companyFilter}
-              onChange={(e) => setCompanyFilter(e.target.value)}
-              className="rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
-            >
-              <option value="all">All companies ({companies.length})</option>
-              {companies.map((c) => (
-                <option key={c.id || c.name} value={c.id || COMPANY_ID}>
-                  {c.name} {c.isMain ? "(Main)" : ""}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              placeholder="Search employee..."
-              value={employeeSearch}
-              onChange={(e) => setEmployeeSearch(e.target.value)}
-              className="w-full sm:w-64 rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
-            />
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground mr-0.5">Filter:</span>
+              <div className="inline-flex rounded-lg border bg-muted/40 p-1 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate("")}
+                  className={`rounded-md px-3 py-1.5 transition-colors ${
+                    isToday
+                      ? "bg-background text-foreground shadow-xs font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(yesterdayDateKey)}
+                  className={`rounded-md px-3 py-1.5 transition-colors ${
+                    isYesterday
+                      ? "bg-background text-foreground shadow-xs font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Yesterday
+                </button>
+              </div>
+
+              <div className="flex h-9 items-center rounded-lg border bg-background px-2.5 text-xs">
+                <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="date"
+                  aria-label="Filter by date"
+                  value={effectiveDate}
+                  max={todayDateKey}
+                  onChange={(e) => setSelectedDate(e.target.value === todayDateKey ? "" : e.target.value)}
+                  className="bg-transparent text-xs font-medium outline-none text-foreground cursor-pointer"
+                />
+              </div>
+
+              {!isToday && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate("")}
+                  className="text-xs font-medium text-primary hover:underline ml-1"
+                >
+                  Back to Today
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={companyFilter}
+                onChange={(e) => setCompanyFilter(e.target.value)}
+                className="rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
+              >
+                <option value="all">All companies ({companies.length})</option>
+                {companies.map((c) => (
+                  <option key={c.id || c.name} value={c.id || COMPANY_ID}>
+                    {c.name} {c.isMain ? "(Main)" : ""}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder="Search employee..."
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                className="w-full sm:w-64 rounded-lg border bg-background px-3 py-2 text-sm font-semibold"
+              />
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2 text-center text-sm bg-secondary/20 p-2.5 rounded-lg">
-          <Summary label="Submitted Today" value={todayStats.submitted} />
-          <Summary label="Missed Today" value={todayStats.missed} />
-          <Summary label="Awaiting Today" value={todayStats.waiting} />
+          <Summary
+            label={isToday ? "Submitted Today" : isYesterday ? "Submitted Yesterday" : `Submitted (${effectiveDate})`}
+            value={dateStats.submitted}
+          />
+          <Summary
+            label={isToday ? "Missed Today" : isYesterday ? "Missed Yesterday" : `Missed (${effectiveDate})`}
+            value={dateStats.missed}
+          />
+          <Summary
+            label={isToday ? "Awaiting Today" : isYesterday ? "Not Submitted Yesterday" : `Not Submitted (${effectiveDate})`}
+            value={dateStats.waiting}
+          />
         </div>
 
         <div className="overflow-x-auto rounded-lg border">
@@ -468,8 +570,12 @@ function AdminSodEodPage() {
             <thead className="bg-muted/60 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Today's SOD</th>
-                <th className="px-4 py-3">Today's EOD</th>
+                <th className="px-4 py-3">
+                  {isToday ? "Today's SOD" : isYesterday ? "Yesterday's SOD" : `SOD (${effectiveDate})`}
+                </th>
+                <th className="px-4 py-3">
+                  {isToday ? "Today's EOD" : isYesterday ? "Yesterday's EOD" : `EOD (${effectiveDate})`}
+                </th>
                 <th className="px-4 py-3">Reporting Requirement</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
@@ -515,38 +621,56 @@ function AdminSodEodPage() {
                   }
 
                   return filteredEmployees.map((employee) => {
-                    const getTodayReportStatus = (emp: Employee, type: "sod" | "eod") => {
+                    const getEmployeeReport = (emp: Employee, type: "sod" | "eod") => {
                       const req = emp.reportingRequirement || "none";
                       const isRequired =
                         req === "sod_eod" ||
                         (type === "sod" && req === "sod_only") ||
                         (type === "eod" && req === "eod_only");
 
-                      if (!isRequired) return "not_required";
+                      if (!isRequired) return { status: "not_required" as ReportRowStatus, report: undefined };
 
                       const tz = getEmployeeTimezone(emp);
-                      const todayKey = zonedDateKey(new Date(clock), tz);
-                      const found = findDailyReport(reports, {
-                        employee: emp,
-                        date: todayKey,
-                        type,
-                        companyId: companyFilter,
-                      });
+                      const empTodayKey = zonedDateKey(new Date(clock), tz);
+                      const targetDateKey = isToday
+                        ? empTodayKey
+                        : isYesterday
+                          ? addCalendarDays(empTodayKey, -1)
+                          : effectiveDate;
 
-                      if (found) return "submitted";
+                      const found =
+                        findDailyReport(reports, {
+                          employee: emp,
+                          date: targetDateKey,
+                          type,
+                          companyId: companyFilter,
+                        }) ||
+                        (targetDateKey !== effectiveDate
+                          ? findDailyReport(reports, {
+                              employee: emp,
+                              date: effectiveDate,
+                              type,
+                              companyId: companyFilter,
+                            })
+                          : undefined);
+
+                      if (found) return { status: "submitted" as ReportRowStatus, report: found };
 
                       const missed = isReportDeadlinePassed(
                         emp,
                         type,
-                        todayKey,
+                        targetDateKey,
                         settings,
                         new Date(clock),
                       );
-                      return missed ? "missed" : "not_submitted";
+                      return {
+                        status: (missed ? "missed" : "not_submitted") as ReportRowStatus,
+                        report: undefined,
+                      };
                     };
 
-                    const sodStatus = getTodayReportStatus(employee, "sod");
-                    const eodStatus = getTodayReportStatus(employee, "eod");
+                    const sodData = getEmployeeReport(employee, "sod");
+                    const eodData = getEmployeeReport(employee, "eod");
 
                     return (
                       <tr key={employee.id} className="hover:bg-secondary/25">
@@ -561,10 +685,16 @@ function AdminSodEodPage() {
                           <div className="text-xs text-muted-foreground">{employee.email}</div>
                         </td>
                         <td className="px-4 py-3">
-                          <ReportStatusBadge status={sodStatus} />
+                          <ReportStatusBadge
+                            status={sodData.status}
+                            onClick={sodData.report ? () => setSelectedReport(sodData.report!) : undefined}
+                          />
                         </td>
                         <td className="px-4 py-3">
-                          <ReportStatusBadge status={eodStatus} />
+                          <ReportStatusBadge
+                            status={eodData.status}
+                            onClick={eodData.report ? () => setSelectedReport(eodData.report!) : undefined}
+                          />
                         </td>
                         <td className="px-4 py-3">
                           <select
@@ -723,7 +853,13 @@ function Summary({ label, value }: { label: string; value: number }) {
   );
 }
 
-function ReportStatusBadge({ status }: { status: ReportRowStatus }) {
+function ReportStatusBadge({
+  status,
+  onClick,
+}: {
+  status: ReportRowStatus;
+  onClick?: () => void;
+}) {
   const label =
     status === "submitted" ? "Submitted" : status === "missed" ? "Missed" : "Not submitted";
   const className =
@@ -732,6 +868,21 @@ function ReportStatusBadge({ status }: { status: ReportRowStatus }) {
       : status === "missed"
         ? "border-red-200 bg-red-50 text-red-700"
         : "border-slate-200 bg-slate-50 text-slate-600";
+
+  if (onClick && status === "submitted") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title="View report details"
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold hover:bg-emerald-100 transition-colors cursor-pointer ${className}`}
+      >
+        <Eye className="h-3 w-3" />
+        {label}
+      </button>
+    );
+  }
+
   return (
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}

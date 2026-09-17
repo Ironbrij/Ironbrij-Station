@@ -1,27 +1,51 @@
 import { Link } from "@tanstack/react-router";
+import {
+  LogIn,
+  LogOut,
+  Coffee,
+  CalendarDays,
+  Clock3,
+  Moon,
+  CircleX,
+  TriangleAlert,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 import type { AttendanceLogRow, AttendanceLogStatus } from "@/lib/dashboard-attendance";
 import { formatInTimezone } from "@/lib/attendance";
 
 export const attendanceStatusLabels: Record<AttendanceLogStatus, string> = {
-  working: "Working",
+  working: "Clocked in",
   break: "On break",
-  completed: "Completed",
+  completed: "Clocked out",
   missing: "Not punched in",
-  upcoming: "Shift upcoming",
+  upcoming: "Not started",
   leave: "On leave",
   off: "Day off / holiday",
   review: "Check punch-out",
 };
-const statusColors: Record<AttendanceLogStatus, string> = {
-  working: "text-emerald-700",
-  break: "text-amber-700",
-  completed: "text-slate-500",
-  missing: "text-rose-700",
-  upcoming: "text-slate-500",
-  leave: "text-blue-700",
-  off: "text-slate-500",
-  review: "text-amber-700",
+const statusAppearance: Record<AttendanceLogStatus, { classes: string; icon: LucideIcon }> = {
+  working: { classes: "border-emerald-700 bg-emerald-700 text-white", icon: LogIn },
+  break: { classes: "border-amber-300 bg-amber-100 text-amber-950", icon: Coffee },
+  completed: { classes: "border-slate-300 bg-slate-200 text-slate-800", icon: LogOut },
+  missing: { classes: "border-rose-300 bg-rose-100 text-rose-900", icon: CircleX },
+  upcoming: { classes: "border-sky-200 bg-sky-50 text-sky-900", icon: Clock3 },
+  leave: { classes: "border-violet-300 bg-violet-100 text-violet-900", icon: CalendarDays },
+  off: { classes: "border-dashed border-slate-300 bg-slate-50 text-slate-600", icon: Moon },
+  review: { classes: "border-orange-300 bg-orange-100 text-orange-950", icon: TriangleAlert },
 };
+function AttendanceStatusBadge({ status, ready }: { status: AttendanceLogStatus; ready: boolean }) {
+  const appearance = statusAppearance[status];
+  const Icon = ready ? appearance.icon : RefreshCw;
+  return (
+    <span
+      className={`mt-2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${ready ? appearance.classes : "border-slate-200 bg-slate-50 text-slate-500"}`}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} aria-hidden="true" />
+      {ready ? attendanceStatusLabels[status] : "Syncing"}
+    </span>
+  );
+}
 function time(value: Date | null, timezone: string) {
   return value
     ? formatInTimezone(value, timezone, { hour: "2-digit", minute: "2-digit", hour12: false })
@@ -73,8 +97,13 @@ export function AttendanceLogTable({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => (
-            <tr key={row.id} className="bg-background transition-colors hover:bg-slate-50/70">
-              <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground">
+            <tr
+              key={row.id}
+              className={`transition-colors ${ready && row.status === "working" ? "bg-emerald-50/60 hover:bg-emerald-50" : "bg-background hover:bg-slate-50/70"}`}
+            >
+              <td
+                className={`whitespace-nowrap border-l-4 px-4 py-3 text-xs tabular-nums text-muted-foreground ${ready && row.status === "working" ? "border-l-emerald-600" : "border-l-transparent"}`}
+              >
                 {row.date}
               </td>
               <td className="px-4 py-3">
@@ -85,11 +114,8 @@ export function AttendanceLogTable({
                 >
                   {row.employeeName}
                 </Link>
-                <div
-                  className={`mt-1 flex items-center gap-1.5 text-[11px] ${ready ? statusColors[row.status] : "text-slate-500"}`}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-                  {ready ? attendanceStatusLabels[row.status] : "Syncing"}
+                <div>
+                  <AttendanceStatusBadge status={row.status} ready={ready} />
                 </div>
               </td>
               <td className="max-w-48 px-4 py-3 text-muted-foreground">
