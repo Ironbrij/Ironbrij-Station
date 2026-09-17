@@ -16,6 +16,7 @@ import { db } from "@/lib/firebase";
 import {
   DEFAULT_REPORTING_SETTINGS,
   DEFAULT_REPORT_QUESTIONS,
+  findDailyReport,
   isReportDeadlinePassed,
   reportDateForEmployee,
   reportDocumentId,
@@ -230,8 +231,14 @@ function EmployeeSodEodPage() {
 
   function reportForToday(type: DailyReportType) {
     if (!user || !reportDate || !reports) return null;
-    const id = reportDocumentId(user.uid, reportDate, type);
-    return reports.find((report) => report.id === id) || null;
+    return (
+      findDailyReport(reports, {
+        employee: activeEmp || { id: user.uid, authUid: user.uid },
+        date: reportDate,
+        type,
+        companyId: activeCompanyId,
+      }) || null
+    );
   }
 
   async function submitReport(type: DailyReportType) {

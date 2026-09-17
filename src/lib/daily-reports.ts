@@ -4,8 +4,9 @@ import type {
   Employee,
   ReportingRequirement,
   ReportingSettings,
-} from "./types";
-import { getEmployeeTimezone, zonedDateKey, zonedDateTimeToDate } from "./attendance";
+} from "./types.ts";
+import { getEmployeeTimezone, zonedDateKey, zonedDateTimeToDate } from "./attendance.ts";
+import { normalizeCompanyId } from "./company-context.ts";
 
 export const DEFAULT_REPORTING_SETTINGS: ReportingSettings = {
   sodDeadline: "10:00",
@@ -51,6 +52,40 @@ export function reportDocumentId(
   return companyId
     ? `${userId}_${encodeURIComponent(companyId)}_${date}_${type}`
     : `${userId}_${date}_${type}`;
+}
+
+export function findDailyReport(
+  reports: DailyReport[],
+  input: {
+    employee: Pick<Employee, "id" | "authUid">;
+    date: string;
+    type: DailyReportType;
+    companyId?: string;
+  },
+): DailyReport | undefined {
+  const employeeIds = new Set(
+    [input.employee.id, input.employee.authUid].filter(Boolean) as string[],
+  );
+  const scopedCompanyId =
+    input.companyId && input.companyId !== "all"
+      ? normalizeCompanyId(input.companyId)
+      : undefined;
+
+  return reports.find((report) => {
+    if (report.reportDate !== input.date || report.reportType !== input.type) return false;
+    if (
+      !employeeIds.has(report.userId) &&
+      !(report.employeeId && employeeIds.has(report.employeeId))
+    ) {
+      return false;
+    }
+
+    return (
+      !scopedCompanyId ||
+      !report.companyId ||
+      normalizeCompanyId(report.companyId) === scopedCompanyId
+    );
+  });
 }
 
 export function reportDateForEmployee(employee: Employee, now = new Date()) {

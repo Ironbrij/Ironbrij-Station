@@ -16,8 +16,8 @@ import { useAuth } from "@/lib/auth-context";
 import {
   DEFAULT_REPORTING_SETTINGS,
   DEFAULT_REPORT_QUESTIONS,
+  findDailyReport,
   isReportDeadlinePassed,
-  reportDocumentId,
   reportTypeLabel,
   reportingRequirementLabel,
   requiredReportTypes,
@@ -307,9 +307,12 @@ function AdminSodEodPage() {
       const requiredTypes = requiredReportTypes(req);
 
       for (const reportType of requiredTypes) {
-        const userId = employee.authUid || employee.id;
-        const reportId = reportDocumentId(userId, todayKey, reportType);
-        const found = reports.some((r) => r.id === reportId);
+        const found = findDailyReport(reports, {
+          employee,
+          date: todayKey,
+          type: reportType,
+          companyId: companyFilter,
+        });
         if (found) {
           submitted++;
         } else {
@@ -323,7 +326,7 @@ function AdminSodEodPage() {
       }
     }
     return { submitted, missed, waiting };
-  }, [employees, reports, clock, settings]);
+  }, [employees, reports, clock, settings, companyFilter]);
 
   return (
     <div className="space-y-8">
@@ -523,8 +526,12 @@ function AdminSodEodPage() {
 
                       const tz = getEmployeeTimezone(emp);
                       const todayKey = zonedDateKey(new Date(clock), tz);
-                      const reportId = reportDocumentId(emp.authUid || emp.id, todayKey, type);
-                      const found = reports.some((r) => r.id === reportId);
+                      const found = findDailyReport(reports, {
+                        employee: emp,
+                        date: todayKey,
+                        type,
+                        companyId: companyFilter,
+                      });
 
                       if (found) return "submitted";
 
