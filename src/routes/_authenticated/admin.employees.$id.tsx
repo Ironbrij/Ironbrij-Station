@@ -59,6 +59,7 @@ import {
   getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
   getRequiredWorkMinutes,
+  normalizeCompanyId,
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { getEmployeeAllShiftDefinitions, findShiftConflicts } from "@/lib/shift-conflict";
