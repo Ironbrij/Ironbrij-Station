@@ -56,7 +56,7 @@ import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admi
 import {
   calculateShiftMinutes,
   getEmployeeForCompany,
-  getPunchCompanyId,
+  getEmployeePunchesForCompany,
   getRequiredWorkMinutes,
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
@@ -195,17 +195,19 @@ function EmployeeDetail() {
   );
 
   const punches = useMemo(() => {
-    if (!employee) return [];
-    const ids = new Set([employee.id, employee.authUid].filter(Boolean));
-    return allPunches
-      .filter(
-        (punch) =>
-          ids.has(punch.employeeId) &&
-          punch.timestamp &&
-          getPunchCompanyId(punch, rawEmployee) === activeCompanyId,
-      )
+    if (!employee || !rawEmployee) return [];
+    const selectedCompany = companies.find(
+      (item) => (item.id || COMPANY_ID) === activeCompanyId,
+    );
+    return getEmployeePunchesForCompany(
+      allPunches,
+      rawEmployee,
+      activeCompanyId,
+      selectedCompany?.name,
+    )
+      .filter((punch) => Boolean(punch.timestamp))
       .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-  }, [activeCompanyId, allPunches, employee, rawEmployee]);
+  }, [activeCompanyId, allPunches, companies, employee, rawEmployee]);
 
   const companyLeaves = useMemo(() => {
     if (!employee) return [];

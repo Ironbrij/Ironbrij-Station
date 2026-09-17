@@ -7,6 +7,7 @@ import {
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
+  getEmployeePunchesForCompany,
   indexPunchesByEmployee,
   getIndexedEmployeePunches,
   getEmployeePortalCompanies,
@@ -87,6 +88,22 @@ test("company-aware punch filtering does not mix companies", () => {
   const betaPunch = { companyId: "beta" } as Punch;
   assert.equal(getPunchCompanyId(alphaPunch, employee), "alpha");
   assert.equal(getPunchCompanyId(betaPunch, employee), "beta");
+});
+
+test("all-company attendance history keeps every valid punch for the selected employee", () => {
+  const linkedEmployee = { ...employee, authUid: "employee-login" };
+  const punches = [
+    { id: "alpha-in", employeeId: linkedEmployee.id, companyId: "alpha" },
+    { id: "beta-in", employeeId: linkedEmployee.id, companyId: "beta" },
+    { id: "login-in", employeeId: linkedEmployee.authUid, companyId: "gamma" },
+    { id: "other-in", employeeId: "someone-else", companyId: "alpha" },
+    { id: "voided-in", employeeId: linkedEmployee.id, companyId: "alpha", voidedAt: "2026-09-17" },
+  ] as Punch[];
+
+  assert.deepEqual(
+    getEmployeePunchesForCompany(punches, linkedEmployee, "all").map((punch) => punch.id),
+    ["alpha-in", "beta-in", "login-in"],
+  );
 });
 
 test("historical punch without company remains attached to the legacy primary company", () => {

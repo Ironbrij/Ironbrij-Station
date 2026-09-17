@@ -248,13 +248,15 @@ export function getEmployeePunchesForCompany(
   const empIds = employee
     ? new Set([employee.id, employee.authUid].filter(Boolean) as string[])
     : null;
+  const allCompanies = companyId === "all";
   const targetCId = normalizeCompanyId(companyId);
 
   return punches.filter((punch) => {
     if (punch.voidedAt) return false;
-    if (empIds && punch.employeeId && !empIds.has(punch.employeeId)) {
+    if (empIds && (!punch.employeeId || !empIds.has(punch.employeeId))) {
       return false;
     }
+    if (allCompanies) return true;
     if (punch.companyId) return normalizeCompanyId(punch.companyId) === targetCId;
     if (companyName && punch.companyName) return punch.companyName.trim().toLowerCase() === companyName.trim().toLowerCase();
     return normalizeCompanyId(getPunchCompanyId(punch, employee)) === targetCId;
