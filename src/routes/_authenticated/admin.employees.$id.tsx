@@ -56,6 +56,7 @@ import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admi
 import {
   calculateShiftMinutes,
   getEmployeeForCompany,
+  getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
   getRequiredWorkMinutes,
 } from "@/lib/company-context";
@@ -107,6 +108,7 @@ function EmployeeDetail() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allPunches, setAllPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [leavesLoaded, setLeavesLoaded] = useState(false);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [historyScope, setHistoryScope] = useState<HistoryScope>("all");
@@ -154,14 +156,15 @@ function EmployeeDetail() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
+      onSnapshot(collection(db(), "leaveRequests"), (snapshot) => {
         setLeaves(
           snapshot.docs.map((item) => ({
             id: item.id,
             ...(item.data() as Omit<LeaveRequest, "id">),
           })),
-        ),
-      ),
+        );
+        setLeavesLoaded(true);
+      }),
       onSnapshot(collection(db(), "overtimeRequests"), (snapshot) =>
         setOvertimeRequests(
           snapshot.docs.map((item) => ({
@@ -210,13 +213,9 @@ function EmployeeDetail() {
   }, [activeCompanyId, allPunches, companies, employee, rawEmployee]);
 
   const companyLeaves = useMemo(() => {
-    if (!employee) return [];
-    return leaves.filter(
-      (leave) =>
-        (leave.companyId || rawEmployee?.companyIds?.[0] || rawEmployee?.companyId) ===
-        activeCompanyId,
-    );
-  }, [activeCompanyId, employee, leaves, rawEmployee]);
+    if (!rawEmployee) return [];
+    return getEmployeeLeavesForCompany(leaves, rawEmployee, activeCompanyId, id);
+  }, [activeCompanyId, id, leaves, rawEmployee]);
 
   const rows = useMemo(() => {
     if (!employee) return [];
@@ -405,11 +404,8 @@ function EmployeeDetail() {
   );
 
   const employeeLeaves = useMemo(() => {
-    if (!employee) return [];
-    return companyLeaves
-      .filter((leave) => leave.employeeId === employee.id || leave.employeeId === employee.authUid)
-      .sort((a, b) => b.dateFrom.localeCompare(a.dateFrom));
-  }, [companyLeaves, employee]);
+    return [...companyLeaves].sort((a, b) => b.dateFrom.localeCompare(a.dateFrom));
+  }, [companyLeaves]);
 
   const matchedUser = useMemo(() => {
     if (!employee) return undefined;
@@ -1193,37 +1189,53 @@ function EmployeeDetail() {
           <CalendarDays className="h-4 w-4" /> Leave history
         </h2>
         <div className="mt-4 space-y-2">
-          {employeeLeaves.map((leave) => (
-            <div
-              key={leave.id}
-              className="flex flex-col gap-2 rounded-xl border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <div className="font-bold">
-                  {leave.dateFrom}
-                  {leave.dateFrom !== leave.dateTo ? ` to ${leave.dateTo}` : ""}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {getLeaveLabel(leave)} · {leave.reason}
-                </div>
-              </div>
-              <span
-                className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
-                  leave.status === "approved"
-                    ? "bg-emerald-500/10 text-emerald-700"
-                    : leave.status === "rejected"
-                      ? "bg-rose-500/10 text-rose-700"
-                      : "bg-amber-500/10 text-amber-700"
-                }`}
-              >
-                {leave.status}
-              </span>
-            </div>
-          ))}
-          {employeeLeaves.length === 0 && (
+          {!leavesLoaded ? (
+            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Syncing leave history...
+            </p>
+          ) : employeeLeaves.length === 0 ? (
             <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
               No leave requests recorded.
             </p>
+          ) : (
+            employeeLeaves.map((leave) => {
+              const leaveCompany = companies.find(
+                (c) =>
+                  normalizeCompanyId(c.id) ===
+                  normalizeCompanyId(leave.companyId || rawEmployee?.companyId),
+              );
+              return (
+                <div
+                  key={leave.id}
+                  className="flex flex-col gap-2 rounded-xl border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <div className="font-bold">
+                      {leave.dateFrom}
+                      {leave.dateFrom !== leave.dateTo ? ` to ${leave.dateTo}` : ""}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {getLeaveLabel(leave)}
+                      {activeCompanyId === "all" && leaveCompany?.name
+                        ? ` · ${leaveCompany.name}`
+                        : ""}
+                      {leave.reason ? ` · ${leave.reason}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
+                      leave.status === "approved"
+                        ? "bg-emerald-500/10 text-emerald-700"
+                        : leave.status === "rejected"
+                          ? "bg-rose-500/10 text-rose-700"
+                          : "bg-amber-500/10 text-amber-700"
+                    }`}
+                  >
+                    {leave.status}
+                  </span>
+                </div>
+              );
+            })
           )}
         </div>
       </section>

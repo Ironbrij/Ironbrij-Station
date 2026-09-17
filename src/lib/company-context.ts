@@ -3,6 +3,7 @@ import {
   type Company,
   type CompanyMembership,
   type Employee,
+  type LeaveRequest,
   type Punch,
   type ShiftInterval,
 } from "./types.ts";
@@ -260,6 +261,43 @@ export function getEmployeePunchesForCompany(
     if (punch.companyId) return normalizeCompanyId(punch.companyId) === targetCId;
     if (companyName && punch.companyName) return punch.companyName.trim().toLowerCase() === companyName.trim().toLowerCase();
     return normalizeCompanyId(getPunchCompanyId(punch, employee)) === targetCId;
+  });
+}
+
+export function getEmployeeLeavesForCompany(
+  leaves: LeaveRequest[],
+  employee: Pick<Employee, "id" | "authUid" | "companyId" | "companyIds"> | null | undefined,
+  companyId: string,
+  extraEmployeeId?: string,
+): LeaveRequest[] {
+  const empIds = new Set(
+    [employee?.id, employee?.authUid, extraEmployeeId].filter(Boolean) as string[],
+  );
+  if (empIds.size === 0) return [];
+
+  const allCompanies = companyId === "all";
+  const targetCId = normalizeCompanyId(companyId);
+
+  return leaves.filter((leave) => {
+    if (!leave.employeeId || !empIds.has(leave.employeeId)) {
+      return false;
+    }
+    if (allCompanies) return true;
+    if (leave.companyId) {
+      return normalizeCompanyId(leave.companyId) === targetCId;
+    }
+    const assignedCompanyIds = [
+      employee?.companyId,
+      ...(employee?.companyIds || []),
+    ]
+      .filter(Boolean)
+      .map((id) => normalizeCompanyId(id!));
+
+    return (
+      assignedCompanyIds.length === 0 ||
+      assignedCompanyIds.includes(targetCId) ||
+      targetCId === COMPANY_ID
+    );
   });
 }
 

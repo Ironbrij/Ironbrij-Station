@@ -7,6 +7,7 @@ import {
   getEmployeeBreakSettings,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
+  getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
   indexPunchesByEmployee,
   getIndexedEmployeePunches,
@@ -17,7 +18,7 @@ import {
   normalizeCompanyId,
 } from "../src/lib/company-context.ts";
 import { getActiveWorkingSession } from "../src/lib/attendance.ts";
-import type { Employee, Punch } from "../src/lib/types.ts";
+import type { Employee, LeaveRequest, Punch } from "../src/lib/types.ts";
 
 test("department survives dropdown rebuild, schedule edits and an explicit clear", () => {
   const selected = buildCompanyMembership("alpha", { departmentId: "creatives", workingDays: [6] });
@@ -104,6 +105,43 @@ test("all-company attendance history keeps every valid punch for the selected em
     getEmployeePunchesForCompany(punches, linkedEmployee, "all").map((punch) => punch.id),
     ["alpha-in", "beta-in", "login-in"],
   );
+});
+
+test("all-company leave history keeps every valid leave for the selected employee across linked identities", () => {
+  const linkedEmployee = { ...employee, authUid: "employee-login", companyIds: ["alpha", "beta"] };
+  const leaves = [
+    { id: "alpha-leave", employeeId: linkedEmployee.id, companyId: "alpha", dateFrom: "2026-09-01", dateTo: "2026-09-02" },
+    { id: "beta-leave", employeeId: linkedEmployee.authUid, companyId: "beta", dateFrom: "2026-09-05", dateTo: "2026-09-05" },
+    { id: "ironbrij-leave", employeeId: linkedEmployee.id, companyId: "default", dateFrom: "2026-09-10", dateTo: "2026-09-10" },
+    { id: "other-leave", employeeId: "other-user", companyId: "alpha", dateFrom: "2026-09-01", dateTo: "2026-09-02" },
+  ] as LeaveRequest[];
+
+  assert.deepEqual(
+    getEmployeeLeavesForCompany(leaves, linkedEmployee, "all").map((l) => l.id),
+    ["alpha-leave", "beta-leave", "ironbrij-leave"],
+  );
+
+  assert.deepEqual(
+    getEmployeeLeavesForCompany(leaves, linkedEmployee, "alpha").map((l) => l.id),
+    ["alpha-leave"],
+  );
+
+  // Normalizes ironbrij / default aliases
+  assert.deepEqual(
+    getEmployeeLeavesForCompany(leaves, linkedEmployee, "ironbrij").map((l) => l.id),
+    ["ironbrij-leave"],
+  );
+});
+
+test("legacy leave without companyId falls back to assigned company", () => {
+  const linkedEmployee = { ...employee, companyId: "alpha", companyIds: ["alpha"] };
+  const leaves = [
+    { id: "legacy-leave", employeeId: linkedEmployee.id, dateFrom: "2026-09-01", dateTo: "2026-09-01" },
+  ] as LeaveRequest[];
+
+  assert.equal(getEmployeeLeavesForCompany(leaves, linkedEmployee, "alpha").length, 1);
+  assert.equal(getEmployeeLeavesForCompany(leaves, linkedEmployee, "beta").length, 0);
+  assert.equal(getEmployeeLeavesForCompany(leaves, linkedEmployee, "all").length, 1);
 });
 
 test("historical punch without company remains attached to the legacy primary company", () => {
