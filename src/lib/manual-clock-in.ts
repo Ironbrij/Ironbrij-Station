@@ -1,6 +1,7 @@
 import type { Employee, Punch } from "./types.ts";
 import { getEmployeeShiftWindow, getShiftTimezone, zonedDateKey } from "./attendance.ts";
 import { getEmployeePunchesForCompany } from "./company-context.ts";
+import { scopeEmployeeToPunchSchedule } from "./shift-lateness.ts";
 import { toDate, toMillis } from "./time.ts";
 
 export function planManualClockIn(employee: Employee, punches: Punch[], at: Date, now: Date, reopen: boolean) {
@@ -9,7 +10,13 @@ export function planManualClockIn(employee: Employee, punches: Punch[], at: Date
   const companyPunches = getEmployeePunchesForCompany(punches, employee, employee.companyId || "default");
   const sameShift = companyPunches.filter((p) => {
     const time = toDate(p.timestamp);
-    return time && getEmployeeShiftWindow(employee, time).start.getTime() === shift.start.getTime();
+    if (!time) return false;
+    // A punch can store an older schedule than the employee's current one. Either
+    // reading placing it in this shift means the correction belongs to that punch,
+    // so a fix never leaves a duplicate clock-in behind on the dashboard.
+    return [employee, scopeEmployeeToPunchSchedule(employee, p)].some(
+      (profile) => getEmployeeShiftWindow(profile, time).start.getTime() === shift.start.getTime(),
+    );
   });
   const existing = sameShift.filter((p) => p.type === "in").sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp))[0];
   const currentShift = shift.dateKey === getEmployeeShiftWindow(employee, now).dateKey;
