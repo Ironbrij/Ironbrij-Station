@@ -187,6 +187,26 @@ function LateArrivalsPage() {
     }
   }
 
+  // Both a late arrival and a missing punch are corrected in the same modal, so
+  // the row hands it the shift it belongs to instead of asking the admin to retype it.
+  function openFixPunch(record: LateRecord) {
+    setSelectedEmpId(record.employee.id);
+    setSelectedCompanyId(record.companyId);
+    setManualDate(record.dateKey);
+    const shiftTz = getShiftTimezone(record.employee);
+    setManualTimezone(shiftTz);
+    if (record.scheduledAt) {
+      setManualTime(
+        formatInTimezone(record.scheduledAt, shiftTz, {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }),
+      );
+    }
+    setShowManualModal(true);
+  }
+
   async function saveManualClockIn() {
     if (!runtime.ready || !punchesReady || submittingManual) {
       toast.error(runtime.message || "Wait for attendance records to finish syncing."); return;
@@ -430,54 +450,40 @@ function LateArrivalsPage() {
                     )}
                   </td>
                   <td className="p-3.5 text-right">
-                    {record.kind === "arrival" && record.punch ? (
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {record.kind === "arrival" && record.punch && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (record.isExcused) {
+                              toggleExcuse(record.punch?.id, true);
+                            } else {
+                              setExcuseModal({
+                                punchId: record.punch!.id,
+                                employeeName: record.employee.name,
+                                minutesLate: record.minutesLate,
+                                reason: "",
+                              });
+                            }
+                          }}
+                          className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
+                            record.isExcused
+                              ? "bg-secondary text-muted-foreground hover:bg-muted"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          }`}
+                        >
+                          {record.isExcused ? "Un-excuse" : "Mark Not Late"}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => {
-                          if (record.isExcused) {
-                            toggleExcuse(record.punch?.id, true);
-                          } else {
-                            setExcuseModal({
-                              punchId: record.punch!.id,
-                              employeeName: record.employee.name,
-                              minutesLate: record.minutesLate,
-                              reason: "",
-                            });
-                          }
-                        }}
-                        className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
-                          record.isExcused
-                            ? "bg-secondary text-muted-foreground hover:bg-muted"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {record.isExcused ? "Un-excuse" : "Mark Not Late"}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEmpId(record.employee.id);
-                          setSelectedCompanyId(record.companyId);
-                          setManualDate(record.dateKey);
-                          const shiftTz = getShiftTimezone(record.employee);
-                          setManualTimezone(shiftTz);
-                          if (record.scheduledAt) {
-                            setManualTime(
-                              formatInTimezone(record.scheduledAt, shiftTz, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: false,
-                              }),
-                            );
-                          }
-                          setShowManualModal(true);
-                        }}
+                        onClick={() => openFixPunch(record)}
+                        title="Correct the recorded clock-in time for this shift"
                         className="rounded-lg border bg-primary/5 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/10"
                       >
-                        Fix Punch
+                        {record.kind === "arrival" ? "Fix Time" : "Fix Punch"}
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               );

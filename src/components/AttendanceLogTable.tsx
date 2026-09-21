@@ -152,7 +152,18 @@ export function AttendanceLogTable({
               <td
                 className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${ready && row.lateMinutes > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}`}
               >
-                {!ready || !row.timeIn ? "—" : row.excused ? "Excused" : `${row.lateMinutes}m`}
+                {!ready || !row.timeIn ? (
+                  "—"
+                ) : row.excused ? (
+                  <span
+                    className="text-emerald-700"
+                    title={row.excuseReason || "Marked not late by an admin"}
+                  >
+                    Excused
+                  </span>
+                ) : (
+                  `${row.lateMinutes}m`
+                )}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-muted-foreground">
                 {ready && row.overtime !== null ? `${row.overtime.toFixed(2)}h` : "—"}

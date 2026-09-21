@@ -3,6 +3,7 @@ import { computeEmployeeLateness, getActiveWorkingSession, getEmployeeApprovedLe
   getEmployeeHoliday, getEmployeeHolidayDates, getEmployeeShiftWindow, getLiveAttendanceStatus,
   getShiftTimezone, zonedDateKey, formatInTimezone } from "./attendance.ts";
 import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePunchesForCompany, normalizeCompanyId } from "./company-context.ts";
+import { opensRegularShift, scopeEmployeeToPunchSchedule } from "./shift-lateness.ts";
 import { toDate, toMillis } from "./time.ts";
 export type LateRecord = {
   id: string; employee: Employee; dateKey: string; scheduledAt: Date; punchedAt?: Date;
@@ -34,11 +35,11 @@ export function buildLateRecords(employees: Employee[], punches: Punch[], leaves
       const coarseCutoff = from.getTime() - 48 * 60 * 60 * 1000;
       for (const punch of ownPunches) {
         const at = toDate(punch.timestamp);
-        if (punch.type !== "in" || !at || at > now) continue;
+        if (!opensRegularShift(punch) || !at || at > now) continue;
         if (period !== "all" && at.getTime() < coarseCutoff) continue;
-        const shift = getEmployeeShiftWindow(scoped, at);
+        const shift = getEmployeeShiftWindow(scopeEmployeeToPunchSchedule(scoped, punch), at);
         if (period !== "all" && (shift.dateKey < fromKey || shift.dateKey > todayKey)) continue;
-        if (at >= shift.end || punch.isOffShiftDay) continue;
+        if (at >= shift.end) continue;
         const key = shift.start.getTime();
         const existing = firstByShift.get(key);
         if (!existing || toMillis(existing.timestamp) > at.getTime()) firstByShift.set(key, punch);
@@ -46,10 +47,11 @@ export function buildLateRecords(employees: Employee[], punches: Punch[], leaves
       const ownLeaves = leaves.filter((leave) => !leave.companyId || normalizeCompanyId(leave.companyId) === companyId);
       for (const punch of firstByShift.values()) {
         const at = toDate(punch.timestamp)!;
-        const shift = getEmployeeShiftWindow(scoped, at);
+        const punchScoped = scopeEmployeeToPunchSchedule(scoped, punch);
+        const shift = getEmployeeShiftWindow(punchScoped, at);
         const status = getLiveAttendanceStatus(scoped, [], at, company?.lateGraceMinutes, company?.workingDays, getEmployeeHolidayDates(company, scoped));
         if (!status.isScheduledDay || getEmployeeHoliday(company, scoped, shift.dateKey) || getEmployeeApprovedLeaveForDate(scoped, ownLeaves, shift.dateKey)) continue;
-        const late = computeEmployeeLateness(at, scoped, company?.lateGraceMinutes, Boolean(punch.isExcused));
+        const late = computeEmployeeLateness(at, punchScoped, company?.lateGraceMinutes, Boolean(punch.isExcused));
         if (!late.naturallyLate && !punch.isExcused) continue;
         result.push({ id: punch.id, employee: scoped, dateKey: shift.dateKey, scheduledAt: shift.start,
           punchedAt: at, minutesLate: late.rawMinutes, kind: "arrival", isExcused: punch.isExcused,
