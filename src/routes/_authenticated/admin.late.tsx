@@ -1,10 +1,11 @@
 import { buildLateRecords, lateRecordInPeriod } from "@/lib/late-records";
-import { planManualClockIn } from "@/lib/manual-clock-in";
+import { planManualClockIn, resolveManualClockOut } from "@/lib/manual-clock-in";
+import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { addDoc, collection, deleteField, doc, onSnapshot, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
@@ -91,6 +92,7 @@ function LateArrivalsPage() {
   const [manualTimezone, setManualTimezone] = useState("Australia/Sydney");
   const [manualDate, setManualDate] = useState(() => zonedDateKey(attendanceNow(), "Asia/Manila"));
   const [manualTime, setManualTime] = useState("09:00");
+  const [manualOutTime, setManualOutTime] = useState("");
   const [manualNotes, setManualNotes] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
 
@@ -187,9 +189,23 @@ function LateArrivalsPage() {
     }
   }
 
+  // The modal's clock-out helper offers the scheduled end of the shift being fixed.
+  const shiftEndSuggestion = (() => {
+    const targetEmp = employees.find((e) => e.id === selectedEmpId);
+    if (!targetEmp) return "";
+    const ids = getEmployeeCompanyIds(targetEmp);
+    const scoped = getEmployeeForCompany(
+      targetEmp,
+      selectedCompanyId && ids.includes(selectedCompanyId) ? selectedCompanyId : ids[0] || COMPANY_ID,
+    );
+    const slot = scoped.shifts?.find((shift) => shift.startTime === manualTime);
+    return slot?.endTime || scoped.shiftEndTime || "";
+  })();
+
   // Both a late arrival and a missing punch are corrected in the same modal, so
   // the row hands it the shift it belongs to instead of asking the admin to retype it.
   function openFixPunch(record: LateRecord) {
+    setManualOutTime("");
     setSelectedEmpId(record.employee.id);
     setSelectedCompanyId(record.companyId);
     setManualDate(record.dateKey);
@@ -229,8 +245,26 @@ function LateArrivalsPage() {
     try {
       const shiftTz = getShiftTimezone(targetEmpForCompany);
       const punchDateObj = zonedDateTimeToDate(manualDate, manualTime, manualTimezone);
-      const plan = planManualClockIn(targetEmpForCompany, punches, punchDateObj, attendanceNow(), reopenShift);
+      const outDateObj = manualOutTime
+        ? resolveManualClockOut(manualDate, manualOutTime, manualTimezone, punchDateObj)
+        : null;
+      const plan = planManualClockIn(targetEmpForCompany, punches, punchDateObj, attendanceNow(), reopenShift, outDateObj);
       const dateKey = plan.dateKey;
+      const targetCompany = companies.find(
+        (c) => normalizeCompanyId(c.id) === normalizeCompanyId(effectiveCompanyId),
+      );
+      // Stored totals have to follow the corrected times, or reports keep the old session.
+      const calculation = outDateObj
+        ? calculateAttendanceSession({
+            employee: targetEmpForCompany,
+            company: targetCompany,
+            punchIn: punchDateObj,
+            punchOut: outDateObj,
+            now: attendanceNow(),
+            punches,
+            isOffShiftDay: Boolean(plan.existing?.isOffShiftDay),
+          })
+        : null;
       const batch = writeBatch(db());
       const punchRef = plan.existing ? doc(db(), "punches", plan.existing.id) : doc(collection(db(), "punches"));
       batch.set(punchRef, {
@@ -242,7 +276,7 @@ function LateArrivalsPage() {
         type: "in",
         timestamp: Timestamp.fromDate(punchDateObj),
         source: "app",
-        attendanceStatus: "in_progress",
+        attendanceStatus: calculation ? calculation.status : "in_progress",
         shiftTimezone: shiftTz,
         manualTimezoneUsed: manualTimezone,
         manualNote: manualNotes.trim() || `Manual clock-in (${manualTimezone}) by admin`,
@@ -252,16 +286,58 @@ function LateArrivalsPage() {
         scheduledShiftStart: plan.shift.start.toISOString(),
         scheduledShiftEnd: plan.shift.end.toISOString(),
       }, { merge: true });
+      if (outDateObj) {
+        const outRef = plan.existingOut
+          ? doc(db(), "punches", plan.existingOut.id)
+          : doc(collection(db(), "punches"));
+        batch.set(outRef, {
+          employeeId: targetEmp.id,
+          employeeName: targetEmp.name,
+          companyId: effectiveCompanyId,
+          date: dateKey,
+          attendanceDate: dateKey,
+          type: "out",
+          timestamp: Timestamp.fromDate(outDateObj),
+          source: "app",
+          punchInId: punchRef.id,
+          // An admin-entered time is a real record, never an automatic one.
+          isAuto: false,
+          autoReason: deleteField(),
+          shiftTimezone: shiftTz,
+          manualTimezoneUsed: manualTimezone,
+          manualNote: manualNotes.trim() || `Manual clock-out (${manualTimezone}) by admin`,
+          addedByAdmin: user?.email || "admin",
+          createdAt: plan.existingOut?.createdAt || attendanceNow().toISOString(),
+          correctedAt: attendanceNow().toISOString(),
+          scheduledShiftStart: plan.shift.start.toISOString(),
+          scheduledShiftEnd: plan.shift.end.toISOString(),
+          ...(calculation
+            ? {
+                normalWorkMinutes: calculation.normalWorkMinutes,
+                overtimeMinutes: calculation.overtimeMinutes,
+                totalEligibleMinutes: calculation.totalEligibleMinutes,
+                attendanceStatus: calculation.status,
+              }
+            : {}),
+        }, { merge: true });
+      }
       for (const punch of plan.voided) batch.update(doc(db(), "punches", punch.id), {
         voidedAt: attendanceNow().toISOString(), voidedBy: user?.email || "admin",
         correctionPunchId: punchRef.id,
       });
       await batch.commit();
-      toast.success(plan.voided.length ? `Clock-in corrected and automatic clock-out removed for ${targetEmp.name}.` : `Manual clock-in logged for ${targetEmp.name}!`);
+      toast.success(
+        calculation
+          ? `${targetEmp.name}: ${manualTime} – ${manualOutTime} saved. Worked ${formatWorkMinutes(calculation.normalWorkMinutes)}${calculation.overtimeMinutes > 0 ? ` plus ${formatWorkMinutes(calculation.overtimeMinutes)} overtime` : ""}.`
+          : plan.voided.length
+            ? `Clock-in corrected and automatic clock-out removed for ${targetEmp.name}.`
+            : `Manual clock-in logged for ${targetEmp.name}!`,
+      );
       setShowManualModal(false);
       setManualNotes("");
+      setManualOutTime("");
     } catch (err) {
-      toast.error("Failed to add manual clock-in: " + (err as Error).message);
+      toast.error("Failed to save punch times: " + (err as Error).message);
     } finally {
       setSubmittingManual(false);
     }
@@ -281,6 +357,7 @@ function LateArrivalsPage() {
 
         <button
           onClick={() => {
+            setManualOutTime("");
             if (employees.length > 0) {
               const firstEmp = employees[0];
               setSelectedEmpId(firstEmp.id);
@@ -295,7 +372,7 @@ function LateArrivalsPage() {
           }}
           className="btn-lift inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground shadow-md shrink-0"
         >
-          <Plus className="h-4 w-4" /> Fix Missed Clock-In
+          <Plus className="h-4 w-4" /> Fix Punch Times
         </button>
       </div>
 
@@ -499,7 +576,7 @@ function LateArrivalsPage() {
         </table>
       </div>
 
-      {/* ----- Fix Missed Clock-In Modal ----- */}
+      {/* ----- Fix Punch Times Modal ----- */}
       {showManualModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-150 overflow-y-auto">
           <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border bg-card p-5 sm:p-6 shadow-2xl space-y-4 my-auto overflow-hidden">
@@ -509,10 +586,10 @@ function LateArrivalsPage() {
                   <UserCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Fix Missed Clock-In</h3>
+                  <h3 className="text-base font-bold text-foreground">Fix Punch Times</h3>
                   <p className="text-xs text-muted-foreground">
-                    Retroactively add or adjust clock-in time for an employee when a mistake
-                    happens.
+                    Retroactively add or adjust an employee's clock-in and clock-out when a
+                    mistake happens. Leave clock-out blank to keep the shift open.
                   </p>
                 </div>
               </div>
@@ -681,11 +758,20 @@ function LateArrivalsPage() {
                 );
               })()}
 
-              <label className="flex items-start gap-2 text-sm">
-                <input type="checkbox" checked={reopenShift} onChange={(e) => setReopenShift(e.target.checked)} />
-                Employee is currently working: reopen today's shift by voiding incorrect automatic clock-outs. Past shifts stay historical.
+              <label
+                className={`flex items-start gap-2 text-sm ${manualOutTime ? "opacity-50" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={reopenShift && !manualOutTime}
+                  disabled={Boolean(manualOutTime)}
+                  onChange={(e) => setReopenShift(e.target.checked)}
+                />
+                {manualOutTime
+                  ? "Not used: the clock-out time below closes this shift instead of reopening it."
+                  : "Employee is currently working: reopen today's shift by voiding incorrect automatic clock-outs. Past shifts stay historical."}
               </label>
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-foreground mb-1">
                     Shift Date <span className="text-rose-500">*</span>
@@ -695,18 +781,6 @@ function LateArrivalsPage() {
                     value={manualDate}
                     onChange={(e) => setManualDate(e.target.value)}
                     className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-foreground mb-1">
-                    Clock-In Time <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={manualTime}
-                    onChange={(e) => setManualTime(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
                   />
                 </div>
 
@@ -723,6 +797,56 @@ function LateArrivalsPage() {
                     <option value="Asia/Manila">🇵🇭 Philippines (PHT)</option>
                     <option value="Asia/Kathmandu">🇳🇵 Nepal (NPT)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-foreground mb-1">
+                    Clock-In Time <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={manualTime}
+                    onChange={(e) => setManualTime(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-baseline justify-between mb-1 gap-2">
+                    <label className="block text-xs font-bold text-foreground">
+                      Clock-Out Time
+                    </label>
+                    {manualOutTime ? (
+                      <button
+                        type="button"
+                        onClick={() => setManualOutTime("")}
+                        className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                      >
+                        Clear
+                      </button>
+                    ) : (
+                      shiftEndSuggestion && (
+                        <button
+                          type="button"
+                          onClick={() => setManualOutTime(shiftEndSuggestion)}
+                          className="text-[10px] font-bold text-primary hover:underline"
+                        >
+                          Use {shiftEndSuggestion}
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <input
+                    type="time"
+                    value={manualOutTime}
+                    onChange={(e) => setManualOutTime(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {manualOutTime && manualOutTime <= manualTime
+                      ? "Ends next day (overnight shift)."
+                      : "Optional. Leave blank to keep the shift open."}
+                  </p>
                 </div>
               </div>
 
@@ -806,7 +930,11 @@ function LateArrivalsPage() {
                 onClick={saveManualClockIn}
                 className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
               >
-                {submittingManual ? "Saving..." : "Save Manual Clock-In"}
+                {submittingManual
+                  ? "Saving..."
+                  : manualOutTime
+                    ? "Save Clock-In & Clock-Out"
+                    : "Save Manual Clock-In"}
               </button>
             </div>
           </div>
