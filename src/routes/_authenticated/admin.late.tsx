@@ -1,11 +1,12 @@
 import { buildLateRecords, lateRecordInPeriod } from "@/lib/late-records";
-import { planManualClockIn, resolveManualClockOut } from "@/lib/manual-clock-in";
-import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
+import { resolveManualClockOut } from "@/lib/manual-clock-in";
+import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { formatWorkMinutes } from "@/lib/attendance-calculation";
 import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, deleteField, doc, onSnapshot, Timestamp, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
@@ -243,93 +244,32 @@ function LateArrivalsPage() {
 
     setSubmittingManual(true);
     try {
-      const shiftTz = getShiftTimezone(targetEmpForCompany);
       const punchDateObj = zonedDateTimeToDate(manualDate, manualTime, manualTimezone);
       const outDateObj = manualOutTime
         ? resolveManualClockOut(manualDate, manualOutTime, manualTimezone, punchDateObj)
         : null;
-      const plan = planManualClockIn(targetEmpForCompany, punches, punchDateObj, attendanceNow(), reopenShift, outDateObj);
-      const dateKey = plan.dateKey;
-      const targetCompany = companies.find(
-        (c) => normalizeCompanyId(c.id) === normalizeCompanyId(effectiveCompanyId),
-      );
-      // Stored totals have to follow the corrected times, or reports keep the old session.
-      const calculation = outDateObj
-        ? calculateAttendanceSession({
-            employee: targetEmpForCompany,
-            company: targetCompany,
-            punchIn: punchDateObj,
-            punchOut: outDateObj,
-            now: attendanceNow(),
-            punches,
-            isOffShiftDay: Boolean(plan.existing?.isOffShiftDay),
-          })
-        : null;
-      const batch = writeBatch(db());
-      const punchRef = plan.existing ? doc(db(), "punches", plan.existing.id) : doc(collection(db(), "punches"));
-      batch.set(punchRef, {
-        employeeId: targetEmp.id,
-        employeeName: targetEmp.name,
+      // The same writer backs the report's punch corrections, so a fix made in
+      // either place records the shift the same way.
+      const { calculation, voidedCount } = await applyPunchCorrection({
+        employee: targetEmpForCompany,
+        profile: targetEmp,
         companyId: effectiveCompanyId,
-        date: dateKey,
-        attendanceDate: dateKey,
-        type: "in",
-        timestamp: Timestamp.fromDate(punchDateObj),
-        source: "app",
-        attendanceStatus: calculation ? calculation.status : "in_progress",
-        shiftTimezone: shiftTz,
-        manualTimezoneUsed: manualTimezone,
-        manualNote: manualNotes.trim() || `Manual clock-in (${manualTimezone}) by admin`,
-        addedByAdmin: user?.email || "admin",
-        createdAt: plan.existing?.createdAt || attendanceNow().toISOString(),
-        correctedAt: attendanceNow().toISOString(),
-        scheduledShiftStart: plan.shift.start.toISOString(),
-        scheduledShiftEnd: plan.shift.end.toISOString(),
-      }, { merge: true });
-      if (outDateObj) {
-        const outRef = plan.existingOut
-          ? doc(db(), "punches", plan.existingOut.id)
-          : doc(collection(db(), "punches"));
-        batch.set(outRef, {
-          employeeId: targetEmp.id,
-          employeeName: targetEmp.name,
-          companyId: effectiveCompanyId,
-          date: dateKey,
-          attendanceDate: dateKey,
-          type: "out",
-          timestamp: Timestamp.fromDate(outDateObj),
-          source: "app",
-          punchInId: punchRef.id,
-          // An admin-entered time is a real record, never an automatic one.
-          isAuto: false,
-          autoReason: deleteField(),
-          shiftTimezone: shiftTz,
-          manualTimezoneUsed: manualTimezone,
-          manualNote: manualNotes.trim() || `Manual clock-out (${manualTimezone}) by admin`,
-          addedByAdmin: user?.email || "admin",
-          createdAt: plan.existingOut?.createdAt || attendanceNow().toISOString(),
-          correctedAt: attendanceNow().toISOString(),
-          scheduledShiftStart: plan.shift.start.toISOString(),
-          scheduledShiftEnd: plan.shift.end.toISOString(),
-          ...(calculation
-            ? {
-                normalWorkMinutes: calculation.normalWorkMinutes,
-                overtimeMinutes: calculation.overtimeMinutes,
-                totalEligibleMinutes: calculation.totalEligibleMinutes,
-                attendanceStatus: calculation.status,
-              }
-            : {}),
-        }, { merge: true });
-      }
-      for (const punch of plan.voided) batch.update(doc(db(), "punches", punch.id), {
-        voidedAt: attendanceNow().toISOString(), voidedBy: user?.email || "admin",
-        correctionPunchId: punchRef.id,
+        company: companies.find(
+          (c) => normalizeCompanyId(c.id) === normalizeCompanyId(effectiveCompanyId),
+        ),
+        punches,
+        punchIn: punchDateObj,
+        punchOut: outDateObj,
+        now: attendanceNow(),
+        reopen: reopenShift,
+        actor: user?.email || "admin",
+        note: manualNotes.trim() || `Manual punch (${manualTimezone}) by admin`,
+        timezoneUsed: manualTimezone,
       });
-      await batch.commit();
       toast.success(
         calculation
           ? `${targetEmp.name}: ${manualTime} – ${manualOutTime} saved. Worked ${formatWorkMinutes(calculation.normalWorkMinutes)}${calculation.overtimeMinutes > 0 ? ` plus ${formatWorkMinutes(calculation.overtimeMinutes)} overtime` : ""}.`
-          : plan.voided.length
+          : voidedCount
             ? `Clock-in corrected and automatic clock-out removed for ${targetEmp.name}.`
             : `Manual clock-in logged for ${targetEmp.name}!`,
       );
