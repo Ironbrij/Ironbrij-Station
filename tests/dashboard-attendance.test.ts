@@ -190,8 +190,8 @@ test("the table names which shift is running and the client it is worked for", (
   assert.deepEqual(
     result.map((row) => [row.shiftLabel, row.companyName, row.parentCompanyName]),
     [
-      ["Shift 1 of 2", "Acme", "Northwind"],
-      ["Shift 2 of 2", "Savykids", "Northwind"],
+      ["Shift 1", "Acme", "Northwind"],
+      ["Shift 2", "Savykids", "Northwind"],
     ],
   );
 });

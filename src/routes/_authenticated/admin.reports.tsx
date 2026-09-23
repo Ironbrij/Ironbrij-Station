@@ -149,6 +149,20 @@ function monthBounds(month: string) {
   return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
 }
 
+function addCalendarDay(dateKey: string): string {
+  const next = new Date(`${dateKey}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+/** "sick leave (unpaid) - dentist", so a zero-hours day explains itself. */
+function describeLeave(leave: LeaveRequest): string {
+  const category = leave.leaveCategory ? `${leave.leaveCategory} leave` : "Leave";
+  const payment = leave.paymentStatus === "unpaid" ? " (unpaid)" : "";
+  const reason = leave.reason?.trim();
+  return `${category}${payment}${reason ? ` - ${reason}` : ""}`;
+}
+
 function getDayOfWeekStr(dateStr: string): string {
   try {
     const [y, m, d] = dateStr.split("-").map(Number);
@@ -538,6 +552,20 @@ function ReportsPage() {
       for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
         if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
       }
+      // A scheduled day with neither punch nor leave is exactly the day an admin
+      // is asking about when a week reads as zero worked days. Seed every one so
+      // it gets a row that says what happened instead of going missing.
+      const scheduledDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+      const todayKey = zonedDateKey(new Date(), shiftTimezone);
+      const joinedKey = rawEmployee.createdAt
+        ? zonedDateKey(new Date(rawEmployee.createdAt), shiftTimezone)
+        : "";
+      const lastCountedDay = to < todayKey ? to : todayKey;
+      for (let date = from; date <= lastCountedDay; date = addCalendarDay(date)) {
+        if (dayPunchGroups.has(date) || (joinedKey && date < joinedKey)) continue;
+        if (!scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay())) continue;
+        dayPunchGroups.set(date, []);
+      }
 
       let totalRegularHours = 0;
       let totalApprovedOvertimeHours = 0;
@@ -754,6 +782,7 @@ function ReportsPage() {
           isOvertimeApproved,
           isOvertimeRejected,
           overtimeStatus,
+          note: approvedLeave ? describeLeave(approvedLeave) : holiday?.name || undefined,
           status: holiday
             ? "Holiday"
             : approvedLeave
@@ -770,7 +799,9 @@ function ReportsPage() {
                         ? `Late (${lateness.minutes}m)`
                         : firstIn
                           ? "Complete"
-                          : "Off / No punches",
+                          : isScheduledDay
+                            ? "Absent (no punch)"
+                            : "Off / No punches",
         });
       }
 
@@ -788,17 +819,47 @@ function ReportsPage() {
         }
       }
 
-      let initialRemarks = "";
-      if (totalLateDays > 0) {
-        initialRemarks = `Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`;
+      // Zero worked days is only useful next to its reason, so the remarks open
+      // with the leave and absence behind it.
+      const leaveReasons = [
+        ...new Set(
+          employeeLeaves
+            .filter((leave) =>
+              getEmployeeApprovedLeaveDates(employee, [leave]).some((d) => d >= from && d <= to),
+            )
+            .map((leave) => leave.leaveCategory || "leave"),
+        ),
+      ];
+      const notes: string[] = [];
+      if (leaveDaysCount > 0) {
+        notes.push(
+          `On leave ${leaveDaysCount} day${leaveDaysCount > 1 ? "s" : ""}` +
+            (leaveReasons.length ? ` (${leaveReasons.join(", ")})` : ""),
+        );
       }
+      if (absentDaysCount > 0) {
+        notes.push(
+          `Absent ${absentDaysCount} scheduled day${absentDaysCount > 1 ? "s" : ""}`,
+        );
+      }
+      if (totalLateDays > 0) {
+        notes.push(`Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`);
+      }
+      const initialRemarks = notes.join("; ");
 
       const reg = Math.round(totalRegularHours * 10) / 10;
       const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
+      // Someone scheduled who never punched is exactly who an admin is looking
+      // for, so keep the row and let its remarks say absent rather than drop it.
       const hasWork =
-        reg > 0 || ot > 0 || paidLeaveDays > 0 || unpaidLeaveDays > 0 || workedDaysCount > 0;
+        reg > 0 ||
+        ot > 0 ||
+        paidLeaveDays > 0 ||
+        unpaidLeaveDays > 0 ||
+        workedDaysCount > 0 ||
+        absentDaysCount > 0;
 
-      // If the employee did not work and had no active leave during this period, exclude them from report
+      // Nothing scheduled and nothing worked in this period: not this report's row.
       if (!hasWork) {
         continue;
       }

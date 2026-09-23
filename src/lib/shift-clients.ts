@@ -113,11 +113,11 @@ export function getShiftSlotByStart(
   };
 }
 
-/** Reads "Shift 2 of 3", or the slot's own name when the admin gave it one. */
+/** Reads "Shift 2", or the slot's own name when the admin gave it one. */
 export function describePunchShiftSlot(slot: PunchShiftSlot | null): string {
   if (!slot) return "";
   if (slot.shift.name?.trim()) return slot.shift.name.trim();
-  return slot.total > 1 ? `Shift ${slot.position} of ${slot.total}` : "";
+  return slot.total > 1 ? `Shift ${slot.position}` : "";
 }
 
 /** Reads "09:00 – 13:00 · Ironbrij" for a slot, dropping the client when unset. */
