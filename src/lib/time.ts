@@ -2,6 +2,7 @@ import { dateTimeFormatter } from "./intl-format.ts";
 import { Timestamp } from "firebase/firestore";
 import type { Company, CountryCode, Employee, Punch } from "./types.ts";
 import { calculateAttendanceSession } from "./attendance-calculation.ts";
+import { breakDurationMs } from "./work-breaks.ts";
 
 export interface DayHours {
   regularHours: number;
@@ -80,6 +81,13 @@ export function toMillis(value: unknown): number {
   return toDate(value)?.getTime() ?? 0;
 }
 
+/** Time on lunch or any other break is never time worked. */
+function spanWithoutBreaks(punches: Punch[], startMs: number, endMs: number): number {
+  const start = new Date(startMs);
+  const end = new Date(endMs);
+  return Math.max(0, endMs - startMs - breakDurationMs(punches, start, end));
+}
+
 export function computeDay(
   punches: Punch[],
   context?: { employee: Employee; company?: Company | null; now?: Date },
@@ -106,12 +114,12 @@ export function computeDay(
         regularMs += result.normalWorkMinutes * 60_000;
         overtimeMs += result.overtimeMinutes * 60_000;
       } else {
-        regularMs += timestamp - openIn;
+        regularMs += spanWithoutBreaks(sorted, openIn, timestamp);
       }
       openIn = null;
     } else if (punch.type === "extra_in") openExtraIn = timestamp;
     else if (punch.type === "extra_out" && openExtraIn !== null) {
-      overtimeMs += timestamp - openExtraIn;
+      overtimeMs += spanWithoutBreaks(sorted, openExtraIn, timestamp);
       openExtraIn = null;
     }
   }

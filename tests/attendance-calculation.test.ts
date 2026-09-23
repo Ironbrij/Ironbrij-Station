@@ -16,6 +16,7 @@ import {
   zonedDateTimeToDate,
 } from "../src/lib/attendance.ts";
 import { getEmployeeForCompany } from "../src/lib/company-context.ts";
+import { computeDay } from "../src/lib/time.ts";
 import type { Company, Employee, Punch } from "../src/lib/types.ts";
 
 const timezone = "Australia/Sydney";
@@ -995,4 +996,37 @@ test("a company can turn the automatic break deduction off", () => {
   });
   assert.equal(session.unloggedBreakMinutes, 0);
   assert.equal(session.overtimeMinutes, 60);
+});
+
+test("a lunch punched during overtime is not paid as overtime", () => {
+  const emp = employee();
+  const day = [
+    { id: "ei", employeeId: emp.id, companyId: "alpha", type: "extra_in", timestamp: at("18:00") },
+    { id: "ls", employeeId: emp.id, companyId: "alpha", type: "lunch_start", timestamp: at("19:00") },
+    { id: "le", employeeId: emp.id, companyId: "alpha", type: "lunch_end", timestamp: at("20:00") },
+    { id: "eo", employeeId: emp.id, companyId: "alpha", type: "extra_out", timestamp: at("22:00") },
+  ] as unknown as Punch[];
+  // Four hours on the clock, one of them lunch.
+  assert.equal(computeDay(day).overtimeHours, 3);
+});
+
+test("a lunch is never counted as regular work, with or without a schedule", () => {
+  const emp = employee();
+  const day = [
+    { id: "in", employeeId: emp.id, companyId: "alpha", type: "in", timestamp: at("09:00") },
+    { id: "ls", employeeId: emp.id, companyId: "alpha", type: "lunch_start", timestamp: at("12:00") },
+    { id: "le", employeeId: emp.id, companyId: "alpha", type: "lunch_end", timestamp: at("13:00") },
+    { id: "out", employeeId: emp.id, companyId: "alpha", type: "out", timestamp: at("17:00") },
+  ] as unknown as Punch[];
+  assert.equal(computeDay(day).regularHours, 7);
+  assert.equal(
+    calculateAttendanceSession({
+      employee: emp,
+      company,
+      punchIn: at("09:00"),
+      punchOut: at("17:00"),
+      punches: day,
+    }).actualWorkMinutes,
+    420,
+  );
 });
