@@ -134,6 +134,7 @@ export function getCompanyMembership(employee: Employee, companyId: string): Com
     shifts: employee.shifts,
     shiftStartTime: employee.shiftStartTime,
     shiftEndTime: employee.shiftEndTime,
+    shiftClientName: employee.shiftClientName,
     shiftTimezone: employee.shiftTimezone,
     workingDays: employee.workingDays,
     departmentId: employee.deptId,
@@ -151,6 +152,7 @@ export function getEmployeeForCompany(employee: Employee, companyId: string): Em
     shifts: membership.shifts || employee.shifts,
     shiftStartTime: membership.shiftStartTime || employee.shiftStartTime,
     shiftEndTime: membership.shiftEndTime || employee.shiftEndTime,
+    shiftClientName: membership.shiftClientName || employee.shiftClientName,
     shiftTimezone: membership.shiftTimezone || employee.shiftTimezone,
     workingDays:
       Array.isArray(membership.workingDays) && membership.workingDays.length > 0
@@ -355,6 +357,7 @@ export function buildCompanyMembership(
     shifts,
     shiftStartTime,
     shiftEndTime,
+    shiftClientName: input.shiftClientName || "",
     shiftTimezone: input.shiftTimezone || "Australia/Sydney",
     workingDays: resolvedWorkingDays,
     breakAllowanceMinutes: input.breakAllowanceMinutes ?? 30,

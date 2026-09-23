@@ -160,14 +160,15 @@ function getDayOfWeekStr(dateStr: string): string {
 }
 
 function ReportsPage() {
-  const { company: authCompany, user, activeCompanyId } = useAuth();
+  const { company: authCompany, user } = useAuth();
   const currentMonth = new Date().toISOString().slice(0, 7);
   const initialBounds = monthBounds(currentMonth);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyFilter, setCompanyFilter] = useState(activeCompanyId);
+  // Reports open across every client; the Target Company picker below narrows them.
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
@@ -179,16 +180,13 @@ function ReportsPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    setCompanyFilter(activeCompanyId);
-  }, [activeCompanyId]);
-
   // Report view mode: 'summary' = Interactive Company & VA Report, 'daily' = Raw Daily Logs
   const [viewMode, setViewMode] = useState<"summary" | "daily">("summary");
 
   // Editable summary rows
   const [reportRows, setReportRows] = useState<ReportRow[]>([]);
   const [hasCustomEdits, setHasCustomEdits] = useState(false);
+  const [removedRowIds, setRemovedRowIds] = useState<string[]>([]);
 
   // Modals & Drawer state
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
@@ -309,23 +307,61 @@ function ReportsPage() {
     return companies.find((c) => normalizeCompanyId(c.id) === target) || authCompany;
   }, [companyFilter, companies, authCompany]);
 
+  // Someone can work a week for a client and be reassigned afterwards. Their
+  // punches are the record of that week, so the report cannot rely on who is
+  // assigned today or the week disappears from the client's report.
+  const workedEmployeeIds = useMemo(() => {
+    const target = normalizeCompanyId(companyFilter);
+    const ids = new Set<string>();
+    for (const punch of punches) {
+      if (punch.voidedAt || !punch.employeeId) continue;
+      const date = punch.attendanceDate || punch.date;
+      if (date && (date < from || date > to)) continue;
+      if (companyFilter !== "all" && normalizeCompanyId(punch.companyId || "") !== target) continue;
+      ids.add(punch.employeeId);
+    }
+    return ids;
+  }, [companyFilter, from, punches, to]);
+
   // Company and department assignments live in companyMemberships and use aliases,
   // so reports must resolve them the same way the employee list does.
-  const filteredEmployees = useMemo(
-    () =>
-      filterEmployeeList(
-        employees,
-        companies,
-        departments,
-        companyFilter,
-        departmentId,
-        search,
-      ).filter(
+  const filteredEmployees = useMemo(() => {
+    const assigned = filterEmployeeList(
+      employees,
+      companies,
+      departments,
+      companyFilter,
+      departmentId,
+      search,
+    );
+    const seen = new Set(assigned.map((employee) => employee.id));
+    const query = search.trim().toLowerCase();
+    const alsoWorked = employees.filter(
+      (employee) =>
+        !seen.has(employee.id) &&
+        (workedEmployeeIds.has(employee.id) ||
+          Boolean(employee.authUid && workedEmployeeIds.has(employee.authUid))) &&
+        (!query ||
+          [employee.name, employee.email, employee.jobTitle, employee.id].some((value) =>
+            value?.toLowerCase().includes(query),
+          )),
+    );
+    return [...assigned, ...alsoWorked]
+      .filter(
         (employee) =>
           !employeeId || employee.id === employeeId || employee.authUid === employeeId,
-      ),
-    [employees, companies, departments, companyFilter, departmentId, employeeId, search],
-  );
+      )
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+  }, [
+    companies,
+    companyFilter,
+    departmentId,
+    employeeId,
+    employees,
+    departments,
+    search,
+    workedEmployeeIds,
+  ]);
 
   // Compute Raw Day-by-Day Attendance Rows
   const dailyRows = useMemo(() => {
@@ -805,23 +841,44 @@ function ReportsPage() {
     companyFilter,
   ]);
 
-  // Manual edits belong to the period and company they were made for. Holding
-  // them across a scope change froze the report on stale rows, which reads as
-  // "reports stopped syncing".
+  // Manual edits belong to the period and company they were made for, so a scope
+  // change releases them rather than pinning the report to the previous scope.
   const reportScope = `${companyFilter}|${from}|${to}|${departmentId}|${employeeId}`;
   useEffect(() => {
     setHasCustomEdits(false);
+    setRemovedRowIds([]);
   }, [reportScope]);
 
-  // Sync computedSummaryRows to reportRows unless user has custom edits
+  // Live figures and manual edits both matter: recompute from Firestore every
+  // time and lay the admin's own changes back on top, instead of freezing the
+  // whole report at the first edit and never syncing again.
   useEffect(() => {
-    if (!hasCustomEdits) {
-      setReportRows(computedSummaryRows);
-    }
-  }, [computedSummaryRows, hasCustomEdits]);
+    setReportRows((previous) => {
+      const edited = new Map(
+        previous.filter((row) => row.isAdjusted).map((row) => [row.id, row] as const),
+      );
+      const added = previous.filter((row) => row.isCustom);
+      const computed = computedSummaryRows
+        .filter((row) => !removedRowIds.includes(row.id))
+        .map((row) => {
+          const manual = edited.get(row.id);
+          if (!manual) return row;
+          return {
+            ...row,
+            ...manual,
+            // Day-level records stay live unless the admin edited them too.
+            dailyIntervals: manual.dailyIntervals?.length
+              ? manual.dailyIntervals
+              : row.dailyIntervals,
+          };
+        });
+      return [...added, ...computed];
+    });
+  }, [computedSummaryRows, removedRowIds]);
 
   // Reset custom edits back to computed values
   function handleResetToCalculated() {
+    setRemovedRowIds([]);
     setReportRows(computedSummaryRows);
     setHasCustomEdits(false);
     setSelectedIntervalEmployee(null);
@@ -834,7 +891,7 @@ function ReportsPage() {
     setReportRows((prev) =>
       prev.map((row) => {
         if (row.id !== id) return row;
-        return { ...row, [field]: value };
+        return { ...row, isAdjusted: true, [field]: value };
       }),
     );
   }
@@ -848,6 +905,7 @@ function ReportsPage() {
         const nextWorked = !row.worked;
         return {
           ...row,
+          isAdjusted: true,
           worked: nextWorked,
           ...(nextWorked === false
             ? {
@@ -865,6 +923,7 @@ function ReportsPage() {
   // Delete row
   function handleDeleteRow(id: string) {
     setHasCustomEdits(true);
+    setRemovedRowIds((previous) => (previous.includes(id) ? previous : [...previous, id]));
     setReportRows((prev) => prev.filter((row) => row.id !== id));
     if (selectedIntervalEmployee?.id === id) {
       setSelectedIntervalEmployee(null);
@@ -957,6 +1016,7 @@ function ReportsPage() {
 
         const updatedRow: ReportRow = {
           ...row,
+          isAdjusted: true,
           dailyIntervals: updatedIntervals,
           regularHours: Math.round(newReg * 10) / 10,
           overtimeHours: Math.round(newApprovedOt * 10) / 10,
@@ -1166,6 +1226,7 @@ function ReportsPage() {
 
           const updatedRow: ReportRow = {
             ...row,
+            isAdjusted: true,
             dailyIntervals: updatedIntervals,
             regularHours: Math.round(newReg * 10) / 10,
             overtimeHours: Math.round(newApprovedOt * 10) / 10,
@@ -1656,17 +1717,18 @@ function ReportsPage() {
               className="block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
             >
               <option value="">All employees</option>
-              {employees
-                .filter((emp) => !departmentId || emp.deptId === departmentId)
-                .slice()
-                .sort((a, b) =>
-                  (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }),
-                )
-                .map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name}
-                  </option>
-                ))}
+              {/* Only the people this report actually covers, including anyone who
+                  worked for the client in the period but is no longer assigned. */}
+              {(employeeId
+                ? employees.filter(
+                    (emp) => emp.id === employeeId || emp.authUid === employeeId,
+                  )
+                : filteredEmployees
+              ).map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}
+                </option>
+              ))}
             </select>
           </label>
         </div>

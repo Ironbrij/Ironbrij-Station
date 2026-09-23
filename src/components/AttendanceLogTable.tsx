@@ -119,9 +119,14 @@ export function AttendanceLogTable({
                 </div>
               </td>
               <td className="max-w-48 px-4 py-3 text-muted-foreground">
-                <span className="block truncate" title={row.companyName}>
+                <span className="block truncate font-medium text-foreground" title={row.companyName}>
                   {row.companyName}
                 </span>
+                {row.parentCompanyName && row.parentCompanyName !== row.companyName && (
+                  <span className="mt-0.5 block truncate text-[10px]" title={row.parentCompanyName}>
+                    via {row.parentCompanyName}
+                  </span>
+                )}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
                 {row.state || "—"}
@@ -130,6 +135,11 @@ export function AttendanceLogTable({
                 <div>
                   {time(row.scheduleStart, row.timezone)}–{time(row.scheduleEnd, row.timezone)}
                 </div>
+                {row.shiftLabel && (
+                  <div className="mt-1 text-[10px] font-semibold text-primary">
+                    {row.shiftLabel}
+                  </div>
+                )}
                 <div className="mt-1 text-[10px] text-muted-foreground">
                   {row.timezone.replaceAll("_", " ")}
                 </div>

@@ -97,7 +97,10 @@ export function formatShiftRange(
   if (isMultipleShift && Array.isArray(shifts) && shifts.length > 0) {
     return shifts
       .map((s) => {
-        const timeRange = `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}`;
+        const client = s.clientName?.trim();
+        const timeRange = `${formatTimeStr(s.startTime)} - ${formatTimeStr(s.endTime)}${
+          client ? ` · ${client}` : ""
+        }`;
         if (Array.isArray(s.workingDays) && s.workingDays.length > 0 && s.workingDays.length < 7) {
           const daysStr = s.workingDays
             .map((d) => DAY_OPTIONS.find((o) => o.value === d)?.short || d)
@@ -671,6 +674,9 @@ function CompanyMembershipSettings({
   departments?: Department[];
   mainDeptId?: string;
 }) {
+  // Ticked per company: every slot then carries the same client name.
+  const [sharedClient, setSharedClient] = useState<Record<string, boolean>>({});
+
   if (selectedCompanyIds.length === 0) return null;
 
   function update(companyId: string, change: Partial<CompanyMembership>) {
@@ -790,12 +796,20 @@ function CompanyMembershipSettings({
   function handleShiftIntervalChange(
     companyId: string,
     index: number,
-    field: "startTime" | "endTime",
+    field: "startTime" | "endTime" | "clientName",
     val: string,
   ) {
     const current = value[companyId] || buildCompanyMembership(companyId, {});
     const existingShifts = [...(current.shifts || [])];
     if (!existingShifts[index]) return;
+    // One client across every slot is the common case, so the tick keeps them equal.
+    if (field === "clientName" && sharedClient[companyId]) {
+      update(companyId, {
+        isMultipleShift: true,
+        shifts: existingShifts.map((shift) => ({ ...shift, clientName: val })),
+      });
+      return;
+    }
     existingShifts[index] = {
       ...existingShifts[index],
       [field]: val,
@@ -803,6 +817,17 @@ function CompanyMembershipSettings({
     update(companyId, {
       isMultipleShift: true,
       shifts: existingShifts,
+    });
+  }
+
+  function handleToggleSharedClient(companyId: string, shifts: ShiftInterval[]) {
+    const next = !sharedClient[companyId];
+    setSharedClient((previous) => ({ ...previous, [companyId]: next }));
+    if (!next) return;
+    const client = shifts.find((shift) => shift.clientName?.trim())?.clientName?.trim() || "";
+    update(companyId, {
+      isMultipleShift: true,
+      shifts: shifts.map((shift) => ({ ...shift, clientName: client })),
     });
   }
 
@@ -864,6 +889,11 @@ function CompanyMembershipSettings({
 
   return (
     <div className="space-y-3">
+      <datalist id="shift-client-names">
+        {companies.map((company) => (
+          <option key={company.id || company.name} value={company.name} />
+        ))}
+      </datalist>
       <div className="text-sm font-medium">Company-specific work settings</div>
       {conflicts.length > 0 && <ShiftConflictAlert conflicts={conflicts} />}
       {selectedCompanyIds.map((companyId) => {
@@ -917,10 +947,18 @@ function CompanyMembershipSettings({
 
             {isMulti ? (
               <div className="space-y-3 pt-1">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-medium text-muted-foreground">
                     Multiple Shift Intervals ({shifts.length})
                   </span>
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(sharedClient[companyId])}
+                      onChange={() => handleToggleSharedClient(companyId, shifts)}
+                    />
+                    Same client for every shift
+                  </label>
                   <div className="w-44">
                     <select
                       value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
@@ -969,6 +1007,28 @@ function CompanyMembershipSettings({
                               ✕
                             </button>
                           )}
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                            Client
+                          </span>
+                          <input
+                            type="text"
+                            list="shift-client-names"
+                            value={s.clientName || ""}
+                            placeholder="Who is this shift worked for?"
+                            disabled={Boolean(sharedClient[companyId]) && idx > 0}
+                            onChange={(e) =>
+                              handleShiftIntervalChange(
+                                companyId,
+                                idx,
+                                "clientName",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full rounded border bg-background px-2 py-1 text-xs font-semibold disabled:opacity-60"
+                          />
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -1091,6 +1151,19 @@ function CompanyMembershipSettings({
               </div>
             ) : (
               <>
+                <div>
+                  <label className="text-xs font-medium">Client</label>
+                  <input
+                    type="text"
+                    list="shift-client-names"
+                    value={membership.shiftClientName || ""}
+                    placeholder="Who is this shift worked for?"
+                    onChange={(event) =>
+                      update(companyId, { shiftClientName: event.target.value })
+                    }
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium">Shift Hours</label>
