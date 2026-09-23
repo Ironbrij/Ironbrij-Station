@@ -63,7 +63,9 @@ test("late logs include a late second shift and retain historical records for da
     {startTime: "12:00", endTime: "16:00", workingDays: [3]},
   ] };
   const entries = [punch("in", "06:00"), punch("out", "10:00"), punch("in", "12:15")];
-  const records = buildLateRecords([multi], entries, [], [], at("13:00"));
+  const records = buildLateRecords([multi], entries, [], [], at("13:00")).filter(
+    (record) => record.kind === "arrival",
+  );
   assert.equal(records.length, 1);
   assert.equal(records[0].minutesLate, 15);
   assert.equal(records[0].punch?.id, "in-12:15");

@@ -13,6 +13,7 @@ import {
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEffectiveEmployeeWorkingDays,
+  getEffectiveLateGraceMinutes,
   getShiftTimezone,
   zonedDateKey,
   zonedDateTimeToDate,
@@ -288,7 +289,16 @@ export function buildAttendanceLog({
         excused: false,
         excuseReason: "",
         automatic: false,
-        status: approvedLeave ? "leave" : off ? "off" : now < shift.start ? "upcoming" : "missing",
+        // A shift only counts as missed once its grace has run out, which is when
+        // the late log starts reporting it.
+        status: approvedLeave
+          ? "leave"
+          : off
+            ? "off"
+            : Math.floor((now.getTime() - shift.start.getTime()) / 60000) <=
+                getEffectiveLateGraceMinutes(company?.lateGraceMinutes)
+              ? "upcoming"
+              : "missing",
       });
     }
   }

@@ -56,6 +56,7 @@ import { resolveProfilePhoto } from "@/lib/profile-photo";
 import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
 import {
   calculateShiftMinutes,
+  getEmployeeCompanyIds,
   getEmployeeForCompany,
   getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
@@ -119,8 +120,7 @@ function EmployeeDetail() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [now, setNow] = useState(() => new Date());
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const { company, activeCompanyId, user } = useAuth();
-  const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
+  const { activeCompanyId, user } = useAuth();
 
   // Fix missing punch state
   const [fixingRow, setFixingRow] = useState<DayRow | null>(null);
@@ -196,25 +196,45 @@ function EmployeeDetail() {
     () => employees.find((item) => item.id === id || item.authUid === id),
     [employees, id],
   );
+  // The client chosen in the header is the admin's, not this employee's. Opening
+  // a profile from another client's list used to scope the page to a company the
+  // employee is not in, which showed an empty history against a schedule they
+  // never worked. Fall back to a client they actually belong to.
+  const profileCompanyId = useMemo(() => {
+    if (!rawEmployee || activeCompanyId === "all") return "all";
+    const ids = getEmployeeCompanyIds(rawEmployee);
+    const target = normalizeCompanyId(activeCompanyId);
+    if (ids.includes(target)) return target;
+    return ids.length === 1 ? ids[0] : "all";
+  }, [activeCompanyId, rawEmployee]);
+  const scopedOutsideSelection =
+    activeCompanyId !== "all" && profileCompanyId !== normalizeCompanyId(activeCompanyId);
+
+  const company = useMemo(
+    () =>
+      profileCompanyId === "all"
+        ? null
+        : companies.find((item) => normalizeCompanyId(item.id) === profileCompanyId) || null,
+    [companies, profileCompanyId],
+  );
+  const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
+
   const employee = useMemo(
-    () => (rawEmployee ? getEmployeeForCompany(rawEmployee, activeCompanyId) : undefined),
-    [activeCompanyId, rawEmployee],
+    () => (rawEmployee ? getEmployeeForCompany(rawEmployee, profileCompanyId) : undefined),
+    [profileCompanyId, rawEmployee],
   );
 
   const punches = useMemo(() => {
     if (!employee || !rawEmployee) return [];
-    const selectedCompany = companies.find(
-      (item) => (item.id || COMPANY_ID) === activeCompanyId,
-    );
     return getEmployeePunchesForCompany(
       allPunches,
       rawEmployee,
-      activeCompanyId,
-      selectedCompany?.name,
+      profileCompanyId,
+      company?.name,
     )
       .filter((punch) => Boolean(punch.timestamp))
       .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-  }, [activeCompanyId, allPunches, companies, employee, rawEmployee]);
+  }, [allPunches, company, employee, profileCompanyId, rawEmployee]);
 
   // One employee's day can interleave several clients, so every event says which.
   const clientNameOf = useMemo(() => {
@@ -227,8 +247,8 @@ function EmployeeDetail() {
 
   const companyLeaves = useMemo(() => {
     if (!rawEmployee) return [];
-    return getEmployeeLeavesForCompany(leaves, rawEmployee, activeCompanyId, id);
-  }, [activeCompanyId, id, leaves, rawEmployee]);
+    return getEmployeeLeavesForCompany(leaves, rawEmployee, profileCompanyId, id);
+  }, [id, leaves, profileCompanyId, rawEmployee]);
 
   const rows = useMemo(() => {
     if (!employee) return [];
@@ -606,17 +626,22 @@ function EmployeeDetail() {
       }
 
       const punchInPunch = fixingRow.firstIn;
-      const empCompanyId = punchInPunch?.companyId || activeCompanyId;
+      const empCompanyId = normalizeCompanyId(
+        punchInPunch?.companyId ||
+          (profileCompanyId !== "all"
+            ? profileCompanyId
+            : getEmployeeCompanyIds(rawEmployee)[0] || COMPANY_ID),
+      );
       const requiredWorkMinutes = getRequiredWorkMinutes(
         employee,
-        companies.find((c) => c.id === empCompanyId),
+        companies.find((c) => normalizeCompanyId(c.id) === empCompanyId),
       );
 
       // Calculate session stats
       const calculation = punchInPunch?.timestamp
         ? calculateAttendanceSession({
             employee,
-            company: companies.find((c) => c.id === empCompanyId),
+            company: companies.find((c) => normalizeCompanyId(c.id) === empCompanyId),
             punchIn: toDate(punchInPunch.timestamp) ?? new Date(),
             punchOut: punchOutDate,
             requiredWorkMinutes,
@@ -701,6 +726,19 @@ function EmployeeDetail() {
       >
         <ArrowLeft className="h-4 w-4" /> Employees
       </Link>
+
+      {scopedOutsideSelection && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-900"
+        >
+          <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            {employee.name} is not assigned to the client selected in the header, so this profile
+            shows {profileCompanyId === "all" ? "every client they work for" : company?.name}.
+          </span>
+        </div>
+      )}
 
       <section className="rounded-xl border bg-card p-5 shadow-sm sm:p-7">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -1164,7 +1202,7 @@ function EmployeeDetail() {
                     <div className="max-w-lg space-y-2">
                       {groupPunchesByClient(row.punches, clientNameOf).map((group, _i, all) => (
                         <div key={group.client}>
-                          {(all.length > 1 || activeCompanyId === "all") && (
+                          {(all.length > 1 || profileCompanyId === "all") && (
                             <div className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                               <Building2 className="h-3 w-3 shrink-0 text-primary" />
                               <span className="truncate" title={group.client}>
@@ -1246,7 +1284,7 @@ function EmployeeDetail() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {getLeaveLabel(leave)}
-                      {activeCompanyId === "all" && leaveCompany?.name
+                      {profileCompanyId === "all" && leaveCompany?.name
                         ? ` · ${leaveCompany.name}`
                         : ""}
                       {leave.reason ? ` · ${leave.reason}` : ""}
