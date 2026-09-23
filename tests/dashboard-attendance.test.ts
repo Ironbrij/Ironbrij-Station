@@ -163,3 +163,42 @@ test("a completed morning shift does not hide an unstarted afternoon shift", () 
   assert.equal(result[1].status, "missing");
   assert.equal(result[1].scheduleStart.toISOString(), at("13:00").toISOString());
 });
+
+test("the table names which shift is running and the client it is worked for", () => {
+  const multiClient = {
+    ...employee,
+    isMultipleShift: true,
+    shifts: [
+      { startTime: "09:00", endTime: "12:00", clientName: "Acme", workingDays: [0, 1, 2, 3, 4, 5, 6] },
+      { startTime: "13:00", endTime: "17:00", clientName: "Savykids", workingDays: [0, 1, 2, 3, 4, 5, 6] },
+    ],
+  } as Employee;
+  const result = rows(
+    [
+      punch("morning", "in", "09:00", {
+        scheduledShiftStart: at("09:00").toISOString(),
+        scheduledShiftEnd: at("12:00").toISOString(),
+      }),
+      punch("morning-out", "out", "12:00"),
+      punch("afternoon", "in", "13:00", {
+        scheduledShiftStart: at("13:00").toISOString(),
+        scheduledShiftEnd: at("17:00").toISOString(),
+      }),
+    ],
+    { employees: [multiClient] },
+  );
+  assert.deepEqual(
+    result.map((row) => [row.shiftLabel, row.companyName, row.parentCompanyName]),
+    [
+      ["Shift 1 of 2", "Acme", "Northwind"],
+      ["Shift 2 of 2", "Savykids", "Northwind"],
+    ],
+  );
+});
+
+test("a single unnamed shift falls back to the company with no slot label", () => {
+  const result = rows([punch("in", "in", "09:00")]);
+  assert.equal(result[0].shiftLabel, "");
+  assert.equal(result[0].companyName, "Northwind");
+  assert.equal(result[0].parentCompanyName, "Northwind");
+});

@@ -15,6 +15,7 @@ import {
   getEffectiveEmployeeWorkingDays,
   getEffectiveLateGraceMinutes,
   getShiftTimezone,
+  formatInTimezone,
   zonedDateKey,
   zonedDateTimeToDate,
   computeEmployeeLateness,
@@ -25,7 +26,11 @@ import {
   scopeEmployeeToPunchSchedule,
   shiftLatenessKey,
 } from "./shift-lateness.ts";
-import { getPunchShiftClient } from "./shift-clients.ts";
+import {
+  describePunchShiftSlot,
+  getPunchShiftSlot,
+  getShiftSlotByStart,
+} from "./shift-clients.ts";
 import { toDate, toMillis } from "./time.ts";
 
 export type AttendanceLogStatus =
@@ -35,7 +40,12 @@ export interface AttendanceLogRow {
   employeeId: string;
   employeeName: string;
   companyId: string;
+  /** The client this session is worked for: the shift's own, else the company. */
   companyName: string;
+  /** The company behind that client, when a shift slot names a different one. */
+  parentCompanyName: string;
+  /** "Shift 2 of 3" for a multi-slot schedule, empty for a single shift. */
+  shiftLabel: string;
   state: string;
   date: string;
   timezone: string;
@@ -213,18 +223,19 @@ export function buildAttendanceLog({
       });
       const judged = shiftLateness.get(shiftLatenessKey(cid, shift.start));
       const carriesLateness = judged?.punchId === session.start.id;
+      // A shift slot may name the client it is worked for, and say which of the
+      // day's slots this is. One company can cover several clients, and the
+      // table is where an admin tells them apart.
+      const slot = getPunchShiftSlot(base, session.start);
+      const parentCompanyName = company?.name || session.start.companyName || cid;
       rows.push({
         id: session.start.id,
         employeeId: employee.id,
         employeeName: employee.name || employee.email || "Unnamed employee",
         companyId: cid,
-        // A shift slot may name the client it is worked for; one company can
-        // cover several, and the table is where an admin tells them apart.
-        companyName:
-          getPunchShiftClient(base, session.start) ||
-          company?.name ||
-          session.start.companyName ||
-          cid,
+        companyName: slot?.client || parentCompanyName,
+        parentCompanyName,
+        shiftLabel: describePunchShiftSlot(slot),
         state: employee.state || employee.country || "",
         date: attendanceDate,
         timezone,
@@ -277,12 +288,25 @@ export function buildAttendanceLog({
       const off =
         !getEffectiveEmployeeWorkingDays(scoped, company?.workingDays).includes(weekday) ||
         Boolean(holiday);
+      // A day with no punch still belongs to a slot, so the admin can see which
+      // shift and which client was not covered.
+      const slot = getShiftSlotByStart(
+        scoped,
+        formatInTimezone(shift.start, timezone, {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }),
+      );
+      const parentCompanyName = company?.name || cid;
       rows.push({
         id: `missing-${employee.id}-${cid}-${rowDate}`,
         employeeId: employee.id,
         employeeName: employee.name || employee.email || "Unnamed employee",
         companyId: cid,
-        companyName: company?.name || cid,
+        companyName: slot?.client || parentCompanyName,
+        parentCompanyName,
+        shiftLabel: describePunchShiftSlot(slot),
         state: employee.state || employee.country || "",
         date: rowDate,
         timezone,

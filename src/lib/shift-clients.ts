@@ -76,6 +76,50 @@ export function getPunchShiftClient(employee: Employee, punch: Punch): string {
   return findShiftIntervalForPunch(employee, punch)?.clientName?.trim() || "";
 }
 
+export interface PunchShiftSlot {
+  shift: ShiftInterval;
+  /** 1-based position in the employee's configured slots, for "Shift 2 of 3". */
+  position: number;
+  total: number;
+  client: string;
+}
+
+/** Which of an employee's configured slots a punch was worked in. */
+export function getPunchShiftSlot(employee: Employee, punch: Punch): PunchShiftSlot | null {
+  const shifts = getShiftIntervals(employee);
+  const shift = findShiftIntervalForPunch(employee, punch);
+  if (!shift) return null;
+  return {
+    shift,
+    position: shifts.indexOf(shift) + 1,
+    total: shifts.length,
+    client: shift.clientName?.trim() || "",
+  };
+}
+
+/** The slot a scheduled window belongs to, for a day with no punch to match on. */
+export function getShiftSlotByStart(
+  employee: Employee,
+  startTime: string,
+): PunchShiftSlot | null {
+  const shifts = getShiftIntervals(employee);
+  const index = shifts.findIndex((shift) => shift.startTime === startTime);
+  if (index < 0) return null;
+  return {
+    shift: shifts[index],
+    position: index + 1,
+    total: shifts.length,
+    client: shifts[index].clientName?.trim() || "",
+  };
+}
+
+/** Reads "Shift 2 of 3", or the slot's own name when the admin gave it one. */
+export function describePunchShiftSlot(slot: PunchShiftSlot | null): string {
+  if (!slot) return "";
+  if (slot.shift.name?.trim()) return slot.shift.name.trim();
+  return slot.total > 1 ? `Shift ${slot.position} of ${slot.total}` : "";
+}
+
 /** Reads "09:00 – 13:00 · Ironbrij" for a slot, dropping the client when unset. */
 export function describeShiftInterval(shift: ShiftInterval): string {
   const range = `${shift.startTime} – ${shift.endTime}`;
