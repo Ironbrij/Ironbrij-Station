@@ -1,8 +1,8 @@
 import { getEmployeeShiftWindow, getShiftTimezone, zonedDateKey } from "./attendance.ts";
-import { getRequiredWorkMinutes } from "./company-context.ts";
+import { getEmployeeBreakSettings, getRequiredWorkMinutes } from "./company-context.ts";
 import { toMillis } from "./time.ts";
 import { normalizeCompanyId } from "./company-context.ts";
-import { breakDurationMs } from "./work-breaks.ts";
+import { breakDurationMs, unloggedBreakMinutes } from "./work-breaks.ts";
 import type { AttendanceStatus, Company, Employee, Punch } from "./types.ts";
 
 export const DEFAULT_PUNCH_OUT_GRACE_MINUTES = 20;
@@ -17,6 +17,8 @@ export interface AttendanceCalculation {
   normalWorkMinutes: number;
   overtimeMinutes: number;
   earlyStartMinutes?: number;
+  /** Break allowance deducted because the shift never punched a break. */
+  unloggedBreakMinutes: number;
   totalEligibleMinutes: number;
   graceMinutes: number;
   graceApplied: boolean;
@@ -59,10 +61,27 @@ export function calculateAttendanceSession({
     (!p.companyId || !employee.companyId || normalizeCompanyId(p.companyId) === normalizeCompanyId(employee.companyId)) &&
     toMillis(p.timestamp) >= punchIn.getTime() && toMillis(p.timestamp) <= end.getTime());
   const shift = getEmployeeShiftWindow(employee, punchIn, sessionPunches.filter((p) => p.type !== "out" && p.type !== "extra_out"), end);
+  const required = positiveMinutes(requiredWorkMinutes, getRequiredWorkMinutes(employee, company));
   const workedMinutes = (start: Date, finish: Date) => Math.max(0, Math.floor(
     (finish.getTime() - start.getTime() - breakDurationMs(sessionPunches, start, finish)) / 60_000,
   ));
-  const required = positiveMinutes(requiredWorkMinutes, getRequiredWorkMinutes(employee, company));
+  // A break the employee never punched still happened, and it shows up as a
+  // shift that ran a whole break past its required hours. Charge it there only:
+  // time inside the shift, never an early start, and never the required hours.
+  const breakAllowance =
+    company?.autoDeductUnloggedBreak === false || isOffShiftDay
+      ? 0
+      : getEmployeeBreakSettings(employee, employee.companyId).allowanceMinutes;
+  const loggedBreak = Math.floor(breakDurationMs(sessionPunches, punchIn, end) / 60_000);
+  const chargeUnloggedBreak = (inShiftMinutes: number) =>
+    breakAllowance
+      ? unloggedBreakMinutes({
+          allowanceMinutes: breakAllowance,
+          loggedBreakMinutes: loggedBreak,
+          workedMinutes: inShiftMinutes,
+          requiredMinutes: required,
+        })
+      : 0;
   const graceMinutes = positiveMinutes(
     punchOutGraceMinutes ?? company?.punchOutGraceMinutes,
     DEFAULT_PUNCH_OUT_GRACE_MINUTES,
@@ -82,6 +101,7 @@ export function calculateAttendanceSession({
         actualWorkMinutes: elapsedMinutes,
         normalWorkMinutes: 0,
         overtimeMinutes: elapsedMinutes,
+        unloggedBreakMinutes: 0,
         totalEligibleMinutes: elapsedMinutes,
         graceMinutes,
         graceApplied: false,
@@ -99,6 +119,7 @@ export function calculateAttendanceSession({
       actualWorkMinutes,
       normalWorkMinutes: 0,
       overtimeMinutes: actualWorkMinutes,
+      unloggedBreakMinutes: 0,
       totalEligibleMinutes: actualWorkMinutes,
       graceMinutes,
       graceApplied: false,
@@ -119,23 +140,23 @@ export function calculateAttendanceSession({
       ? 0
       : workedMinutes(shift.start, now);
     const missingPunchOut = now.getTime() > shift.effectiveEnd.getTime();
-    const normalWorkMinutes = Math.min(
-      required,
-      isEarlyStart ? shiftElapsedMinutes : elapsedMinutes,
-    );
+    const inShiftMinutes = isEarlyStart ? shiftElapsedMinutes : elapsedMinutes;
+    const unloggedBreak = chargeUnloggedBreak(inShiftMinutes);
+    const normalWorkMinutes = Math.min(required, inShiftMinutes);
     const overtimeMinutes = isEarlyStart
-      ? earlyWorkedMinutes + Math.max(0, shiftElapsedMinutes - required)
-      : Math.max(0, elapsedMinutes - required);
+      ? earlyWorkedMinutes + Math.max(0, shiftElapsedMinutes - required - unloggedBreak)
+      : Math.max(0, elapsedMinutes - required - unloggedBreak);
 
     return {
       attendanceDate,
       scheduledShiftStart: shift.start,
       scheduledShiftEnd: shift.end,
       requiredWorkMinutes: required,
-      actualWorkMinutes: elapsedMinutes,
+      actualWorkMinutes: Math.max(0, elapsedMinutes - unloggedBreak),
       normalWorkMinutes,
       overtimeMinutes,
       earlyStartMinutes,
+      unloggedBreakMinutes: unloggedBreak,
       totalEligibleMinutes: normalWorkMinutes + overtimeMinutes,
       graceMinutes,
       graceApplied: false,
@@ -153,6 +174,7 @@ export function calculateAttendanceSession({
   // If punched in early, normal work hours start from shift.start
   const effectiveIn = isEarlyStart ? shift.start : punchIn;
   const normalizedWorkMinutes = workedMinutes(effectiveIn, normalizedOut);
+  const unloggedBreak = chargeUnloggedBreak(normalizedWorkMinutes);
   const normalWorkMinutes = Math.min(required, normalizedWorkMinutes);
 
   // Overtime starts after required hours or after grace boundary, plus any early start minutes
@@ -160,7 +182,7 @@ export function calculateAttendanceSession({
     punchOut > graceBoundary || normalizedWorkMinutes > required
       ? Math.max(
           0,
-          workedMinutes(effectiveIn, punchOut) - normalWorkMinutes,
+          workedMinutes(effectiveIn, punchOut) - normalWorkMinutes - unloggedBreak,
         )
       : 0;
   const overtimeMinutes = earlyWorkedMinutes + postShiftOvertime;
@@ -170,10 +192,11 @@ export function calculateAttendanceSession({
     scheduledShiftStart: shift.start,
     scheduledShiftEnd: shift.end,
     requiredWorkMinutes: required,
-    actualWorkMinutes,
+    actualWorkMinutes: Math.max(0, actualWorkMinutes - unloggedBreak),
     normalWorkMinutes,
     overtimeMinutes,
     earlyStartMinutes,
+    unloggedBreakMinutes: unloggedBreak,
     totalEligibleMinutes: normalWorkMinutes + overtimeMinutes,
     graceMinutes,
     graceApplied: isInsideGrace,

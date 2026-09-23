@@ -784,7 +784,13 @@ function ReportsPage() {
           isOvertimeApproved,
           isOvertimeRejected,
           overtimeStatus,
-          note: approvedLeave ? describeLeave(approvedLeave) : holiday?.name || undefined,
+          note:
+            approvedLeave
+              ? describeLeave(approvedLeave)
+              : holiday?.name ||
+                (sessionCalc?.unloggedBreakMinutes
+                  ? `${formatWorkMinutes(sessionCalc.unloggedBreakMinutes)} break deducted (none punched)`
+                  : undefined),
           status: holiday
             ? "Holiday"
             : approvedLeave

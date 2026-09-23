@@ -1193,6 +1193,9 @@ function CompanyModal({
   const [logoUrl, setLogoUrl] = useState(companyToEdit?.logoUrl ?? DEFAULT_LOGO);
   const [defaultShiftHours, setDefaultShiftHours] = useState(companyToEdit?.defaultShiftHours ?? 8);
   const [lateGraceMinutes, setLateGraceMinutes] = useState(companyToEdit?.lateGraceMinutes ?? 5);
+  const [autoDeductUnloggedBreak, setAutoDeductUnloggedBreak] = useState(
+    companyToEdit?.autoDeductUnloggedBreak !== false,
+  );
   const [punchOutGraceMinutes, setPunchOutGraceMinutes] = useState(
     companyToEdit?.punchOutGraceMinutes ?? 20,
   );
@@ -1224,6 +1227,7 @@ function CompanyModal({
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
+          autoDeductUnloggedBreak,
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           archived: isMain ? false : archived,
@@ -1239,6 +1243,7 @@ function CompanyModal({
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
+          autoDeductUnloggedBreak,
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           holidays: [],
@@ -1359,6 +1364,22 @@ function CompanyModal({
             />
           </div>
         </div>
+
+        <label className="flex items-start gap-2 rounded-lg border bg-muted/30 p-3 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoDeductUnloggedBreak}
+            onChange={(event) => setAutoDeductUnloggedBreak(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Deduct an unlogged break</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              When a shift runs a full break longer than its required hours and nobody punched a
+              break, charge the employee's break allowance instead of counting it as overtime.
+            </span>
+          </span>
+        </label>
 
         <div className="pt-2 border-t">
           <WorkingDaysPicker
