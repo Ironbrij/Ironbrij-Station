@@ -160,14 +160,15 @@ function getDayOfWeekStr(dateStr: string): string {
 }
 
 function ReportsPage() {
-  const { company: authCompany, user, activeCompanyId } = useAuth();
+  const { company: authCompany, user } = useAuth();
   const currentMonth = new Date().toISOString().slice(0, 7);
   const initialBounds = monthBounds(currentMonth);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyFilter, setCompanyFilter] = useState(activeCompanyId);
+  // Reports open across every client; the Target Company picker below narrows them.
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
@@ -178,10 +179,6 @@ function ReportsPage() {
   const [departmentId, setDepartmentId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    setCompanyFilter(activeCompanyId);
-  }, [activeCompanyId]);
 
   // Report view mode: 'summary' = Interactive Company & VA Report, 'daily' = Raw Daily Logs
   const [viewMode, setViewMode] = useState<"summary" | "daily">("summary");
