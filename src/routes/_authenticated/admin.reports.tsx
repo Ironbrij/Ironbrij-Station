@@ -42,6 +42,7 @@ import {
   type Punch,
 } from "@/lib/types";
 import { computeDay, toDate, toMillis } from "@/lib/time";
+import { breakDurationMs } from "@/lib/work-breaks";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import {
   computeEmployeeLateness,
@@ -93,6 +94,10 @@ export interface DailyIntervalRecord {
   isMissingPunchOut: boolean;
   isAutoPunchOut: boolean;
   minutesLate: number;
+  /** Break the employee actually punched, in minutes. */
+  breakMinutes: number;
+  /** Break allowance charged because none was punched, in minutes. */
+  unloggedBreakMinutes: number;
   regularHours: number;
   rawOvertimeHours: number;
   isOvertimeApproved: boolean;
@@ -767,9 +772,24 @@ function ReportsPage() {
             })
           : undefined;
 
+        // Lunch and other breaks the employee punched, plus any allowance charged
+        // because none was punched: both explain the gap between clock and hours.
+        const punchedBreakMinutes =
+          firstIn && lastOut
+            ? Math.round(
+                breakDurationMs(
+                  sorted,
+                  toDate(firstIn.timestamp) ?? new Date(),
+                  toDate(lastOut.timestamp) ?? new Date(),
+                ) / 60_000,
+              )
+            : 0;
+
         dailyIntervals.push({
           date,
           dayOfWeek: getDayOfWeekStr(date),
+          breakMinutes: punchedBreakMinutes,
+          unloggedBreakMinutes: sessionCalc?.unloggedBreakMinutes || 0,
           scheduledShift: scheduledShiftStr,
           punchInTime: punchInTimeStr,
           punchOutTime: punchOutTimeStr,
@@ -1350,6 +1370,8 @@ function ReportsPage() {
             isMissingPunchOut: false,
             isAutoPunchOut: false,
             minutesLate: 0,
+            breakMinutes: 0,
+            unloggedBreakMinutes: 0,
             status:
               customDayStatus.trim() ||
               (customDayNote ? customDayNote.slice(0, 20) : "Custom Record"),
@@ -1573,6 +1595,12 @@ function ReportsPage() {
       "Absent Days": row.absentDays || 0,
       "Leave Days": row.leaveDays || 0,
       "Late Days": row.lateDays || 0,
+      "Break Taken (h)": (
+        row.dailyIntervals.reduce((sum, day) => sum + (day.breakMinutes || 0), 0) / 60
+      ).toFixed(1),
+      "Break Deducted (h)": (
+        row.dailyIntervals.reduce((sum, day) => sum + (day.unloggedBreakMinutes || 0), 0) / 60
+      ).toFixed(1),
       "Regular Hours": Number(row.regularHours).toFixed(1),
       "Accepted Overtime Hours": Number(row.overtimeHours).toFixed(1),
       "Overtime Dates": (row.overtimeDates || []).join("; "),
@@ -2502,6 +2530,7 @@ function ReportsPage() {
                     <th className="p-2.5 text-left">Shift Window</th>
                     <th className="p-2.5 text-left">Punch In</th>
                     <th className="p-2.5 text-left">Punch Out</th>
+                    <th className="p-2.5 text-right">Break</th>
                     <th className="p-2.5 text-right">Regular (h)</th>
                     <th className="p-2.5 text-right">Overtime (h)</th>
                     <th className="p-2.5 text-center">Overtime Status</th>
@@ -2607,6 +2636,30 @@ function ReportsPage() {
                         )}
                       </td>
 
+                      {/* Break taken */}
+                      <td className="p-2.5 text-right">
+                        {day.breakMinutes > 0 ? (
+                          <span
+                            className="font-semibold text-foreground"
+                            title="Break punched by the employee"
+                          >
+                            {formatWorkMinutes(day.breakMinutes)}
+                          </span>
+                        ) : day.unloggedBreakMinutes > 0 ? (
+                          <span
+                            className="font-semibold text-amber-600"
+                            title="No break was punched, so the shift's break allowance was deducted"
+                          >
+                            {formatWorkMinutes(day.unloggedBreakMinutes)}
+                            <span className="block text-[10px] font-medium text-muted-foreground">
+                              auto
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+
                       {/* Regular Hours */}
                       <td className="p-2.5 text-right">
                         <input
@@ -2686,7 +2739,7 @@ function ReportsPage() {
 
                   {selectedIntervalEmployee.dailyIntervals.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                      <td colSpan={9} className="p-8 text-center text-muted-foreground">
                         No recorded intervals found for this date range.
                       </td>
                     </tr>
