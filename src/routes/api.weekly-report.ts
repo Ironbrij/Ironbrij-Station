@@ -208,6 +208,7 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     return Response.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
+  const wantsList = String(read("list")) === "true";
   const requestedCompany = (read("companyId") || "all").trim();
   const weeksAgo = Math.max(0, Math.min(52, Number(read("weeksAgo")) || 0));
   const dryRun = String(read("dryRun")) === "true";
@@ -220,6 +221,33 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     listCollection<LeaveRequest>("leaveRequests"),
     listCollection<OvertimeRequest>("overtimeRequests"),
   ]);
+
+  // A scheduler asks which clients to send for, so adding a client never means
+  // editing the schedule: configure recipients and it joins the next run.
+  if (wantsList) {
+    const main = companies.find((item) => item.isMain) || companies[0] || null;
+    const targets = companies
+      .filter((item) => !item.archived && item.status !== "archived")
+      .map((item) => ({
+        companyId: normalizeCompanyId(item.id),
+        companyName: item.name,
+        recipients: parseRecipients(
+          (item as unknown as Record<string, unknown>).weeklyReportRecipients,
+        ),
+      }))
+      .filter((item) => item.recipients.length > 0);
+    const allRecipients = parseRecipients(
+      (main as unknown as Record<string, unknown> | null)?.weeklyReportAllRecipients,
+    );
+    if (allRecipients.length > 0) {
+      targets.push({
+        companyId: "all",
+        companyName: "All Companies",
+        recipients: allRecipients,
+      });
+    }
+    return Response.json({ ok: true, count: targets.length, targets });
+  }
 
   const isAll = requestedCompany === "all";
   const company = isAll

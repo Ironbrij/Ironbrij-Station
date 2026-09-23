@@ -1,0 +1,62 @@
+{
+  "name": "SavyTimes - Attendance Report Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "time-station-report-email",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "report-email-webhook",
+      "name": "Report Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "time-station-report-email",
+      "notes": "Called by /api/send-report, both from the Reports screen's Send button and from the weekly automation."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.body.email.to }}",
+        "subject": "={{ $json.body.email.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body.email.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "SavyTimes"
+        }
+      },
+      "id": "send-report-email",
+      "name": "Send Report with Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [260, 0],
+      "notes": "email.to is already a comma separated list of validated addresses."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true }",
+        "options": {}
+      },
+      "id": "report-email-respond",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Report Email Webhook": {
+      "main": [[{ "node": "Send Report with Gmail", "type": "main", "index": 0 }]]
+    },
+    "Send Report with Gmail": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
