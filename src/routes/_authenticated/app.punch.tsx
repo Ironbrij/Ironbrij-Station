@@ -1,7 +1,7 @@
 import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/daily-reports";
 import { randomQuote } from "@/lib/quotes-seed";
 import { toast } from "sonner";
+import { resolveScheduledCompany } from "@/lib/shift-company";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -80,6 +81,7 @@ import {
   getEmployeePunchesForCompany,
   getPunchCompanyId,
   getRequiredWorkMinutes,
+  normalizeCompanyId,
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { LunchBreakCard } from "@/components/lunch/LunchBreakCard";
@@ -286,6 +288,32 @@ function PunchPage() {
   const activeWorkingSession = useMemo(() => {
     return getActiveWorkingSession(allPunches, employee, new Date(now), companies);
   }, [allPunches, employee, now, companies]);
+
+  // A VA covering several clients has to be punched in against the right one.
+  // Leaving that to a manual switch is how attendance lands on the wrong
+  // company, so follow the schedule whenever no shift is open to strand.
+  const scheduledCompany = useMemo(
+    () => resolveScheduledCompany(employee, companies, new Date(now)),
+    [companies, employee, now],
+  );
+  const announcedSwitchRef = useRef("");
+  useEffect(() => {
+    if (!scheduledCompany || activeWorkingSession.activeCompanyId) return;
+    if (normalizeCompanyId(activeCompanyId) === scheduledCompany.companyId) return;
+    if (!getEmployeeCompanyIds(employee).includes(scheduledCompany.companyId)) return;
+    setActiveCompanyId(scheduledCompany.companyId);
+    const key = `${scheduledCompany.companyId}:${scheduledCompany.shift.startTime}`;
+    if (announcedSwitchRef.current !== key) {
+      announcedSwitchRef.current = key;
+      toast.info(`Switched to ${scheduledCompany.companyName} for your ${scheduledCompany.shift.startTime} shift.`);
+    }
+  }, [
+    activeCompanyId,
+    activeWorkingSession.activeCompanyId,
+    employee,
+    scheduledCompany,
+    setActiveCompanyId,
+  ]);
 
   const effectiveEmployee = useMemo(() => {
     if (!employee) return null;
