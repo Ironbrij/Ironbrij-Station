@@ -4,6 +4,7 @@ import { addDoc, collection, doc, onSnapshot, setDoc, Timestamp } from "firebase
 import {
   ArrowLeft,
   BriefcaseBusiness,
+  Building2,
   CalendarDays,
   Clock3,
   Download,
@@ -58,9 +59,11 @@ import {
   getEmployeeForCompany,
   getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
+  getPunchCompanyId,
   getRequiredWorkMinutes,
   normalizeCompanyId,
 } from "@/lib/company-context";
+import { groupPunchesByClient } from "@/lib/punch-clients";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { getEmployeeAllShiftDefinitions, findShiftConflicts } from "@/lib/shift-conflict";
 import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
@@ -212,6 +215,15 @@ function EmployeeDetail() {
       .filter((punch) => Boolean(punch.timestamp))
       .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   }, [activeCompanyId, allPunches, companies, employee, rawEmployee]);
+
+  // One employee's day can interleave several clients, so every event says which.
+  const clientNameOf = useMemo(() => {
+    const names = new Map(companies.map((item) => [normalizeCompanyId(item.id), item.name]));
+    return (punch: Punch) => {
+      const companyId = getPunchCompanyId(punch, rawEmployee, companies);
+      return names.get(companyId) || punch.companyName || companyId;
+    };
+  }, [companies, rawEmployee]);
 
   const companyLeaves = useMemo(() => {
     if (!rawEmployee) return [];
@@ -465,10 +477,11 @@ function EmployeeDetail() {
           : "N/A",
       Status: row.status,
       MinutesLate: row.minutesLate,
+      Clients: [...new Set(row.punches.map(clientNameOf))].join(", "),
       AllEvents: row.punches
         .map(
           (punch) =>
-            `${formatPunchType(punch.type)} ${formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}`,
+            `${clientNameOf(punch)}: ${formatPunchType(punch.type)} ${formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}`,
         )
         .join(" | "),
     }));
@@ -512,6 +525,7 @@ function EmployeeDetail() {
     pdf.text("Out", 80, y);
     pdf.text("Hours", 112, y);
     pdf.text("Status", 140, y);
+    pdf.text("Clients", 200, y);
     pdf.setFont("helvetica", "normal");
     for (const row of visibleRows) {
       y += 7;
@@ -532,6 +546,7 @@ function EmployeeDetail() {
       );
       pdf.text(row.hours.toFixed(2), 112, y);
       pdf.text(row.minutesLate ? `Late ${row.minutesLate}m` : row.status.slice(0, 28), 140, y);
+      pdf.text([...new Set(row.punches.map(clientNameOf))].join(", ").slice(0, 40) || "—", 200, y);
     }
     pdf.save(`${employee.name.replace(/\s+/g, "_")}_${fileSuffix()}_attendance.pdf`);
     toast.success("Employee PDF downloaded");
@@ -1146,21 +1161,35 @@ function EmployeeDetail() {
                     </div>
                   </td>
                   <td className="p-3.5">
-                    <div className="flex max-w-lg flex-wrap gap-1.5">
-                      {row.punches.map((punch) => (
-                        <span
-                          key={punch.id}
-                          className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground"
-                        >
-                          {punch.type === "in" || punch.type === "extra_in" ? (
-                            <LogIn className="h-3 w-3 text-emerald-600" />
-                          ) : (
-                            <LogIn className="h-3 w-3 rotate-180 text-slate-500" />
+                    <div className="max-w-lg space-y-2">
+                      {groupPunchesByClient(row.punches, clientNameOf).map((group, _i, all) => (
+                        <div key={group.client}>
+                          {(all.length > 1 || activeCompanyId === "all") && (
+                            <div className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              <Building2 className="h-3 w-3 shrink-0 text-primary" />
+                              <span className="truncate" title={group.client}>
+                                {group.client}
+                              </span>
+                            </div>
                           )}
-                          {formatPunchType(punch.type)}{" "}
-                          {formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}
-                          {punch.isAuto ? " · auto" : ""}
-                        </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.punches.map((punch) => (
+                              <span
+                                key={punch.id}
+                                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground"
+                              >
+                                {punch.type === "in" || punch.type === "extra_in" ? (
+                                  <LogIn className="h-3 w-3 text-emerald-600" />
+                                ) : (
+                                  <LogIn className="h-3 w-3 rotate-180 text-slate-500" />
+                                )}
+                                {formatPunchType(punch.type)}{" "}
+                                {formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}
+                                {punch.isAuto ? " · auto" : ""}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                       {row.punches.length === 0 && (
                         <span className="text-xs text-muted-foreground">No punch events</span>
