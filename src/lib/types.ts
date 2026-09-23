@@ -35,6 +35,10 @@ export interface Company {
   maxDailyBreaks?: number;
   /** Deduct the configured break from a shift that never punched one. Default on. */
   autoDeductUnloggedBreak?: boolean;
+  /** Who receives this client's automated Monday-to-Friday report. */
+  weeklyReportRecipients?: string[];
+  /** Who receives the all-clients weekly report. Only read on the main company. */
+  weeklyReportAllRecipients?: string[];
   archived?: boolean;
   status?: "active" | "archived";
   isMain?: boolean;

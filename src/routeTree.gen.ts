@@ -25,6 +25,7 @@ import { Route as ApiMcpActionRouteImport } from './routes/api.mcp-action'
 import { Route as ApiPunchOutReminderRouteImport } from './routes/api.punch-out-reminder'
 import { Route as ApiSendReportRouteImport } from './routes/api.send-report'
 import { Route as ApiSodMentionNotificationRouteImport } from './routes/api.sod-mention-notification'
+import { Route as ApiWeeklyReportRouteImport } from './routes/api.weekly-report'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminCompanyRouteImport } from './routes/_authenticated/admin.company'
@@ -130,6 +131,11 @@ const ApiSodMentionNotificationRoute =
     path: '/api/sod-mention-notification',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiWeeklyReportRoute = ApiWeeklyReportRouteImport.update({
+  id: '/api/weekly-report',
+  path: '/api/weekly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
@@ -264,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
+  '/api/weekly-report': typeof ApiWeeklyReportRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -301,6 +308,7 @@ export interface FileRoutesByTo {
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
+  '/api/weekly-report': typeof ApiWeeklyReportRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -341,6 +349,7 @@ export interface FileRoutesById {
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
+  '/api/weekly-report': typeof ApiWeeklyReportRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/_authenticated/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -381,6 +390,7 @@ export interface FileRouteTypes {
     | '/api/punch-out-reminder'
     | '/api/send-report'
     | '/api/sod-mention-notification'
+    | '/api/weekly-report'
     | '/invite/$token'
     | '/admin/company'
     | '/admin/departments'
@@ -418,6 +428,7 @@ export interface FileRouteTypes {
     | '/api/punch-out-reminder'
     | '/api/send-report'
     | '/api/sod-mention-notification'
+    | '/api/weekly-report'
     | '/invite/$token'
     | '/admin/company'
     | '/admin/departments'
@@ -457,6 +468,7 @@ export interface FileRouteTypes {
     | '/api/punch-out-reminder'
     | '/api/send-report'
     | '/api/sod-mention-notification'
+    | '/api/weekly-report'
     | '/invite/$token'
     | '/_authenticated/admin/company'
     | '/_authenticated/admin/departments'
@@ -495,6 +507,7 @@ export interface RootRouteChildren {
   ApiPunchOutReminderRoute: typeof ApiPunchOutReminderRoute
   ApiSendReportRoute: typeof ApiSendReportRoute
   ApiSodMentionNotificationRoute: typeof ApiSodMentionNotificationRoute
+  ApiWeeklyReportRoute: typeof ApiWeeklyReportRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
 
@@ -610,6 +623,13 @@ declare module '@tanstack/react-router' {
       path: '/api/sod-mention-notification'
       fullPath: '/api/sod-mention-notification'
       preLoaderRoute: typeof ApiSodMentionNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/weekly-report': {
+      id: '/api/weekly-report'
+      path: '/api/weekly-report'
+      fullPath: '/api/weekly-report'
+      preLoaderRoute: typeof ApiWeeklyReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite/$token': {
@@ -862,6 +882,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPunchOutReminderRoute: ApiPunchOutReminderRoute,
   ApiSendReportRoute: ApiSendReportRoute,
   ApiSodMentionNotificationRoute: ApiSodMentionNotificationRoute,
+  ApiWeeklyReportRoute: ApiWeeklyReportRoute,
   InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport

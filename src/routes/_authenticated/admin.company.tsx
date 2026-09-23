@@ -1196,6 +1196,20 @@ function CompanyModal({
   const [autoDeductUnloggedBreak, setAutoDeductUnloggedBreak] = useState(
     companyToEdit?.autoDeductUnloggedBreak !== false,
   );
+  const [weeklyReportRecipients, setWeeklyReportRecipients] = useState(
+    (companyToEdit?.weeklyReportRecipients || []).join(", "),
+  );
+  const [weeklyReportAllRecipients, setWeeklyReportAllRecipients] = useState(
+    (companyToEdit?.weeklyReportAllRecipients || []).join(", "),
+  );
+  const splitEmails = (value: string) => [
+    ...new Set(
+      value
+        .split(/[,;\s]+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)),
+    ),
+  ];
   const [punchOutGraceMinutes, setPunchOutGraceMinutes] = useState(
     companyToEdit?.punchOutGraceMinutes ?? 20,
   );
@@ -1228,6 +1242,10 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           autoDeductUnloggedBreak,
+          weeklyReportRecipients: splitEmails(weeklyReportRecipients),
+          ...(isMain
+            ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
+            : {}),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           archived: isMain ? false : archived,
@@ -1244,6 +1262,10 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           autoDeductUnloggedBreak,
+          weeklyReportRecipients: splitEmails(weeklyReportRecipients),
+          ...(isMain
+            ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
+            : {}),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           holidays: [],
@@ -1363,6 +1385,38 @@ function CompanyModal({
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
             />
           </div>
+        </div>
+
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
+          <div>
+            <label className="text-sm font-medium">Weekly report recipients</label>
+            <p className="text-xs text-muted-foreground">
+              Who receives this client's Monday-to-Friday report. Separate addresses with commas.
+              Leave empty to switch the automation off for this client.
+            </p>
+            <input
+              type="text"
+              value={weeklyReportRecipients}
+              onChange={(event) => setWeeklyReportRecipients(event.target.value)}
+              placeholder="client@example.com, manager@example.com"
+              className="mt-1.5 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+            />
+          </div>
+          {isMain && (
+            <div className="border-t pt-2.5">
+              <label className="text-sm font-medium">All-clients report recipients</label>
+              <p className="text-xs text-muted-foreground">
+                Who receives the combined report covering every client.
+              </p>
+              <input
+                type="text"
+                value={weeklyReportAllRecipients}
+                onChange={(event) => setWeeklyReportAllRecipients(event.target.value)}
+                placeholder="ops@example.com"
+                className="mt-1.5 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+              />
+            </div>
+          )}
         </div>
 
         <label className="flex items-start gap-2 rounded-lg border bg-muted/30 p-3 text-sm cursor-pointer">
