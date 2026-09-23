@@ -15,3 +15,29 @@ export function breakDurationMs(punches: Punch[], start: Date, end: Date): numbe
   if (open !== null) total += Math.max(0, end.getTime() - Math.max(open, start.getTime()));
   return total;
 }
+
+/**
+ * A break that was taken but never punched is still time away from work, and it
+ * surfaces as a shift that ran a whole break longer than it should have.
+ *
+ * The charge is all or nothing: a break happens in one block, so an employee who
+ * stayed a full allowance past their required hours is credited for the shift
+ * rather than for the break inside it, while a shorter overrun stays real
+ * overtime. Time up to the required hours is never touched.
+ */
+export function unloggedBreakMinutes({
+  allowanceMinutes,
+  loggedBreakMinutes,
+  workedMinutes,
+  requiredMinutes,
+}: {
+  allowanceMinutes: number;
+  loggedBreakMinutes: number;
+  workedMinutes: number;
+  requiredMinutes: number;
+}): number {
+  const unclaimed = Math.max(0, Math.round(allowanceMinutes) - Math.round(loggedBreakMinutes));
+  if (unclaimed <= 0) return 0;
+  const beyondRequired = Math.max(0, Math.round(workedMinutes) - Math.max(0, requiredMinutes));
+  return beyondRequired >= unclaimed ? unclaimed : 0;
+}

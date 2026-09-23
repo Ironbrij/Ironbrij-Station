@@ -33,6 +33,8 @@ export interface Company {
   timezone?: string;
   breakAllowanceMinutes?: number;
   maxDailyBreaks?: number;
+  /** Deduct the configured break from a shift that never punched one. Default on. */
+  autoDeductUnloggedBreak?: boolean;
   archived?: boolean;
   status?: "active" | "archived";
   isMain?: boolean;

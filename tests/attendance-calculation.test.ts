@@ -166,7 +166,10 @@ test("an open session after shift end is missing punch-out without a fake end", 
   });
   assert.equal(result.status, "missing_punch_out");
   assert.equal(result.missingPunchOut, true);
-  assert.equal(result.overtimeMinutes, 60);
+  // Nine hours clocked against an eight hour shift with a 30 minute break never
+  // punched: half that hour is the break, not overtime.
+  assert.equal(result.unloggedBreakMinutes, 30);
+  assert.equal(result.overtimeMinutes, 30);
 });
 
 test("reminder opens exactly twenty minutes before shift end", () => {
@@ -922,3 +925,74 @@ test("fresh punch with clock skew, optimistic null timestamp, or cross-company m
   assert.equal(statusStale.isPunchedIn, false);
 });
 
+
+test("a break nobody punched comes off the hours it was taken from", () => {
+  // Cyrille is contracted for eight hours with a one hour break. She clocks
+  // 09:00-18:00 and never punches the break, so the report reads nine hours.
+  const emp = employee({ breakAllowanceMinutes: 60 });
+  const session = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("09:00"),
+    punchOut: at("18:00"),
+  });
+  assert.equal(session.unloggedBreakMinutes, 60);
+  assert.equal(session.actualWorkMinutes, 480);
+  assert.equal(session.normalWorkMinutes, 480);
+  assert.equal(session.overtimeMinutes, 0);
+});
+
+test("a punched break is not charged twice", () => {
+  const emp = employee({ breakAllowanceMinutes: 60 });
+  const lunch = [
+    { id: "s", employeeId: emp.id, companyId: "alpha", type: "lunch_start", timestamp: at("12:00") },
+    { id: "e", employeeId: emp.id, companyId: "alpha", type: "lunch_end", timestamp: at("13:00") },
+  ] as unknown as Punch[];
+  const session = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("09:00"),
+    punchOut: at("18:00"),
+    punches: lunch,
+  });
+  assert.equal(session.unloggedBreakMinutes, 0);
+  assert.equal(session.actualWorkMinutes, 480);
+  assert.equal(session.overtimeMinutes, 0);
+});
+
+test("a shift that did not run a whole break longer keeps its overtime", () => {
+  const emp = employee({ breakAllowanceMinutes: 60 });
+  const session = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("09:00"),
+    punchOut: at("17:40"),
+  });
+  // Forty minutes is not a missed hour-long break, so it stays real overtime.
+  assert.equal(session.unloggedBreakMinutes, 0);
+  assert.equal(session.overtimeMinutes, 40);
+});
+
+test("a short shift never loses its required hours to a break", () => {
+  const emp = employee({ breakAllowanceMinutes: 60 });
+  const session = calculateAttendanceSession({
+    employee: emp,
+    company,
+    punchIn: at("09:00"),
+    punchOut: at("13:00"),
+  });
+  assert.equal(session.unloggedBreakMinutes, 0);
+  assert.equal(session.actualWorkMinutes, 240);
+});
+
+test("a company can turn the automatic break deduction off", () => {
+  const emp = employee({ breakAllowanceMinutes: 60 });
+  const session = calculateAttendanceSession({
+    employee: emp,
+    company: { ...company, autoDeductUnloggedBreak: false },
+    punchIn: at("09:00"),
+    punchOut: at("18:00"),
+  });
+  assert.equal(session.unloggedBreakMinutes, 0);
+  assert.equal(session.overtimeMinutes, 60);
+});

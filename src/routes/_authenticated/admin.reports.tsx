@@ -69,6 +69,8 @@ import {
 } from "@/lib/company-context";
 import { filterEmployeeList } from "@/lib/employee-list";
 import { companyEmailBranding } from "@/lib/email-branding";
+import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { resolveManualClockOut } from "@/lib/manual-clock-in";
 
 export interface PunchSessionRecord {
   inTime: string;
@@ -147,6 +149,20 @@ function monthBounds(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function addCalendarDay(dateKey: string): string {
+  const next = new Date(`${dateKey}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+/** "sick leave (unpaid) - dentist", so a zero-hours day explains itself. */
+function describeLeave(leave: LeaveRequest): string {
+  const category = leave.leaveCategory ? `${leave.leaveCategory} leave` : "Leave";
+  const payment = leave.paymentStatus === "unpaid" ? " (unpaid)" : "";
+  const reason = leave.reason?.trim();
+  return `${category}${payment}${reason ? ` - ${reason}` : ""}`;
 }
 
 function getDayOfWeekStr(dateStr: string): string {
@@ -538,6 +554,20 @@ function ReportsPage() {
       for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
         if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
       }
+      // A scheduled day with neither punch nor leave is exactly the day an admin
+      // is asking about when a week reads as zero worked days. Seed every one so
+      // it gets a row that says what happened instead of going missing.
+      const scheduledDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
+      const todayKey = zonedDateKey(new Date(), shiftTimezone);
+      const joinedKey = rawEmployee.createdAt
+        ? zonedDateKey(new Date(rawEmployee.createdAt), shiftTimezone)
+        : "";
+      const lastCountedDay = to < todayKey ? to : todayKey;
+      for (let date = from; date <= lastCountedDay; date = addCalendarDay(date)) {
+        if (dayPunchGroups.has(date) || (joinedKey && date < joinedKey)) continue;
+        if (!scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay())) continue;
+        dayPunchGroups.set(date, []);
+      }
 
       let totalRegularHours = 0;
       let totalApprovedOvertimeHours = 0;
@@ -754,6 +784,13 @@ function ReportsPage() {
           isOvertimeApproved,
           isOvertimeRejected,
           overtimeStatus,
+          note:
+            approvedLeave
+              ? describeLeave(approvedLeave)
+              : holiday?.name ||
+                (sessionCalc?.unloggedBreakMinutes
+                  ? `${formatWorkMinutes(sessionCalc.unloggedBreakMinutes)} break deducted (none punched)`
+                  : undefined),
           status: holiday
             ? "Holiday"
             : approvedLeave
@@ -770,7 +807,9 @@ function ReportsPage() {
                         ? `Late (${lateness.minutes}m)`
                         : firstIn
                           ? "Complete"
-                          : "Off / No punches",
+                          : isScheduledDay
+                            ? "Absent (no punch)"
+                            : "Off / No punches",
         });
       }
 
@@ -788,17 +827,47 @@ function ReportsPage() {
         }
       }
 
-      let initialRemarks = "";
-      if (totalLateDays > 0) {
-        initialRemarks = `Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`;
+      // Zero worked days is only useful next to its reason, so the remarks open
+      // with the leave and absence behind it.
+      const leaveReasons = [
+        ...new Set(
+          employeeLeaves
+            .filter((leave) =>
+              getEmployeeApprovedLeaveDates(employee, [leave]).some((d) => d >= from && d <= to),
+            )
+            .map((leave) => leave.leaveCategory || "leave"),
+        ),
+      ];
+      const notes: string[] = [];
+      if (leaveDaysCount > 0) {
+        notes.push(
+          `On leave ${leaveDaysCount} day${leaveDaysCount > 1 ? "s" : ""}` +
+            (leaveReasons.length ? ` (${leaveReasons.join(", ")})` : ""),
+        );
       }
+      if (absentDaysCount > 0) {
+        notes.push(
+          `Absent ${absentDaysCount} scheduled day${absentDaysCount > 1 ? "s" : ""}`,
+        );
+      }
+      if (totalLateDays > 0) {
+        notes.push(`Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`);
+      }
+      const initialRemarks = notes.join("; ");
 
       const reg = Math.round(totalRegularHours * 10) / 10;
       const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
+      // Someone scheduled who never punched is exactly who an admin is looking
+      // for, so keep the row and let its remarks say absent rather than drop it.
       const hasWork =
-        reg > 0 || ot > 0 || paidLeaveDays > 0 || unpaidLeaveDays > 0 || workedDaysCount > 0;
+        reg > 0 ||
+        ot > 0 ||
+        paidLeaveDays > 0 ||
+        unpaidLeaveDays > 0 ||
+        workedDaysCount > 0 ||
+        absentDaysCount > 0;
 
-      // If the employee did not work and had no active leave during this period, exclude them from report
+      // Nothing scheduled and nothing worked in this period: not this report's row.
       if (!hasWork) {
         continue;
       }
@@ -875,6 +944,14 @@ function ReportsPage() {
       return [...added, ...computed];
     });
   }, [computedSummaryRows, removedRowIds]);
+
+  // The inspect drawer holds a copy of one row, so it has to follow the live
+  // rows or a punch fixed inside it keeps showing the figures from before.
+  useEffect(() => {
+    setSelectedIntervalEmployee((current) =>
+      current ? reportRows.find((row) => row.id === current.id) || current : current,
+    );
+  }, [reportRows]);
 
   // Reset custom edits back to computed values
   function handleResetToCalculated() {
@@ -980,13 +1057,17 @@ function ReportsPage() {
   // DAILY INTERVAL & OVERTIME APPROVAL HANDLERS
   // --------------------------------------------------------------------------
 
-  // Update a single day's interval record for an employee
+  // Update a single day's interval record for an employee.
+  // `persisted` means the change was written to Firestore: the row must then
+  // follow the recomputed figures, not a hand-patched copy of them, or fixing a
+  // punch here looks like it never took effect.
   function handleUpdateDayInterval(
     employeeRowId: string,
     date: string,
     updates: Partial<DailyIntervalRecord>,
+    { persisted = false }: { persisted?: boolean } = {},
   ) {
-    setHasCustomEdits(true);
+    if (!persisted) setHasCustomEdits(true);
     setReportRows((prev) =>
       prev.map((row) => {
         if (row.id !== employeeRowId) return row;
@@ -1016,7 +1097,7 @@ function ReportsPage() {
 
         const updatedRow: ReportRow = {
           ...row,
-          isAdjusted: true,
+          isAdjusted: !persisted,
           dailyIntervals: updatedIntervals,
           regularHours: Math.round(newReg * 10) / 10,
           overtimeHours: Math.round(newApprovedOt * 10) / 10,
@@ -1041,6 +1122,75 @@ function ReportsPage() {
     return getEmployeeCompanyIds(employee)[0] || COMPANY_ID;
   }
 
+  // Typing a punch time in the report used to change the display only, so the
+  // change was lost on the next recompute. Write it as a real punch instead.
+  const [savingDayPunch, setSavingDayPunch] = useState("");
+  async function handleSaveDayPunch(
+    employeeRowId: string,
+    day: DailyIntervalRecord,
+    field: "in" | "out",
+    time: string,
+  ) {
+    if (!time) return;
+    const emp = filteredEmployees.find(
+      (item) => item.id === employeeRowId || item.authUid === employeeRowId,
+    );
+    if (!emp) {
+      toast.error("Could not find this employee to record the punch.");
+      return;
+    }
+    const writeCompanyId = resolveWriteCompanyId(emp);
+    const scopedEmp = getEmployeeForCompany(emp, writeCompanyId);
+    const timezone = getShiftTimezone(scopedEmp);
+    const inTime = field === "in" ? time : day.punchInTime;
+    if (!inTime) {
+      toast.error("Set the clock-in time first, then the clock-out.");
+      return;
+    }
+    const outTime = field === "out" ? time : day.punchOutTime;
+    const busyKey = `${employeeRowId}:${day.date}:${field}`;
+    setSavingDayPunch(busyKey);
+    try {
+      const punchIn = zonedDateTimeToDate(day.date, inTime, timezone);
+      const punchOut = outTime
+        ? resolveManualClockOut(day.date, outTime, timezone, punchIn)
+        : null;
+      const result = await applyPunchCorrection({
+        employee: scopedEmp,
+        profile: emp,
+        companyId: writeCompanyId,
+        companyName: selectedCompany?.name,
+        company: selectedCompany,
+        punches,
+        punchIn,
+        punchOut,
+        actor: user?.email || "admin",
+        note: `Corrected from the ${day.date} report`,
+        timezoneUsed: timezone,
+      });
+      handleUpdateDayInterval(
+        employeeRowId,
+        day.date,
+        {
+          punchInTime: inTime,
+          punchOutTime: outTime || undefined,
+          firstInPunchId: result.punchInId,
+          lastOutPunchId: result.punchOutId,
+          isMissingPunchOut: false,
+          status: field === "in" ? "Clock-in corrected" : "Clock-out corrected",
+        },
+        { persisted: true },
+      );
+      toast.success(
+        `${emp.name}: ${day.date} saved as ${inTime}${outTime ? ` – ${outTime}` : ""}.`,
+      );
+    } catch (err) {
+      toast.error("Could not record the punch: " + (err as Error).message);
+    } finally {
+      setSavingDayPunch("");
+    }
+  }
+
   // Fix Missed Punch Out on a day (sets standard shift end time from employee profile)
   async function handleFixMissedPunchOut(employeeRowId: string, date: string) {
     const emp = filteredEmployees.find(
@@ -1051,10 +1201,19 @@ function ReportsPage() {
     const defaultEndTime = scopedEmp?.shiftEndTime || "17:00";
     const empTz = scopedEmp ? getShiftTimezone(scopedEmp) : "Australia/Sydney";
     const fixedOutDate = zonedDateTimeToDate(date, defaultEndTime, empTz);
+    // Pair the clock-out with the day's clock-in so hours and overtime recompute
+    // against the schedule that shift was actually opened on.
+    const dayIn = punches.find(
+      (punch) =>
+        !punch.voidedAt &&
+        punch.type === "in" &&
+        (punch.attendanceDate || punch.date) === date &&
+        (punch.employeeId === emp?.id || punch.employeeId === emp?.authUid),
+    );
 
     try {
       const fixedPunchRef = await addDoc(collection(db(), "punches"), {
-        employeeId: emp?.id || employeeRowId,
+        employeeId: dayIn?.employeeId || emp?.id || employeeRowId,
         employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
         companyId: writeCompanyId,
         companyName: selectedCompany?.name || "Company",
@@ -1067,16 +1226,28 @@ function ReportsPage() {
         isAdminFix: true,
         adminFixedBy: user?.email || "admin",
         adminFixedAt: new Date().toISOString(),
-        shiftTimezone: empTz,
+        shiftTimezone: dayIn?.shiftTimezone || empTz,
+        ...(dayIn ? { punchInId: dayIn.id } : {}),
+        ...(dayIn?.scheduledShiftStart
+          ? {
+              scheduledShiftStart: dayIn.scheduledShiftStart,
+              scheduledShiftEnd: dayIn.scheduledShiftEnd,
+            }
+          : {}),
         attendanceStatus: "complete",
       });
 
-      handleUpdateDayInterval(employeeRowId, date, {
-        punchOutTime: defaultEndTime,
-        lastOutPunchId: fixedPunchRef.id,
-        isMissingPunchOut: false,
-        status: "Punch Out Fixed by Admin",
-      });
+      handleUpdateDayInterval(
+        employeeRowId,
+        date,
+        {
+          punchOutTime: defaultEndTime,
+          lastOutPunchId: fixedPunchRef.id,
+          isMissingPunchOut: false,
+          status: "Punch Out Fixed by Admin",
+        },
+        { persisted: true },
+      );
       toast.success(`Fixed punch out for ${date} (set to ${defaultEndTime})`);
     } catch (err) {
       console.error("Failed to fix punch out:", err);
@@ -1148,9 +1319,11 @@ function ReportsPage() {
         }
       }
 
-      // Update in-memory report rows & dailyIntervals
+      // Update in-memory report rows & dailyIntervals. When the day was written
+      // to punches, the recompute is the source of truth and must not be pinned
+      // behind this local copy.
       const empRowId = selectedIntervalEmployee.id;
-      setHasCustomEdits(true);
+      if (!syncToPunches) setHasCustomEdits(true);
 
       setReportRows((prev) =>
         prev.map((row) => {
@@ -1226,7 +1399,7 @@ function ReportsPage() {
 
           const updatedRow: ReportRow = {
             ...row,
-            isAdjusted: true,
+            isAdjusted: !syncToPunches,
             dailyIntervals: updatedIntervals,
             regularHours: Math.round(newReg * 10) / 10,
             overtimeHours: Math.round(newApprovedOt * 10) / 10,
@@ -2360,14 +2533,21 @@ function ReportsPage() {
                       <td className="p-2.5">
                         <input
                           type="time"
-                          value={day.punchInTime || ""}
-                          onChange={(e) =>
-                            handleUpdateDayInterval(selectedIntervalEmployee.id, day.date, {
-                              punchInTime: e.target.value,
-                              status: "Edited In",
-                            })
-                          }
-                          className="px-2 py-1 rounded border bg-background font-mono text-xs w-[85px]"
+                          defaultValue={day.punchInTime || ""}
+                          disabled={savingDayPunch !== ""}
+                          title="Records a real clock-in for this day"
+                          onBlur={(e) => {
+                            if (e.target.value && e.target.value !== day.punchInTime) {
+                              handleSaveDayPunch(
+                                selectedIntervalEmployee.id,
+                                day,
+                                "in",
+                                e.target.value,
+                              );
+                            }
+                          }}
+                          key={`in-${day.date}-${day.punchInTime || ""}`}
+                          className="px-2 py-1 rounded border bg-background font-mono text-xs w-[85px] disabled:opacity-60"
                         />
                         {day.sessions && day.sessions.length > 1 && (
                           <div className="mt-1 space-y-0.5">
@@ -2408,15 +2588,21 @@ function ReportsPage() {
                         ) : (
                           <input
                             type="time"
-                            value={day.punchOutTime || ""}
-                            onChange={(e) =>
-                              handleUpdateDayInterval(selectedIntervalEmployee.id, day.date, {
-                                punchOutTime: e.target.value,
-                                isMissingPunchOut: false,
-                                status: "Edited Out",
-                              })
-                            }
-                            className="px-2 py-1 rounded border bg-background font-mono text-xs w-[85px]"
+                            defaultValue={day.punchOutTime || ""}
+                            disabled={savingDayPunch !== ""}
+                            title="Records a real clock-out for this day"
+                            onBlur={(e) => {
+                              if (e.target.value && e.target.value !== day.punchOutTime) {
+                                handleSaveDayPunch(
+                                  selectedIntervalEmployee.id,
+                                  day,
+                                  "out",
+                                  e.target.value,
+                                );
+                              }
+                            }}
+                            key={`out-${day.date}-${day.punchOutTime || ""}`}
+                            className="px-2 py-1 rounded border bg-background font-mono text-xs w-[85px] disabled:opacity-60"
                           />
                         )}
                       </td>
