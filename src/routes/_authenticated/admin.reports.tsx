@@ -60,10 +60,14 @@ import {
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import {
+  getEmployeeCompanyIds,
   getEmployeeForCompany,
-  getPunchCompanyId,
+  getEmployeeLeavesForCompany,
+  getEmployeePunchesForCompany,
   getRequiredWorkMinutes,
+  normalizeCompanyId,
 } from "@/lib/company-context";
+import { filterEmployeeList } from "@/lib/employee-list";
 import { companyEmailBranding } from "@/lib/email-branding";
 
 export interface PunchSessionRecord {
@@ -167,6 +171,7 @@ function ReportsPage() {
   const [punches, setPunches] = useState<Punch[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
+  const [syncError, setSyncError] = useState("");
   const [month, setMonth] = useState(currentMonth);
   const [from, setFrom] = useState(initialBounds.from);
   const [to, setTo] = useState(initialBounds.to);
@@ -230,45 +235,69 @@ function ReportsPage() {
   const [showEmailPreview, setShowEmailPreview] = useState(false);
 
   useEffect(() => {
+    // A dropped listener used to leave an empty report that looked like "no data".
+    const failed = (source: string) => (error: Error) =>
+      setSyncError(`${source} could not sync (${error.message}). Refresh to reconnect.`);
     const unsubscribers = [
-      onSnapshot(collection(db(), "companies"), (snapshot) =>
-        setCompanies(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-        ),
+      onSnapshot(
+        collection(db(), "companies"),
+        (snapshot) =>
+          setCompanies(
+            snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
+          ),
+        failed("Companies"),
       ),
-      onSnapshot(collection(db(), "employees"), (snapshot) =>
-        setEmployees(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
-        ),
+      onSnapshot(
+        collection(db(), "employees"),
+        (snapshot) =>
+          setEmployees(
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<Employee, "id">),
+            })),
+          ),
+        failed("Employees"),
       ),
-      onSnapshot(collection(db(), "departments"), (snapshot) =>
-        setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
-        ),
+      onSnapshot(
+        collection(db(), "departments"),
+        (snapshot) =>
+          setDepartments(
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<Department, "id">),
+            })),
+          ),
+        failed("Departments"),
       ),
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
-        setLeaves(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<LeaveRequest, "id">),
-          })),
-        ),
+      onSnapshot(
+        collection(db(), "leaveRequests"),
+        (snapshot) =>
+          setLeaves(
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<LeaveRequest, "id">),
+            })),
+          ),
+        failed("Leave requests"),
       ),
-      onSnapshot(collection(db(), "punches"), (snapshot) =>
-        setPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
+      onSnapshot(
+        collection(db(), "punches"),
+        (snapshot) =>
+          setPunches(
+            snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
+          ),
+        failed("Attendance"),
       ),
-      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) =>
-        setOvertimeRequests(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<OvertimeRequest, "id">),
-          })),
-        ),
+      onSnapshot(
+        collection(db(), "overtimeRequests"),
+        (snapshot) =>
+          setOvertimeRequests(
+            snapshot.docs.map((item) => ({
+              id: item.id,
+              ...(item.data() as Omit<OvertimeRequest, "id">),
+            })),
+          ),
+        failed("Overtime requests"),
       ),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -276,32 +305,26 @@ function ReportsPage() {
 
   const selectedCompany = useMemo(() => {
     if (companyFilter === "all") return authCompany;
-    return companies.find((c) => (c.id || COMPANY_ID) === companyFilter) || authCompany;
+    const target = normalizeCompanyId(companyFilter);
+    return companies.find((c) => normalizeCompanyId(c.id) === target) || authCompany;
   }, [companyFilter, companies, authCompany]);
 
+  // Company and department assignments live in companyMemberships and use aliases,
+  // so reports must resolve them the same way the employee list does.
   const filteredEmployees = useMemo(
     () =>
-      employees.filter((employee) => {
-        if (companyFilter !== "all") {
-          const matchCompany =
-            employee.companyId === companyFilter ||
-            employee.companyIds?.includes(companyFilter) ||
-            (!employee.companyId && companyFilter === COMPANY_ID);
-          if (!matchCompany) return false;
-        }
-        if (departmentId && employee.deptId !== departmentId) return false;
-        if (employeeId && employee.id !== employeeId && employee.authUid !== employeeId)
-          return false;
-        if (
-          search &&
-          !`${employee.name} ${employee.email} ${employee.jobTitle || ""}`
-            .toLowerCase()
-            .includes(search.toLowerCase())
-        )
-          return false;
-        return true;
-      }),
-    [employees, companyFilter, departmentId, employeeId, search],
+      filterEmployeeList(
+        employees,
+        companies,
+        departments,
+        companyFilter,
+        departmentId,
+        search,
+      ).filter(
+        (employee) =>
+          !employeeId || employee.id === employeeId || employee.authUid === employeeId,
+      ),
+    [employees, companies, departments, companyFilter, departmentId, employeeId, search],
   );
 
   // Compute Raw Day-by-Day Attendance Rows
@@ -313,20 +336,20 @@ function ReportsPage() {
       const reportCompany =
         companyFilter === "all"
           ? authCompany
-          : companies.find((item) => (item.id || COMPANY_ID) === companyFilter) || authCompany;
-      const employeeLeaves = leaves.filter(
-        (leave) =>
-          companyFilter === "all" ||
-          (leave.companyId || rawEmployee.companyIds?.[0] || rawEmployee.companyId) ===
-            companyFilter,
-      );
-      const ids = new Set([employee.id, employee.authUid].filter(Boolean));
+          : companies.find(
+              (item) => normalizeCompanyId(item.id) === normalizeCompanyId(companyFilter),
+            ) || authCompany;
+      const employeeLeaves = getEmployeeLeavesForCompany(leaves, rawEmployee, companyFilter);
       const shiftTimezone = getShiftTimezone(employee);
       const groups = new Map<string, Punch[]>();
-      for (const punch of punches) {
-        if (!ids.has(punch.employeeId) || !punch.timestamp) continue;
-        if (companyFilter !== "all" && getPunchCompanyId(punch, rawEmployee) !== companyFilter)
-          continue;
+      // Shared scoping drops voided corrections and matches company aliases.
+      for (const punch of getEmployeePunchesForCompany(
+        punches,
+        rawEmployee,
+        companyFilter,
+        reportCompany?.name,
+      )) {
+        if (!punch.timestamp) continue;
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
         const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
@@ -443,25 +466,27 @@ function ReportsPage() {
       const reportCompany =
         companyFilter === "all"
           ? authCompany
-          : companies.find((item) => (item.id || COMPANY_ID) === companyFilter) || authCompany;
+          : companies.find(
+              (item) => normalizeCompanyId(item.id) === normalizeCompanyId(companyFilter),
+            ) || authCompany;
 
-      const employeeLeaves = leaves.filter(
-        (leave) =>
-          (leave.employeeId === employee.id || leave.employeeId === employee.authUid) &&
-          leave.status === "approved" &&
-          (companyFilter === "all" ||
-            (leave.companyId || rawEmployee.companyIds?.[0] || rawEmployee.companyId) ===
-              companyFilter),
-      );
+      const employeeLeaves = getEmployeeLeavesForCompany(
+        leaves,
+        rawEmployee,
+        companyFilter,
+      ).filter((leave) => leave.status === "approved");
 
-      const ids = new Set([employee.id, employee.authUid].filter(Boolean));
       const shiftTimezone = getShiftTimezone(employee);
       const dayPunchGroups = new Map<string, Punch[]>();
 
-      for (const punch of punches) {
-        if (!ids.has(punch.employeeId) || !punch.timestamp) continue;
-        if (companyFilter !== "all" && getPunchCompanyId(punch, rawEmployee) !== companyFilter)
-          continue;
+      // Shared scoping drops voided corrections and matches company aliases.
+      for (const punch of getEmployeePunchesForCompany(
+        punches,
+        rawEmployee,
+        companyFilter,
+        reportCompany?.name,
+      )) {
+        if (!punch.timestamp) continue;
         const punchedAt = toDate(punch.timestamp);
         if (!punchedAt) continue;
         const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
@@ -780,6 +805,14 @@ function ReportsPage() {
     companyFilter,
   ]);
 
+  // Manual edits belong to the period and company they were made for. Holding
+  // them across a scope change froze the report on stale rows, which reads as
+  // "reports stopped syncing".
+  const reportScope = `${companyFilter}|${from}|${to}|${departmentId}|${employeeId}`;
+  useEffect(() => {
+    setHasCustomEdits(false);
+  }, [reportScope]);
+
   // Sync computedSummaryRows to reportRows unless user has custom edits
   useEffect(() => {
     if (!hasCustomEdits) {
@@ -941,20 +974,29 @@ function ReportsPage() {
     );
   }
 
+  // A membership-only employee has no top-level companyId, so a punch written from
+  // this page has to resolve its company the same way the report scopes one.
+  function resolveWriteCompanyId(employee?: Employee | null): string {
+    if (companyFilter !== "all") return normalizeCompanyId(companyFilter);
+    return getEmployeeCompanyIds(employee)[0] || COMPANY_ID;
+  }
+
   // Fix Missed Punch Out on a day (sets standard shift end time from employee profile)
   async function handleFixMissedPunchOut(employeeRowId: string, date: string) {
     const emp = filteredEmployees.find(
       (e) => e.id === employeeRowId || e.authUid === employeeRowId,
     );
-    const defaultEndTime = emp?.shiftEndTime || "17:00";
-    const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
+    const writeCompanyId = resolveWriteCompanyId(emp);
+    const scopedEmp = emp ? getEmployeeForCompany(emp, writeCompanyId) : null;
+    const defaultEndTime = scopedEmp?.shiftEndTime || "17:00";
+    const empTz = scopedEmp ? getShiftTimezone(scopedEmp) : "Australia/Sydney";
     const fixedOutDate = zonedDateTimeToDate(date, defaultEndTime, empTz);
 
     try {
       const fixedPunchRef = await addDoc(collection(db(), "punches"), {
         employeeId: emp?.id || employeeRowId,
         employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
-        companyId: companyFilter === "all" ? emp?.companyId || COMPANY_ID : companyFilter,
+        companyId: writeCompanyId,
         companyName: selectedCompany?.name || "Company",
         date,
         attendanceDate: date,
@@ -994,9 +1036,9 @@ function ReportsPage() {
       const emp = filteredEmployees.find(
         (e) => e.id === selectedIntervalEmployee.id || e.authUid === selectedIntervalEmployee.id,
       );
-      const empTz = emp ? getShiftTimezone(emp) : "Australia/Sydney";
-      const effectiveCompId =
-        companyFilter === "all" ? emp?.companyId || COMPANY_ID : companyFilter;
+      const effectiveCompId = resolveWriteCompanyId(emp);
+      const scopedEmp = emp ? getEmployeeForCompany(emp, effectiveCompId) : null;
+      const empTz = scopedEmp ? getShiftTimezone(scopedEmp) : "Australia/Sydney";
 
       let inPunchId: string | undefined;
       let outPunchId: string | undefined;
@@ -1511,6 +1553,16 @@ function ReportsPage() {
         </div>
       </div>
 
+      {syncError && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{syncError}</span>
+        </div>
+      )}
+
       {/* Filter Toolbar */}
       <div className="rounded-xl border bg-card p-4 shadow-sm space-y-4">
         <div className="grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
@@ -1523,7 +1575,6 @@ function ReportsPage() {
               onChange={(event) => {
                 setCompanyFilter(event.target.value);
                 setEmployeeId("");
-                setHasCustomEdits(false);
               }}
               className="block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground font-semibold"
             >
@@ -1549,7 +1600,6 @@ function ReportsPage() {
                 const bounds = monthBounds(value);
                 setFrom(bounds.from);
                 setTo(bounds.to);
-                setHasCustomEdits(false);
               }}
               className="block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
             />
@@ -1562,7 +1612,6 @@ function ReportsPage() {
               value={from}
               onChange={(event) => {
                 setFrom(event.target.value);
-                setHasCustomEdits(false);
               }}
               className="block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
             />
@@ -1575,7 +1624,6 @@ function ReportsPage() {
               value={to}
               onChange={(event) => {
                 setTo(event.target.value);
-                setHasCustomEdits(false);
               }}
               className="block w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
             />
