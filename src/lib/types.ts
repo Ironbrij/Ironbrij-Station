@@ -54,6 +54,7 @@ export type CountryCode = "NP" | "AU" | "PH";
 export interface ShiftInterval {
   id?: string;
   name?: string;
+  clientName?: string; // Client this slot is worked for, shown on logs and reports
   startTime: string; // e.g. "04:00"
   endTime: string; // e.g. "07:00"
   workingDays?: number[]; // Specific working days for this shift interval: 0=Sun..6=Sat
@@ -81,6 +82,7 @@ export interface Employee {
   shifts?: ShiftInterval[];
   shiftStartTime?: string; // e.g. "09:00"
   shiftEndTime?: string; // e.g. "17:00"
+  shiftClientName?: string; // Client this schedule is worked for, shown on logs
   country?: CountryCode; // "NP" = Nepal, "AU" = Australia, "PH" = Philippines
   state?: string; // Optional state/province/region; "N/A" means not assigned
   timezone?: string; // employee local timezone
@@ -103,6 +105,7 @@ export interface CompanyMembership {
   shifts?: ShiftInterval[];
   shiftStartTime?: string;
   shiftEndTime?: string;
+  shiftClientName?: string;
   shiftTimezone?: string;
   workingDays?: number[];
   departmentId?: string;

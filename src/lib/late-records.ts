@@ -5,6 +5,7 @@ import { computeEmployeeLateness, getActiveWorkingSession, getEmployeeApprovedLe
   getShiftTimezone, zonedDateKey, zonedDateTimeToDate, formatInTimezone } from "./attendance.ts";
 import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePunchesForCompany, normalizeCompanyId } from "./company-context.ts";
 import { opensRegularShift, scopeEmployeeToPunchSchedule } from "./shift-lateness.ts";
+import { getPunchShiftClient } from "./shift-clients.ts";
 import { toDate, toMillis } from "./time.ts";
 export type LateRecord = {
   id: string; employee: Employee; dateKey: string; scheduledAt: Date; punchedAt?: Date;
@@ -61,7 +62,8 @@ export function buildLateRecords(employees: Employee[], punches: Punch[], leaves
         if (!late.naturallyLate && !punch.isExcused) continue;
         result.push({ id: punch.id, employee: scoped, dateKey: shift.dateKey, scheduledAt: shift.start,
           punchedAt: at, minutesLate: late.rawMinutes, kind: "arrival", isExcused: punch.isExcused,
-          excuseReason: punch.excuseReason, punch, companyId, companyName,
+          excuseReason: punch.excuseReason, punch, companyId,
+          companyName: getPunchShiftClient(scoped, punch) || companyName,
           shiftLabel: `${formatInTimezone(shift.start, shift.timezone)} – ${formatInTimezone(shift.end, shift.timezone)}` });
       }
       // A scheduled day with no clock-in stays missed once the shift is over. The

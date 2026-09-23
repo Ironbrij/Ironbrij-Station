@@ -25,6 +25,7 @@ import {
   scopeEmployeeToPunchSchedule,
   shiftLatenessKey,
 } from "./shift-lateness.ts";
+import { getPunchShiftClient } from "./shift-clients.ts";
 import { toDate, toMillis } from "./time.ts";
 
 export type AttendanceLogStatus =
@@ -217,7 +218,13 @@ export function buildAttendanceLog({
         employeeId: employee.id,
         employeeName: employee.name || employee.email || "Unnamed employee",
         companyId: cid,
-        companyName: company?.name || session.start.companyName || cid,
+        // A shift slot may name the client it is worked for; one company can
+        // cover several, and the table is where an admin tells them apart.
+        companyName:
+          getPunchShiftClient(base, session.start) ||
+          company?.name ||
+          session.start.companyName ||
+          cid,
         state: employee.state || employee.country || "",
         date: attendanceDate,
         timezone,

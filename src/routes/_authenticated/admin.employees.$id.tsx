@@ -65,6 +65,7 @@ import {
   normalizeCompanyId,
 } from "@/lib/company-context";
 import { groupPunchesByClient } from "@/lib/punch-clients";
+import { getPunchShiftClient } from "@/lib/shift-clients";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { getEmployeeAllShiftDefinitions, findShiftConflicts } from "@/lib/shift-conflict";
 import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
@@ -237,11 +238,14 @@ function EmployeeDetail() {
   }, [allPunches, company, employee, profileCompanyId, rawEmployee]);
 
   // One employee's day can interleave several clients, so every event says which.
+  // A shift slot naming its own client wins: one company can cover several.
   const clientNameOf = useMemo(() => {
     const names = new Map(companies.map((item) => [normalizeCompanyId(item.id), item.name]));
     return (punch: Punch) => {
       const companyId = getPunchCompanyId(punch, rawEmployee, companies);
-      return names.get(companyId) || punch.companyName || companyId;
+      const scoped = rawEmployee ? getEmployeeForCompany(rawEmployee, companyId) : undefined;
+      const shiftClient = scoped ? getPunchShiftClient(scoped, punch) : "";
+      return shiftClient || names.get(companyId) || punch.companyName || companyId;
     };
   }, [companies, rawEmployee]);
 
