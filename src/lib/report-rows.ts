@@ -13,6 +13,7 @@ import { calculateAttendanceSession, formatWorkMinutes } from "./attendance-calc
 import { computeLeaveCreditBalance, leaveDayHours } from "./leave-credits.ts";
 import { formatCovered, formatDaysAndHours, formatHours, formatShortDate } from "./report-format.ts";
 import { getShiftIntervals } from "./shift-clients.ts";
+import { totalsFromDays } from "./report-edits.ts";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -255,9 +256,6 @@ export function buildReportRows({
       const requiredMinutes = getRequiredWorkMinutes(employee, reportCompany);
       const hoursPerDay = requiredMinutes > 0 ? requiredMinutes / 60 : 8;
 
-      let totalRegularHours = 0;
-      let totalApprovedOvertimeHours = 0;
-      let totalPendingOvertimeHours = 0;
       const approvedOvertimeDatesList: string[] = [];
       let totalLateDays = 0;
       let workedDaysCount = 0;
@@ -426,18 +424,13 @@ export function buildReportRows({
         const approvedOtHours = approvedDayOtMinutes / 60;
         const pendingOtHours = pendingDayOtMinutes / 60;
 
-        totalRegularHours += regHours;
         if (approvedOtHours > 0) {
-          totalApprovedOvertimeHours += approvedOtHours;
           const displayOtText =
             approvedOtHours >= 0.1
               ? `+${approvedOtHours.toFixed(1)}h`
               : `+${Math.round(approvedDayOtMinutes)}m`;
           approvedOvertimeDatesList.push(`${date} (${displayOtText})`);
           overtimeLines.push(`${approvedOtHours.toFixed(1)}hr OT ${formatShortDate(date)}`);
-        }
-        if (pendingOtHours > 0) {
-          totalPendingOvertimeHours += pendingOtHours;
         }
 
         const isOvertimeApproved = approvedOtHours > 0;
@@ -570,8 +563,11 @@ export function buildReportRows({
           !getEmployeeHoliday(reportCompany, employee, date),
       });
 
-      const reg = Math.round(totalRegularHours * 10) / 10;
-      const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
+      // Totals come from the days as listed, so the row and its inspect panel agree
+      // to the tenth of an hour.
+      const dayTotals = totalsFromDays(dailyIntervals);
+      const reg = dayTotals.regularHours;
+      const ot = dayTotals.overtimeHours;
       // Someone scheduled who never punched is exactly who an admin is looking
       // for, so keep the row and let its remarks say absent rather than drop it.
       const hasWork =
@@ -606,7 +602,7 @@ export function buildReportRows({
         leaveDays: leaveDaysCount,
         regularHours: reg,
         overtimeHours: ot,
-        pendingOvertimeHours: Math.round(totalPendingOvertimeHours * 10) / 10,
+        pendingOvertimeHours: dayTotals.pendingOvertimeHours,
         overtimeDates: approvedOvertimeDatesList,
         paidLeaveDays,
         unpaidLeaveDays,
