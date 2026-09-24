@@ -30,6 +30,19 @@ export function formatDaysAndHours(days: number, hoursPerDay: number, zero = "0"
   return `${amount} ${dayLabel} (${formatHours(days * hoursPerDay)})`;
 }
 
+/**
+ * The days in a typed leave figure, so the report totals follow what an admin
+ * types: "2.5 Days (20 hours)" is 2.5, "20 hours" is 20 / hoursPerDay, and text
+ * with no number is 0.
+ */
+export function parseLeaveDays(text: string, hoursPerDay: number): number {
+  const match = text.trim().match(/^-?\d+(?:\.\d+)?/);
+  if (!match) return 0;
+  const amount = Number(match[0]);
+  const isHours = /hour|hr/i.test(text) && !/day/i.test(text);
+  return isHours && hoursPerDay > 0 ? Math.round((amount / hoursPerDay) * 100) / 100 : amount;
+}
+
 /** The period a report covers: "Sep 14 - 20, 2026", "Aug 31 - Sep 4, 2026". */
 export function formatCovered(from: string, to: string): string {
   const start = parts(from);

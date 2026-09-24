@@ -6,6 +6,7 @@ import {
   formatCovered,
   formatDaysAndHours,
   formatShortDate,
+  parseLeaveDays,
 } from "../src/lib/report-format.ts";
 import type { LeaveRequest } from "../src/lib/types.ts";
 
@@ -142,6 +143,16 @@ test("leave reads as days and hours, the way the client sheet writes it", () => 
   assert.equal(formatDaysAndHours(0, 8), "0");
   assert.equal(formatDaysAndHours(0, 8, "0 Days (0 hours)"), "0 Days (0 hours)");
   assert.equal(formatDaysAndHours(-1, 8), "-1 Day (-8 hours)");
+});
+
+test("a typed leave figure gives the days the totals add up", () => {
+  assert.equal(parseLeaveDays("2.5 Days (20 hours)", 8), 2.5);
+  assert.equal(parseLeaveDays("1 Day (8 hours)", 8), 1);
+  assert.equal(parseLeaveDays("0", 8), 0);
+  assert.equal(parseLeaveDays("20 hours", 8), 2.5);
+  assert.equal(parseLeaveDays("4hrs", 8), 0.5);
+  assert.equal(parseLeaveDays("", 8), 0);
+  assert.equal(parseLeaveDays("see notes", 8), 0);
 });
 
 test("hours read without trailing zeros", () => {

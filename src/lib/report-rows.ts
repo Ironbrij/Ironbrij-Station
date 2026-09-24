@@ -96,6 +96,10 @@ export interface ReportRow {
   overtimeDates: string[];
   paidLeaveDays: number;
   unpaidLeaveDays: number;
+  /** Paid leave as the report shows it, "2.5 Days (20 hours)"; an admin may type over it. */
+  paidLeaveUsed: string;
+  /** Unpaid leave as the report shows it; an admin may type over it. */
+  unpaidLeaveUsed: string;
   /**
    * Paid leave credit left after leave taken this year up to the period's end, as
    * the report shows it: "7.54 Days (60.32 hours)". Blank when none is set.
@@ -606,6 +610,8 @@ export function buildReportRows({
         overtimeDates: approvedOvertimeDatesList,
         paidLeaveDays,
         unpaidLeaveDays,
+        paidLeaveUsed: formatDaysAndHours(paidLeaveDays, hoursPerDay),
+        unpaidLeaveUsed: formatDaysAndHours(unpaidLeaveDays, hoursPerDay),
         availableLeaveCredit: leaveBalance
           ? formatDaysAndHours(leaveBalance.remaining, hoursPerDay, "0 Days (0 hours)")
           : "",
