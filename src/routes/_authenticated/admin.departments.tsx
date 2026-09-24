@@ -15,6 +15,7 @@ import {
   computeEmployeeLateness,
   formatEmployeeShiftSummary,
   formatInTimezone,
+  getActiveEmployeeLeave,
   getEffectiveEmployeeWorkingDays,
   getEmployeeApprovedLeaveDates,
   getEmployeeApprovedLeaveForDate,
@@ -36,12 +37,15 @@ import {
   FileText,
   Calendar,
   Building2,
+  BellRing,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { createPdf } from "@/lib/pdf-export";
 import { getStateOptions, normalizeState } from "@/lib/states";
+import { parseNoticeEmails, resolveLeaveNoticeRecipients } from "@/lib/leave-team-notice";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/departments")({
   head: () => ({
@@ -106,7 +110,8 @@ function DepartmentsPage() {
     );
 
     const u3 = onSnapshot(
-      collection(db(), "punches"),
+      // The longest report here is 90 days.
+      recentPunchesQuery(92),
       (s) => {
         setPunches(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) })));
       },
@@ -197,6 +202,33 @@ function DepartmentsPage() {
       toast.success("Department company updated");
     } catch (err) {
       toast.error("Failed to update department company: " + (err as Error).message);
+    }
+  }
+
+  async function toggleLeaveNotifyTeam(dept: Department, teamId: string) {
+    const current = dept.leaveNotifyDepartmentIds || [];
+    const leaveNotifyDepartmentIds = current.includes(teamId)
+      ? current.filter((id) => id !== teamId)
+      : [...current, teamId];
+    try {
+      await updateDoc(doc(db(), "departments", dept.id), { leaveNotifyDepartmentIds });
+      setDepts((prev) =>
+        prev.map((d) => (d.id === dept.id ? { ...d, leaveNotifyDepartmentIds } : d)),
+      );
+    } catch (err) {
+      toast.error("Failed to update leave notifications: " + (err as Error).message);
+    }
+  }
+
+  async function updateLeaveNotifyEmails(dept: Department, value: string) {
+    const leaveNotifyEmails = parseNoticeEmails(value);
+    if (leaveNotifyEmails.join(",") === (dept.leaveNotifyEmails || []).join(",")) return;
+    try {
+      await updateDoc(doc(db(), "departments", dept.id), { leaveNotifyEmails });
+      setDepts((prev) => prev.map((d) => (d.id === dept.id ? { ...d, leaveNotifyEmails } : d)));
+      toast.success("Leave notification emails saved");
+    } catch (err) {
+      toast.error("Failed to save emails: " + (err as Error).message);
     }
   }
 
@@ -754,6 +786,16 @@ function DepartmentsPage() {
               {/* Assigned Users / Employees inside Department Card */}
               {isExpanded && (
                 <div className="p-5 space-y-4 bg-card">
+                  <LeaveNotificationSettings
+                    dept={d}
+                    teams={depts.filter(
+                      (team) => (team.companyId || COMPANY_ID) === (d.companyId || COMPANY_ID),
+                    )}
+                    employees={employees}
+                    onToggleTeam={(teamId) => toggleLeaveNotifyTeam(d, teamId)}
+                    onSaveEmails={(value) => updateLeaveNotifyEmails(d, value)}
+                  />
+
                   <div className="flex items-center justify-between">
                     <span className="text-xs uppercase font-extrabold tracking-wider text-muted-foreground">
                       Assigned Team Members & Shift Profiles ({deptEmployees.length})
@@ -792,6 +834,15 @@ function DepartmentsPage() {
                                   {e.jobTitle || "Member"}
                                 </span>
                               </div>
+                              {(() => {
+                                // Approved leave only: a pending request is not time off yet.
+                                const todaysLeave = getActiveEmployeeLeave(e, leaves);
+                                return todaysLeave ? (
+                                  <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-700 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-300">
+                                    {getLeaveLabel(todaysLeave)} today
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
 
                             {(() => {
@@ -838,6 +889,86 @@ function DepartmentsPage() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function LeaveNotificationSettings({
+  dept,
+  teams,
+  employees,
+  onToggleTeam,
+  onSaveEmails,
+}: {
+  dept: Department;
+  teams: Department[];
+  employees: Employee[];
+  onToggleTeam: (teamId: string) => void;
+  onSaveEmails: (value: string) => void;
+}) {
+  const selected = new Set(dept.leaveNotifyDepartmentIds || []);
+  // Worked out for a stand-in member so the count matches what the server sends.
+  const recipientCount = resolveLeaveNoticeRecipients(
+    { id: "", name: "", email: "", status: "active", inviteStatus: "accepted", deptId: dept.id },
+    [dept],
+    employees,
+  ).length;
+
+  return (
+    <div className="rounded-xl border bg-secondary/20 p-4 space-y-3">
+      <div className="flex items-start gap-2">
+        <BellRing className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+        <div>
+          <div className="text-xs uppercase font-extrabold tracking-wider text-muted-foreground">
+            Leave notifications
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            When an admin approves leave for someone in {dept.name}, email these teams that they
+            will be away. The reason and pay status are never shared.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {teams.map((team) => {
+          const on = selected.has(team.id);
+          return (
+            <button
+              key={team.id}
+              type="button"
+              onClick={() => onToggleTeam(team.id)}
+              aria-pressed={on}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {team.name}
+              {team.id === dept.id ? " (own team)" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      <label className="block space-y-1">
+        <span className="text-[11px] font-semibold text-muted-foreground">
+          Also email (optional, comma separated)
+        </span>
+        <input
+          key={(dept.leaveNotifyEmails || []).join(",")}
+          defaultValue={(dept.leaveNotifyEmails || []).join(", ")}
+          onBlur={(event) => onSaveEmails(event.target.value)}
+          placeholder="lead@company.com, manager@company.com"
+          className="w-full rounded-md border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+        />
+      </label>
+
+      <div className="text-[11px] font-semibold text-muted-foreground">
+        {recipientCount === 0
+          ? "Nobody is notified yet."
+          : `${recipientCount} ${recipientCount === 1 ? "person" : "people"} will be emailed (the person on leave is left out).`}
       </div>
     </div>
   );

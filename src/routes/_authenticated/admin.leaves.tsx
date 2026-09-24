@@ -262,10 +262,44 @@ function LeaveRequestsPage() {
       } catch {
         toast.warning("Decision saved, but the decision email could not be sent.");
       }
+      if (status === "approved") {
+        await notifyTeam(
+          leave.id,
+          "approved",
+          companyEmailBranding(findEmployeeCompany(employee, companies), employee.companyId),
+        );
+      }
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  /** Emails the teams the employee's department lists that they will be away (or no longer). */
+  async function notifyTeam(
+    leaveId: string,
+    event: "approved" | "revoked",
+    company: ReturnType<typeof companyEmailBranding>,
+  ) {
+    if (!user) return;
+    try {
+      const response = await fetch("/api/leave-team-notification", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${await user.getIdToken()}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ leaveRequestId: leaveId, event, company }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { sent?: number };
+      if (!response.ok) {
+        toast.warning("Saved, but the team leave email could not be sent.");
+      } else if (result.sent) {
+        toast.success(`Team notified (${result.sent} ${result.sent === 1 ? "person" : "people"})`);
+      }
+    } catch {
+      toast.warning("Saved, but the team leave email could not be sent.");
     }
   }
 
@@ -310,6 +344,13 @@ function LeaveRequestsPage() {
 
       await batch.commit();
       toast.success("Approved leave revoked successfully! Employee can now punch in.");
+      if (leave.status === "approved" && employee) {
+        await notifyTeam(
+          leave.id,
+          "revoked",
+          companyEmailBranding(findEmployeeCompany(employee, companies), employee.companyId),
+        );
+      }
     } catch (error) {
       toast.error("Could not revoke leave: " + (error as Error).message);
     } finally {

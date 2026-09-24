@@ -123,9 +123,22 @@ service cloud.firestore {
     }
 
     // Leave Requests
+    // Only an admin approves leave. Employees file requests as pending and may
+    // cancel their own (pending -> rejected, or approved -> rejected), nothing else.
     match /leaveRequests/{id} {
       allow read: if isAuthed();
-      allow create, update: if isAdmin() || (isAuthed() && ownsEmployee(request.resource.data.employeeId));
+      allow create: if isAdmin() || (
+        ownsEmployee(request.resource.data.employeeId) &&
+        request.resource.data.status == 'pending'
+      );
+      allow update: if isAdmin() || (
+        ownsEmployee(resource.data.employeeId) &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        (
+          request.resource.data.status == 'rejected' ||
+          (resource.data.status == 'pending' && request.resource.data.status == 'pending')
+        )
+      );
       allow delete: if isAdmin();
     }
 

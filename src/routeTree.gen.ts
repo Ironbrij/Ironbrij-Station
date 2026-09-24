@@ -19,6 +19,7 @@ import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
+import { Route as ApiLeaveTeamNotificationRouteImport } from './routes/api.leave-team-notification'
 import { Route as ApiLunchBreakNotificationRouteImport } from './routes/api.lunch-break-notification'
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
 import { Route as ApiMcpActionRouteImport } from './routes/api.mcp-action'
@@ -99,6 +100,12 @@ const ApiLeaveNotificationRoute = ApiLeaveNotificationRouteImport.update({
   path: '/api/leave-notification',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLeaveTeamNotificationRoute =
+  ApiLeaveTeamNotificationRouteImport.update({
+    id: '/api/leave-team-notification',
+    path: '/api/leave-team-notification',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiLunchBreakNotificationRoute =
   ApiLunchBreakNotificationRouteImport.update({
     id: '/api/lunch-break-notification',
@@ -264,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/leave-team-notification': typeof ApiLeaveTeamNotificationRoute
   '/api/lunch-break-notification': typeof ApiLunchBreakNotificationRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
@@ -302,6 +310,7 @@ export interface FileRoutesByTo {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/leave-team-notification': typeof ApiLeaveTeamNotificationRoute
   '/api/lunch-break-notification': typeof ApiLunchBreakNotificationRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
@@ -343,6 +352,7 @@ export interface FileRoutesById {
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
+  '/api/leave-team-notification': typeof ApiLeaveTeamNotificationRoute
   '/api/lunch-break-notification': typeof ApiLunchBreakNotificationRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
@@ -384,6 +394,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/leave-team-notification'
     | '/api/lunch-break-notification'
     | '/api/mcp'
     | '/api/mcp-action'
@@ -422,6 +433,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/leave-team-notification'
     | '/api/lunch-break-notification'
     | '/api/mcp'
     | '/api/mcp-action'
@@ -462,6 +474,7 @@ export interface FileRouteTypes {
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
+    | '/api/leave-team-notification'
     | '/api/lunch-break-notification'
     | '/api/mcp'
     | '/api/mcp-action'
@@ -501,6 +514,7 @@ export interface RootRouteChildren {
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
+  ApiLeaveTeamNotificationRoute: typeof ApiLeaveTeamNotificationRoute
   ApiLunchBreakNotificationRoute: typeof ApiLunchBreakNotificationRoute
   ApiMcpRoute: typeof ApiMcpRoute
   ApiMcpActionRoute: typeof ApiMcpActionRoute
@@ -581,6 +595,13 @@ declare module '@tanstack/react-router' {
       path: '/api/leave-notification'
       fullPath: '/api/leave-notification'
       preLoaderRoute: typeof ApiLeaveNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/leave-team-notification': {
+      id: '/api/leave-team-notification'
+      path: '/api/leave-team-notification'
+      fullPath: '/api/leave-team-notification'
+      preLoaderRoute: typeof ApiLeaveTeamNotificationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/lunch-break-notification': {
@@ -876,6 +897,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,
+  ApiLeaveTeamNotificationRoute: ApiLeaveTeamNotificationRoute,
   ApiLunchBreakNotificationRoute: ApiLunchBreakNotificationRoute,
   ApiMcpRoute: ApiMcpRoute,
   ApiMcpActionRoute: ApiMcpActionRoute,
