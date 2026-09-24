@@ -81,7 +81,6 @@ import {
   type ReportRow,
 } from "@/lib/report-rows";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
-import { formatLeaveDays } from "@/lib/leave-credits";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
 
 type AttendanceRow = {
@@ -162,6 +161,9 @@ function ReportsPage() {
     worked: true,
     department: "General",
     role: "V.A.",
+    client: "",
+    status: "active",
+    hoursPerDay: 8,
     workedDays: 0,
     absentDays: 0,
     lateDays: 0,
@@ -172,7 +174,7 @@ function ReportsPage() {
     overtimeDates: [],
     paidLeaveDays: 0,
     unpaidLeaveDays: 0,
-    availableLeaveCredit: null,
+    availableLeaveCredit: "",
     remarks: "",
   });
 
@@ -609,6 +611,9 @@ function ReportsPage() {
       worked: true,
       department: "General",
       role: "V.A.",
+      client: "",
+      status: "active",
+      hoursPerDay: 8,
       workedDays: 0,
       absentDays: 0,
       lateDays: 0,
@@ -619,7 +624,7 @@ function ReportsPage() {
       overtimeDates: [],
       paidLeaveDays: 0,
       unpaidLeaveDays: 0,
-      availableLeaveCredit: null,
+      availableLeaveCredit: "",
       remarks: "",
     });
     toast.success("Added new person to report.");
@@ -1081,31 +1086,26 @@ function ReportsPage() {
           companyName: companyDisplayName,
           clientName: clientName.trim(),
           periodLabel,
+          periodFrom: from,
+          periodTo: to,
           summary: reportTotals,
+          // Leave and overtime dates travel in the remarks, as in the client sheet.
           rows: reportRows.map((r) => {
-            const leaveDates = (r.dailyIntervals || [])
-              .filter(
-                (d) =>
-                  d.status &&
-                  (d.status.toLowerCase().includes("leave") ||
-                    d.status.toLowerCase().includes("vacation") ||
-                    d.status.toLowerCase().includes("sick")),
-              )
-              .map((d) => `${d.date} (${d.status})`);
-
             return {
               employeeName: r.employeeName,
               employeeEmail: r.employeeEmail,
               role: r.role,
               department: r.department,
+              client: r.client,
+              status: r.status,
+              hoursPerDay: r.hoursPerDay,
               workedDays: r.workedDays || 0,
               regularHours: Number(r.regularHours) || 0,
               overtimeHours: Number(r.overtimeHours) || 0,
               overtimeDates: r.overtimeDates || [],
               paidLeaveDays: Number(r.paidLeaveDays) || 0,
               unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
-              availableLeaveCredit: r.availableLeaveCredit ?? null,
-              leaveDates,
+              availableLeaveCredit: r.availableLeaveCredit,
               remarks: r.remarks,
             };
           }),
@@ -1140,6 +1140,8 @@ function ReportsPage() {
     if (!reportRows.length) return toast.error("No report rows available to export.");
     const data = reportRows.map((row) => ({
       "Employee / V.A.": row.employeeName,
+      Client: row.client || clientName.trim(),
+      Status: row.status === "inactive" ? "Inactive" : "Active",
       "Worked / Active": row.worked ? "Yes" : "No",
       Email: row.employeeEmail || "",
       Role: row.role,
@@ -1159,7 +1161,7 @@ function ReportsPage() {
       "Overtime Dates": (row.overtimeDates || []).join("; "),
       "Paid Leave Used (Days)": row.paidLeaveDays,
       "Unpaid Leave Used (Days)": row.unpaidLeaveDays,
-      "Available Leave Credit (Days)": row.availableLeaveCredit ?? "",
+      "Available Leave Credit": row.availableLeaveCredit,
       Remarks: row.remarks,
     }));
     const blob = new Blob([Papa.unparse(data)], { type: "text/csv;charset=utf-8" });
@@ -1194,11 +1196,11 @@ function ReportsPage() {
     pdf.text("Employee / V.A.", 16, y);
     pdf.text("Worked", 60, y);
     pdf.text("Dept / Role", 80, y);
-    pdf.text("Reg Hours", 125, y);
-    pdf.text("Overtime & Dates", 150, y);
-    pdf.text("Paid/Unpaid Used", 188, y);
-    pdf.text("Leave Credit", 220, y);
-    pdf.text("Remarks", 245, y);
+    pdf.text("Reg Hours", 122, y);
+    pdf.text("Overtime & Dates", 143, y);
+    pdf.text("Paid/Unpaid Used", 176, y);
+    pdf.text("Leave Credit", 208, y);
+    pdf.text("Remarks", 250, y);
 
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8.5);
@@ -1216,23 +1218,19 @@ function ReportsPage() {
       pdf.setTextColor(100, 116, 139);
       pdf.text(`${row.department} (${row.role})`.slice(0, 20), 80, y);
       pdf.setTextColor(2, 132, 199);
-      pdf.text(`${Number(row.regularHours).toFixed(1)}h`, 125, y);
+      pdf.text(`${Number(row.regularHours).toFixed(1)}h`, 122, y);
       pdf.setTextColor(217, 119, 6);
       const otDates = row.overtimeDates || [];
       const otText =
         row.overtimeHours > 0
           ? `+${Number(row.overtimeHours).toFixed(1)}h ${otDates.length ? `(${otDates.length} dates)` : ""}`
           : "—";
-      pdf.text(otText, 150, y);
+      pdf.text(otText, 143, y);
       pdf.setTextColor(30, 41, 59);
-      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 188, y);
-      pdf.text(
-        row.availableLeaveCredit !== null ? formatLeaveDays(row.availableLeaveCredit) : "—",
-        220,
-        y,
-      );
+      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 176, y);
+      pdf.text((row.availableLeaveCredit || "—").slice(0, 26), 208, y);
       pdf.setTextColor(71, 85, 105);
-      pdf.text((row.remarks || "—").slice(0, 22), 245, y);
+      pdf.text((row.remarks || "—").split("\n")[0].slice(0, 20), 250, y);
     }
 
     pdf.save(`report_${companyDisplayName.replace(/\s+/g, "_")}_${from}_to_${to}.pdf`);
@@ -1634,7 +1632,7 @@ function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1190px] text-sm">
+            <table className="w-full min-w-[1280px] text-sm">
               <thead className="bg-secondary/70 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3 font-bold w-[70px] text-center">Worked?</th>
@@ -1646,8 +1644,8 @@ function ReportsPage() {
                   <th className="p-3 font-bold w-[90px] text-center">Paid Leave Used</th>
                   <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave Used</th>
                   <th
-                    className="p-3 font-bold w-[90px] text-center"
-                    title="Paid leave credit left: the yearly credits set on the employee's profile, less paid leave taken this year up to the end of this period."
+                    className="p-3 font-bold min-w-[170px] text-center"
+                    title="Paid leave credit left: the yearly credits set on the employee's profile, less paid leave taken this year up to the end of this period. Type over it to show your own figure, e.g. 7.54 Days (60.32 hours)."
                   >
                     Available Leave Credit
                   </th>
@@ -1836,14 +1834,14 @@ function ReportsPage() {
                       <div className="relative inline-flex items-center w-full justify-center">
                         <input
                           type="number"
-                          step="1"
+                          step="0.5"
                           min="0"
                           value={row.paidLeaveDays}
                           onChange={(e) =>
                             handleUpdateRowField(
                               row.id,
                               "paidLeaveDays",
-                              parseInt(e.target.value, 10) || 0,
+                              parseFloat(e.target.value) || 0,
                             )
                           }
                           className="w-14 text-center font-bold text-emerald-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
@@ -1856,14 +1854,14 @@ function ReportsPage() {
                       <div className="relative inline-flex items-center w-full justify-center">
                         <input
                           type="number"
-                          step="1"
+                          step="0.5"
                           min="0"
                           value={row.unpaidLeaveDays}
                           onChange={(e) =>
                             handleUpdateRowField(
                               row.id,
                               "unpaidLeaveDays",
-                              parseInt(e.target.value, 10) || 0,
+                              parseFloat(e.target.value) || 0,
                             )
                           }
                           className="w-14 text-center font-bold text-rose-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
@@ -1871,36 +1869,31 @@ function ReportsPage() {
                       </div>
                     </td>
 
-                    {/* Available Leave Credit Input: blank means no credits are tracked */}
+                    {/* Available Leave Credit: free text such as "7.54 Days (60.32 hours)" */}
                     <td className="p-3 text-center">
-                      <div className="relative inline-flex items-center w-full justify-center">
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={row.availableLeaveCredit ?? ""}
-                          placeholder="—"
-                          onChange={(e) =>
-                            handleUpdateRowField(
-                              row.id,
-                              "availableLeaveCredit",
-                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className={`w-14 text-center font-bold text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
-                            (row.availableLeaveCredit ?? 0) < 0 ? "text-rose-700" : "text-teal-700"
-                          }`}
-                        />
-                      </div>
-                    </td>
-
-                    {/* Remarks Input */}
-                    <td className="p-3">
                       <input
                         type="text"
+                        value={row.availableLeaveCredit}
+                        placeholder="e.g. 7.54 Days (60.32 hours)"
+                        onChange={(e) =>
+                          handleUpdateRowField(row.id, "availableLeaveCredit", e.target.value)
+                        }
+                        className={`w-full text-center font-bold text-xs px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                          row.availableLeaveCredit.trim().startsWith("-")
+                            ? "text-rose-700"
+                            : "text-teal-700"
+                        }`}
+                      />
+                    </td>
+
+                    {/* Remarks: one section per line group, as in the client sheet */}
+                    <td className="p-3">
+                      <textarea
                         value={row.remarks}
+                        rows={Math.min(8, Math.max(2, row.remarks.split("\n").length))}
                         onChange={(e) => handleUpdateRowField(row.id, "remarks", e.target.value)}
                         placeholder="Add client remarks / performance note…"
-                        className="w-full text-xs px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full resize-y text-xs leading-snug px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
                       />
                     </td>
 
@@ -2711,9 +2704,7 @@ function ReportsPage() {
                                     : "—"}
                                 </td>
                                 <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
-                                  {row.availableLeaveCredit !== null
-                                    ? formatLeaveDays(row.availableLeaveCredit)
-                                    : "—"}
+                                  {row.availableLeaveCredit.trim() || "—"}
                                 </td>
                                 <td className="p-2 text-muted-foreground italic max-w-xs truncate">
                                   {row.remarks || "—"}

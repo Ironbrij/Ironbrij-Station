@@ -42,6 +42,7 @@ export function renderCompanyEmail({
   contentHtml,
   cta,
   accentColor = "#2459a9",
+  maxWidth = 640,
 }: {
   company?: CompanyEmailBranding;
   preheader: string;
@@ -51,6 +52,8 @@ export function renderCompanyEmail({
   contentHtml: string;
   cta?: { label: string; url: string };
   accentColor?: string;
+  /** Card width in pixels; a wide table such as a report needs more than a letter. */
+  maxWidth?: number;
 }) {
   const companyName = company?.name?.trim() || "SavyTimes";
   const logoUrl = safeLogoUrl(company?.logoUrl?.trim());
@@ -70,7 +73,7 @@ export function renderCompanyEmail({
   <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">${escapeEmailHtml(preheader)}</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; background-color: #f3f6fa;">
     <tr><td align="center" style="padding: 28px 12px;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: 640px; background-color: #ffffff; border: 1px solid #dfe7f0; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(22, 40, 63, 0.08);">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width: 100%; max-width: ${maxWidth}px; background-color: #ffffff; border: 1px solid #dfe7f0; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(22, 40, 63, 0.08);">
         <tr><td style="padding: 20px 24px; border-bottom: 1px solid #e7edf4;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
             <td width="60" valign="middle">${logoHtml}</td>

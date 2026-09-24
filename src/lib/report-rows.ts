@@ -10,7 +10,9 @@ import { COMPANY_ID } from "./types.ts";
 import { computeDay, toDate, toMillis } from "./time.ts";
 import { breakDurationMs } from "./work-breaks.ts";
 import { calculateAttendanceSession, formatWorkMinutes } from "./attendance-calculation.ts";
-import { computeLeaveCreditBalance } from "./leave-credits.ts";
+import { computeLeaveCreditBalance, leaveDayHours } from "./leave-credits.ts";
+import { formatCovered, formatDaysAndHours, formatHours, formatShortDate } from "./report-format.ts";
+import { getShiftIntervals } from "./shift-clients.ts";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -25,6 +27,7 @@ import {
   zonedDateKey,
 } from "./attendance.ts";
 import {
+  getEmployeeCompanyIds,
   getEmployeeForCompany,
   getEmployeeLeavesForCompany,
   getEmployeePunchesForCompany,
@@ -77,6 +80,12 @@ export interface ReportRow {
   employeeEmail?: string;
   department: string;
   role: string;
+  /** Who the work was for: the clients named on the shifts, else the company reported on. */
+  client: string;
+  /** The employee's standing, "active" or "inactive". */
+  status: string;
+  /** Length of the employee's working day, to show leave in days and hours. */
+  hoursPerDay: number;
   workedDays: number;
   absentDays: number;
   lateDays: number;
@@ -87,8 +96,11 @@ export interface ReportRow {
   overtimeDates: string[];
   paidLeaveDays: number;
   unpaidLeaveDays: number;
-  /** Paid leave credit left after leave taken this year up to the period's end; null when none is set. */
-  availableLeaveCredit: number | null;
+  /**
+   * Paid leave credit left after leave taken this year up to the period's end, as
+   * the report shows it: "7.54 Days (60.32 hours)". Blank when none is set.
+   */
+  availableLeaveCredit: string;
   remarks: string;
   dailyIntervals: DailyIntervalRecord[];
 }
@@ -130,6 +142,34 @@ export function getDayOfWeekStr(dateStr: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Who a row's work was for. A shift slot that names its client is the most
+ * specific answer; otherwise it is the company being reported on, or across all
+ * clients, the companies the person belongs to other than the main one.
+ */
+function reportClientName(
+  employee: Employee,
+  rawEmployee: Employee,
+  companyFilter: string,
+  reportCompany: Company | null,
+  companies: Company[],
+): string {
+  const shiftClients = [
+    ...new Set(
+      getShiftIntervals(employee)
+        .map((shift) => shift.clientName?.trim() || "")
+        .filter(Boolean),
+    ),
+  ];
+  if (shiftClients.length > 0) return shiftClients.join(", ");
+  if (companyFilter !== "all") return reportCompany?.name || "";
+  const memberOf = getEmployeeCompanyIds(rawEmployee)
+    .map((id) => companies.find((item) => normalizeCompanyId(item.id) === normalizeCompanyId(id)))
+    .filter((item): item is Company => Boolean(item));
+  const clients = memberOf.filter((item) => !item.isMain);
+  return (clients.length > 0 ? clients : memberOf).map((item) => item.name).join(", ");
 }
 
 /**
@@ -208,6 +248,9 @@ export function buildReportRows({
         dayPunchGroups.set(date, []);
       }
 
+      const requiredMinutes = getRequiredWorkMinutes(employee, reportCompany);
+      const hoursPerDay = requiredMinutes > 0 ? requiredMinutes / 60 : 8;
+
       let totalRegularHours = 0;
       let totalApprovedOvertimeHours = 0;
       let totalPendingOvertimeHours = 0;
@@ -216,6 +259,14 @@ export function buildReportRows({
       let workedDaysCount = 0;
       let absentDaysCount = 0;
       let leaveDaysCount = 0;
+      let paidLeaveHours = 0;
+      let unpaidLeaveHours = 0;
+      // One dated line per exception, for the remarks.
+      const absentLines: string[] = [];
+      const lateLines: string[] = [];
+      const paidLeaveLines: string[] = [];
+      const unpaidLeaveLines: string[] = [];
+      const overtimeLines: string[] = [];
 
       const dailyIntervals: DailyIntervalRecord[] = [];
 
@@ -245,9 +296,21 @@ export function buildReportRows({
           workedDaysCount++;
         } else if (isScheduledDay && !approvedLeave) {
           absentDaysCount++;
+          absentLines.push(`${formatShortDate(date)} No punch`);
         }
         if (approvedLeave) {
           leaveDaysCount++;
+        }
+        // Leave over a weekend or holiday is not a working day taken off.
+        if (approvedLeave && isScheduledDay) {
+          const hours = leaveDayHours(approvedLeave, hoursPerDay);
+          if (approvedLeave.paymentStatus === "unpaid") {
+            unpaidLeaveHours += hours;
+            unpaidLeaveLines.push(`${formatShortDate(date)} Unpaid Leave (${formatHours(hours)})`);
+          } else {
+            paidLeaveHours += hours;
+            paidLeaveLines.push(`${formatShortDate(date)} Paid Leave (${formatHours(hours)})`);
+          }
         }
 
         // Build individual punch sessions breakdown for the day
@@ -329,7 +392,10 @@ export function buildReportRows({
               )
             : null;
 
-        if (lateness?.isLate) totalLateDays++;
+        if (lateness?.isLate) {
+          totalLateDays++;
+          lateLines.push(`${formatShortDate(date)} (${lateness.minutes} min late)`);
+        }
 
         const isMissingPunchOut = Boolean(firstIn && !lastOut && sessionCalc?.missingPunchOut);
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
@@ -364,6 +430,7 @@ export function buildReportRows({
               ? `+${approvedOtHours.toFixed(1)}h`
               : `+${Math.round(approvedDayOtMinutes)}m`;
           approvedOvertimeDatesList.push(`${date} (${displayOtText})`);
+          overtimeLines.push(`${approvedOtHours.toFixed(1)}hr OT ${formatShortDate(date)}`);
         }
         if (pendingOtHours > 0) {
           totalPendingOvertimeHours += pendingOtHours;
@@ -467,50 +534,37 @@ export function buildReportRows({
         });
       }
 
-      // Count Paid vs Unpaid Leaves within date bounds
-      let paidLeaveDays = 0;
-      let unpaidLeaveDays = 0;
-      for (const leave of employeeLeaves) {
-        const leaveDates = getEmployeeApprovedLeaveDates(employee, [leave]).filter(
-          (d) => d >= from && d <= to,
-        );
-        if (leave.paymentStatus === "unpaid") {
-          unpaidLeaveDays += leaveDates.length;
-        } else {
-          paidLeaveDays += leaveDates.length;
-        }
-      }
+      // Half days and timed breaks count for what they are, so "Paid Leave Used"
+      // and the credit balance agree.
+      const paidLeaveDays = Math.round((paidLeaveHours / hoursPerDay) * 100) / 100;
+      const unpaidLeaveDays = Math.round((unpaidLeaveHours / hoursPerDay) * 100) / 100;
 
-      // Zero worked days is only useful next to its reason, so the remarks open
-      // with the leave and absence behind it.
-      const leaveReasons = [
-        ...new Set(
-          employeeLeaves
-            .filter((leave) =>
-              getEmployeeApprovedLeaveDates(employee, [leave]).some((d) => d >= from && d <= to),
-            )
-            .map((leave) => leave.leaveCategory || "leave"),
-        ),
-      ];
-      const notes: string[] = [];
-      if (leaveDaysCount > 0) {
-        notes.push(
-          `On leave ${leaveDaysCount} day${leaveDaysCount > 1 ? "s" : ""}` +
-            (leaveReasons.length ? ` (${leaveReasons.join(", ")})` : ""),
+      // Remarks follow the client sheet: an attendance line, then a titled section
+      // with one dated line for each absence, late start, leave and overtime.
+      const isWeek = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) < 7 * 86_400_000;
+      const sections: string[] = [];
+      if (absentLines.length > 0) {
+        sections.push(`Absent:\n${absentLines.join("\n")}`);
+      } else if (workedDaysCount > 0) {
+        sections.push(
+          `Complete Attendance for the ${isWeek ? "Week" : "Period"}: ${formatCovered(from, to)}`,
         );
       }
-      if (absentDaysCount > 0) {
-        notes.push(
-          `Absent ${absentDaysCount} scheduled day${absentDaysCount > 1 ? "s" : ""}`,
-        );
+      if (lateLines.length > 0) sections.push(`Late:\n${lateLines.join("\n")}`);
+      if (paidLeaveLines.length > 0) sections.push(`Paid Leave:\n${paidLeaveLines.join("\n")}`);
+      if (unpaidLeaveLines.length > 0) {
+        sections.push(`Unpaid Leave:\n${unpaidLeaveLines.join("\n")}`);
       }
-      if (totalLateDays > 0) {
-        notes.push(`Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`);
-      }
-      const initialRemarks = notes.join("; ");
+      if (overtimeLines.length > 0) sections.push(`Overtime:\n${overtimeLines.join("\n")}`);
+      const initialRemarks = sections.join("\n\n");
 
       // Credits are the person's, not the client's, so every leave they filed counts.
-      const leaveBalance = computeLeaveCreditBalance(rawEmployee, leaves, to, scheduledDays);
+      const leaveBalance = computeLeaveCreditBalance(rawEmployee, leaves, to, {
+        hoursPerDay,
+        isWorkingDay: (date) =>
+          scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay()) &&
+          !getEmployeeHoliday(reportCompany, employee, date),
+      });
 
       const reg = Math.round(totalRegularHours * 10) / 10;
       const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
@@ -521,6 +575,7 @@ export function buildReportRows({
         ot > 0 ||
         paidLeaveDays > 0 ||
         unpaidLeaveDays > 0 ||
+        leaveDaysCount > 0 ||
         workedDaysCount > 0 ||
         absentDaysCount > 0;
 
@@ -538,6 +593,9 @@ export function buildReportRows({
         employeeEmail: employee.email,
         department: departments.find((d) => d.id === employee.deptId)?.name || "General",
         role: employee.jobTitle || "V.A.",
+        client: reportClientName(employee, rawEmployee, companyFilter, reportCompany, companies),
+        status: rawEmployee.status === "inactive" ? "inactive" : "active",
+        hoursPerDay,
         workedDays: workedDaysCount,
         absentDays: absentDaysCount,
         lateDays: totalLateDays,
@@ -548,7 +606,9 @@ export function buildReportRows({
         overtimeDates: approvedOvertimeDatesList,
         paidLeaveDays,
         unpaidLeaveDays,
-        availableLeaveCredit: leaveBalance?.remaining ?? null,
+        availableLeaveCredit: leaveBalance
+          ? formatDaysAndHours(leaveBalance.remaining, hoursPerDay, "0 Days (0 hours)")
+          : "",
         remarks: initialRemarks,
         dailyIntervals,
       });

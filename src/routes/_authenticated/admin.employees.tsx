@@ -1508,7 +1508,7 @@ export function PromoteModal({
           <input
             type="number"
             min="0"
-            step="0.5"
+            step="any"
             value={annualLeaveCredits}
             onChange={(e) => setAnnualLeaveCredits(e.target.value)}
             placeholder="Not tracked"
