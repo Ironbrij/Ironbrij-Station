@@ -1508,7 +1508,7 @@ export function PromoteModal({
           <input
             type="number"
             min="0"
-            step="0.5"
+            step="any"
             value={annualLeaveCredits}
             onChange={(e) => setAnnualLeaveCredits(e.target.value)}
             placeholder="Not tracked"
@@ -1516,7 +1516,7 @@ export function PromoteModal({
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Paid leave days given each calendar year. Reports show what is left after approved
-            paid leave. Leave blank to not track credits.
+            paid leave as Available Leave Credit. Leave blank to not track credits.
           </p>
         </div>
 
