@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
+import { deliverReportEmail } from "@/lib/report-email";
 import { COMPANY_ID } from "@/lib/types";
 import type {
   Company,
@@ -153,6 +154,25 @@ function parseRecipients(value: unknown): string[] {
   return [...new Set(list.map((item) => String(item).trim().toLowerCase()).filter(validEmail))];
 }
 
+/**
+ * The master key, or any active key minted on the MCP Connect page. A scheduler
+ * is configured with a minted key, and rejecting those made the automation fail
+ * at its first call.
+ */
+async function isAuthorisedKey(token: string): Promise<boolean> {
+  if (!token || token.length < 20) return false;
+  const masterKey =
+    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+  if (token === masterKey) return true;
+  const { baseUrl, apiKey } = getFirestoreConfig();
+  const response = await fetch(
+    `${baseUrl}/adminApiTokens/${encodeURIComponent(token)}?key=${encodeURIComponent(apiKey)}`,
+  );
+  if (!response.ok) return false;
+  const data = (await response.json()) as { fields?: Record<string, FirestoreValue> };
+  return fromFirestoreFields(data.fields).active !== false;
+}
+
 export interface WeeklyReportResult {
   ok: boolean;
   companyId: string;
@@ -200,11 +220,10 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const read = (name: string) =>
     (body[name] as string | undefined) ?? url.searchParams.get(name) ?? "";
 
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
   const token =
-    request.headers.get("x-admin-key")?.trim() || read("token").trim() || "";
-  const masterKey =
-    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
-  if (!token || token !== masterKey) {
+    request.headers.get("x-admin-key")?.trim() || bearer || read("token").trim() || "";
+  if (!(await isAuthorisedKey(token))) {
     return Response.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
@@ -314,15 +333,10 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     return Response.json({ ...result, skippedReason: "no attendance in this week" });
   }
 
-  // Reuse the same delivery path as the report screen's Send, so an automated
-  // report is formatted and routed exactly like one an admin sends by hand.
-  const sendResponse = await fetch(new URL("/api/send-report", request.url).toString(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-admin-key": token,
-    },
-    body: JSON.stringify({
+  // The same renderer and workflow as the report screen's Send button, called
+  // directly: this endpoint has already authenticated the scheduler.
+  const delivery = await deliverReportEmail(
+    {
       recipientEmails: recipients,
       subject: `${companyName} weekly report (${week.label})`,
       customMessage: `Automated weekly report covering ${week.label}.`,
@@ -343,14 +357,14 @@ async function runWeeklyReport(request: Request): Promise<Response> {
         unpaidLeaveDays: row.unpaidLeaveDays,
         remarks: row.remarks,
       })),
-    }),
-  });
+    },
+    "automation@savytimes",
+  );
 
-  if (!sendResponse.ok) {
-    const detail = await sendResponse.text();
+  if (!delivery.ok) {
     return Response.json(
-      { ...result, ok: false, skippedReason: `delivery failed: ${detail.slice(0, 200)}` },
-      { status: 502 },
+      { ...result, ok: false, skippedReason: `delivery failed: ${delivery.error}` },
+      { status: delivery.status >= 400 ? delivery.status : 502 },
     );
   }
 
