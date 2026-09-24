@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc,
+  Timestamp,
+  updateDoc,
+} from "firebase/firestore";
 import { punchesSinceQuery } from "@/lib/punch-queries";
 import {
   Download,
@@ -62,6 +71,7 @@ import {
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
 import {
+  cleanFirestoreData,
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getEmployeeLeavesForCompany,
@@ -82,7 +92,21 @@ import {
 } from "@/lib/report-rows";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
-import { parseLeaveDays } from "@/lib/report-format";
+import { formatAmount, formatShortDate, parseLeaveDays } from "@/lib/report-format";
+import {
+  applyReportEdits,
+  clearDayEdit,
+  clearRowFields,
+  editDay,
+  editRowFields,
+  hasReportEdits,
+  NO_REPORT_EDITS,
+  readReportEdits,
+  removeReportRow,
+  reportEditsDocId,
+  totalsFromDays,
+  type ReportEdits,
+} from "@/lib/report-edits";
 
 type AttendanceRow = {
   key: string;
@@ -103,6 +127,10 @@ export const Route = createFileRoute("/_authenticated/admin/reports")({
   head: () => ({ meta: [{ title: "Reports & Client Delivery — SavyTimes Admin" }] }),
   component: ReportsPage,
 });
+
+/** An editable box in the inspect panel, outlined like the report table's. */
+const PANEL_FIELD_CLASS =
+  "mt-1 w-full rounded border border-dashed border-border bg-background/40 px-2 py-1 text-sm font-black outline-none transition hover:border-primary/60 focus:border-solid focus:border-primary focus:bg-background";
 
 function monthBounds(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -134,15 +162,19 @@ function ReportsPage() {
   // Report view mode: 'summary' = Interactive Company & VA Report, 'daily' = Raw Daily Logs
   const [viewMode, setViewMode] = useState<"summary" | "daily">("summary");
 
-  // Editable summary rows
-  const [reportRows, setReportRows] = useState<ReportRow[]>([]);
-  const [hasCustomEdits, setHasCustomEdits] = useState(false);
-  const [removedRowIds, setRemovedRowIds] = useState<string[]>([]);
+  // The admin's edits to this report, saved by themselves; the rows shown are
+  // the calculated ones with these laid on top.
+  const [reportEdits, setReportEdits] = useState<ReportEdits>(NO_REPORT_EDITS);
+  const [editsSaveState, setEditsSaveState] = useState<"saved" | "unsaved" | "saving" | "error">(
+    "saved",
+  );
 
   // Modals & Drawer state
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [isAddRowModalOpen, setIsAddRowModalOpen] = useState(false);
-  const [selectedIntervalEmployee, setSelectedIntervalEmployee] = useState<ReportRow | null>(null);
+  // The inspect panel names a row rather than holding a copy, so it always shows
+  // exactly what the table shows.
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   // Add custom day / info modal state for inspect drawer
   const [showAddDayModal, setShowAddDayModal] = useState(false);
@@ -486,115 +518,172 @@ function ReportsPage() {
       companyFilter,
     ],
   );
-  // Manual edits belong to the period and company they were made for, so a scope
-  // change releases them rather than pinning the report to the previous scope.
-  const reportScope = `${companyFilter}|${from}|${to}|${departmentId}|${employeeId}`;
-  useEffect(() => {
-    setHasCustomEdits(false);
-    setRemovedRowIds([]);
-  }, [reportScope]);
+  // Live figures and the admin's edits both matter: recompute from Firestore
+  // every time and lay the saved edits on top, field by field, so anything
+  // nobody typed over keeps following the punches.
+  const reportRows = useMemo(
+    () => applyReportEdits(computedSummaryRows, reportEdits),
+    [computedSummaryRows, reportEdits],
+  );
+  const hasCustomEdits = hasReportEdits(reportEdits);
+  const selectedIntervalEmployee = useMemo(
+    () => reportRows.find((row) => row.id === selectedRowId) || null,
+    [reportRows, selectedRowId],
+  );
+  const selectedDayTotals = useMemo(
+    () =>
+      selectedIntervalEmployee ? totalsFromDays(selectedIntervalEmployee.dailyIntervals) : null,
+    [selectedIntervalEmployee],
+  );
 
-  // Live figures and manual edits both matter: recompute from Firestore every
-  // time and lay the admin's own changes back on top, instead of freezing the
-  // whole report at the first edit and never syncing again.
-  useEffect(() => {
-    setReportRows((previous) => {
-      const edited = new Map(
-        previous.filter((row) => row.isAdjusted).map((row) => [row.id, row] as const),
-      );
-      const added = previous.filter((row) => row.isCustom);
-      const computed = computedSummaryRows
-        .filter((row) => !removedRowIds.includes(row.id))
-        .map((row) => {
-          const manual = edited.get(row.id);
-          if (!manual) return row;
-          return {
-            ...row,
-            ...manual,
-            // Day-level records stay live unless the admin edited them too.
-            dailyIntervals: manual.dailyIntervals?.length
-              ? manual.dailyIntervals
-              : row.dailyIntervals,
-          };
-        });
-      return [...added, ...computed];
-    });
-  }, [computedSummaryRows, removedRowIds]);
+  // Edits belong to the company and period they were made for. Department and
+  // person filters only narrow the view, so they share the same saved edits.
+  const editsDocId = reportEditsDocId(companyFilter, from, to);
+  const reportEditsRef = useRef<ReportEdits>(NO_REPORT_EDITS);
+  const editsDocIdRef = useRef(editsDocId);
+  const unsavedEditsRef = useRef(false);
+  const lastSaveErrorRef = useRef("");
 
-  // The inspect drawer holds a copy of one row, so it has to follow the live
-  // rows or a punch fixed inside it keeps showing the figures from before.
   useEffect(() => {
-    setSelectedIntervalEmployee((current) =>
-      current ? reportRows.find((row) => row.id === current.id) || current : current,
+    editsDocIdRef.current = editsDocId;
+    reportEditsRef.current = NO_REPORT_EDITS;
+    unsavedEditsRef.current = false;
+    setReportEdits(NO_REPORT_EDITS);
+    setEditsSaveState("saved");
+    return onSnapshot(
+      doc(db(), "reportEdits", editsDocId),
+      (snapshot) => {
+        // Our own write echoes back first, and a box still being typed in must
+        // not be overwritten by the copy saved a moment ago.
+        if (snapshot.metadata.hasPendingWrites || unsavedEditsRef.current) return;
+        const saved = readReportEdits(snapshot.data());
+        reportEditsRef.current = saved;
+        setReportEdits(saved);
+      },
+      (error) =>
+        setSyncError(`Saved report edits could not load (${error.message}). Refresh to reconnect.`),
     );
-  }, [reportRows]);
+  }, [editsDocId]);
+
+  // Every edit lands here first, so the table and the inspect panel show it at once.
+  function changeReportEdits(
+    update: (edits: ReportEdits) => ReportEdits,
+    { save = false }: { save?: boolean } = {},
+  ) {
+    const next = update(reportEditsRef.current);
+    reportEditsRef.current = next;
+    unsavedEditsRef.current = true;
+    setReportEdits(next);
+    setEditsSaveState("unsaved");
+    if (save) void saveReportEdits();
+  }
+
+  // There is no Save button: a box saves when it loses focus, and one-click
+  // changes save straight away.
+  async function saveReportEdits() {
+    if (!unsavedEditsRef.current) return;
+    const edits = reportEditsRef.current;
+    const target = doc(db(), "reportEdits", editsDocIdRef.current);
+    unsavedEditsRef.current = false;
+    setEditsSaveState("saving");
+    try {
+      if (hasReportEdits(edits)) {
+        await setDoc(
+          target,
+          cleanFirestoreData({
+            ...edits,
+            companyId: companyFilter,
+            from,
+            to,
+            updatedAt: new Date().toISOString(),
+            updatedBy: user?.email || "admin",
+          }),
+        );
+      } else {
+        await deleteDoc(target);
+      }
+      lastSaveErrorRef.current = "";
+      if (!unsavedEditsRef.current) setEditsSaveState("saved");
+    } catch (error) {
+      unsavedEditsRef.current = true;
+      setEditsSaveState("error");
+      const message = (error as Error).message;
+      if (message !== lastSaveErrorRef.current) {
+        lastSaveErrorRef.current = message;
+        toast.error(`Your change is on screen but could not be saved: ${message}`);
+      }
+    }
+  }
 
   // Reset custom edits back to computed values
   function handleResetToCalculated() {
-    setRemovedRowIds([]);
-    setReportRows(computedSummaryRows);
-    setHasCustomEdits(false);
-    setSelectedIntervalEmployee(null);
+    if (
+      !window.confirm(
+        "Discard every saved edit on this report and go back to the calculated figures?",
+      )
+    ) {
+      return;
+    }
+    changeReportEdits(() => NO_REPORT_EDITS, { save: true });
+    setSelectedRowId(null);
     toast.success("Reset report back to live calculated data.");
   }
 
   // Update specific row column inline
   function handleUpdateRowField(id: string, field: keyof ReportRow, value: unknown) {
-    setHasCustomEdits(true);
-    setReportRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== id) return row;
-        return { ...row, isAdjusted: true, [field]: value };
-      }),
-    );
+    changeReportEdits((edits) => editRowFields(edits, id, { [field]: value }));
   }
 
   // A typed leave figure keeps its wording for the email and its days for the totals.
   function handleUpdateLeaveUsed(id: string, kind: "paid" | "unpaid", text: string) {
-    setHasCustomEdits(true);
-    setReportRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== id) return row;
-        const days = parseLeaveDays(text, row.hoursPerDay);
-        return kind === "paid"
-          ? { ...row, isAdjusted: true, paidLeaveUsed: text, paidLeaveDays: days }
-          : { ...row, isAdjusted: true, unpaidLeaveUsed: text, unpaidLeaveDays: days };
-      }),
+    const hoursPerDay = reportRows.find((row) => row.id === id)?.hoursPerDay || 8;
+    const days = parseLeaveDays(text, hoursPerDay);
+    changeReportEdits((edits) =>
+      editRowFields(
+        edits,
+        id,
+        kind === "paid"
+          ? { paidLeaveUsed: text, paidLeaveDays: days }
+          : { unpaidLeaveUsed: text, unpaidLeaveDays: days },
+      ),
     );
   }
 
-  // Toggle worked state for an employee
+  // Toggle worked state for an employee. Turning it back on brings the
+  // calculated hours back rather than leaving them at zero.
+  const DID_NOT_WORK = "Did not work during this period";
   function handleToggleWorked(id: string) {
-    setHasCustomEdits(true);
-    setReportRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== id) return row;
-        const nextWorked = !row.worked;
-        return {
-          ...row,
-          isAdjusted: true,
-          worked: nextWorked,
-          ...(nextWorked === false
-            ? {
-                regularHours: 0,
-                overtimeHours: 0,
-                overtimeDates: [],
-                remarks: row.remarks ? row.remarks : "Did not work during this period",
-              }
-            : {}),
-        };
-      }),
+    const row = reportRows.find((item) => item.id === id);
+    if (!row) return;
+    changeReportEdits(
+      (edits) => {
+        if (row.worked) {
+          return editRowFields(edits, id, {
+            worked: false,
+            regularHours: 0,
+            overtimeHours: 0,
+            overtimeDates: [],
+            ...(row.remarks.trim() ? {} : { remarks: DID_NOT_WORK }),
+          });
+        }
+        const restored = clearRowFields(edits, id, [
+          "worked",
+          "regularHours",
+          "overtimeHours",
+          "overtimeDates",
+        ]);
+        return restored.rowEdits[id]?.remarks === DID_NOT_WORK
+          ? clearRowFields(restored, id, ["remarks"])
+          : restored;
+      },
+      { save: true },
     );
   }
 
   // Delete row
   function handleDeleteRow(id: string) {
-    setHasCustomEdits(true);
-    setRemovedRowIds((previous) => (previous.includes(id) ? previous : [...previous, id]));
-    setReportRows((prev) => prev.filter((row) => row.id !== id));
-    if (selectedIntervalEmployee?.id === id) {
-      setSelectedIntervalEmployee(null);
-    }
+    changeReportEdits((edits) => removeReportRow(edits, id), { save: true });
+    if (selectedRowId === id) setSelectedRowId(null);
     toast.success("Removed row from current report.");
   }
 
@@ -619,8 +708,9 @@ function ReportsPage() {
       unpaidLeaveDays: Number(newRowData.unpaidLeaveDays) || 0,
       dailyIntervals: [],
     };
-    setHasCustomEdits(true);
-    setReportRows((prev) => [newRow, ...prev]);
+    changeReportEdits((edits) => ({ ...edits, customRows: [newRow, ...edits.customRows] }), {
+      save: true,
+    });
     setIsAddRowModalOpen(false);
     setNewRowData({
       employeeName: "",
@@ -653,62 +743,20 @@ function ReportsPage() {
   // DAILY INTERVAL & OVERTIME APPROVAL HANDLERS
   // --------------------------------------------------------------------------
 
-  // Update a single day's interval record for an employee.
-  // `persisted` means the change was written to Firestore: the row must then
-  // follow the recomputed figures, not a hand-patched copy of them, or fixing a
-  // punch here looks like it never took effect.
+  // Update a single day's hours for an employee; the row's totals follow the days.
   function handleUpdateDayInterval(
     employeeRowId: string,
     date: string,
     updates: Partial<DailyIntervalRecord>,
-    { persisted = false }: { persisted?: boolean } = {},
   ) {
-    if (!persisted) setHasCustomEdits(true);
-    setReportRows((prev) =>
-      prev.map((row) => {
-        if (row.id !== employeeRowId) return row;
+    changeReportEdits((edits) => editDay(edits, employeeRowId, date, updates));
+  }
 
-        const updatedIntervals = row.dailyIntervals.map((day) => {
-          if (day.date !== date) return day;
-          return { ...day, ...updates };
-        });
-
-        // Recompute totals from updated intervals
-        let newReg = 0;
-        let newApprovedOt = 0;
-        let newPendingOt = 0;
-        const newOtDates: string[] = [];
-
-        for (const day of updatedIntervals) {
-          newReg += day.regularHours;
-          if (day.rawOvertimeHours > 0) {
-            if (day.isOvertimeApproved) {
-              newApprovedOt += day.rawOvertimeHours;
-              newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
-            } else if (!day.isOvertimeRejected && day.overtimeStatus !== "rejected") {
-              newPendingOt += day.rawOvertimeHours;
-            }
-          }
-        }
-
-        const updatedRow: ReportRow = {
-          ...row,
-          isAdjusted: !persisted,
-          dailyIntervals: updatedIntervals,
-          regularHours: Math.round(newReg * 10) / 10,
-          overtimeHours: Math.round(newApprovedOt * 10) / 10,
-          pendingOvertimeHours: Math.round(newPendingOt * 10) / 10,
-          overtimeDates: newOtDates,
-          worked: newReg > 0 || newApprovedOt > 0,
-        };
-
-        if (selectedIntervalEmployee?.id === employeeRowId) {
-          setSelectedIntervalEmployee(updatedRow);
-        }
-
-        return updatedRow;
-      }),
-    );
+  // A punch written to Firestore makes the recalculated day the truth, so any
+  // hours typed over that day give way to it.
+  function releaseDayEdit(employeeRowId: string, date: string) {
+    if (!reportEditsRef.current.dayEdits[employeeRowId]?.[date]) return;
+    changeReportEdits((edits) => clearDayEdit(edits, employeeRowId, date), { save: true });
   }
 
   // A membership-only employee has no top-level companyId, so a punch written from
@@ -751,7 +799,7 @@ function ReportsPage() {
       const punchOut = outTime
         ? resolveManualClockOut(day.date, outTime, timezone, punchIn)
         : null;
-      const result = await applyPunchCorrection({
+      await applyPunchCorrection({
         employee: scopedEmp,
         profile: emp,
         companyId: writeCompanyId,
@@ -764,19 +812,8 @@ function ReportsPage() {
         note: `Corrected from the ${day.date} report`,
         timezoneUsed: timezone,
       });
-      handleUpdateDayInterval(
-        employeeRowId,
-        day.date,
-        {
-          punchInTime: inTime,
-          punchOutTime: outTime || undefined,
-          firstInPunchId: result.punchInId,
-          lastOutPunchId: result.punchOutId,
-          isMissingPunchOut: false,
-          status: field === "in" ? "Clock-in corrected" : "Clock-out corrected",
-        },
-        { persisted: true },
-      );
+      // The punch listener recalculates the day; hours typed over it give way.
+      releaseDayEdit(employeeRowId, day.date);
       toast.success(
         `${emp.name}: ${day.date} saved as ${inTime}${outTime ? ` – ${outTime}` : ""}.`,
       );
@@ -808,7 +845,7 @@ function ReportsPage() {
     );
 
     try {
-      const fixedPunchRef = await addDoc(collection(db(), "punches"), {
+      await addDoc(collection(db(), "punches"), {
         employeeId: dayIn?.employeeId || emp?.id || employeeRowId,
         employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
         companyId: writeCompanyId,
@@ -833,17 +870,7 @@ function ReportsPage() {
         attendanceStatus: "complete",
       });
 
-      handleUpdateDayInterval(
-        employeeRowId,
-        date,
-        {
-          punchOutTime: defaultEndTime,
-          lastOutPunchId: fixedPunchRef.id,
-          isMissingPunchOut: false,
-          status: "Punch Out Fixed by Admin",
-        },
-        { persisted: true },
-      );
+      releaseDayEdit(employeeRowId, date);
       toast.success(`Fixed punch out for ${date} (set to ${defaultEndTime})`);
     } catch (err) {
       console.error("Failed to fix punch out:", err);
@@ -915,105 +942,50 @@ function ReportsPage() {
         }
       }
 
-      // Update in-memory report rows & dailyIntervals. When the day was written
-      // to punches, the recompute is the source of truth and must not be pinned
-      // behind this local copy.
-      const empRowId = selectedIntervalEmployee.id;
-      if (!syncToPunches) setHasCustomEdits(true);
+      // A day written to punches is recalculated from them. One kept off the
+      // punches is saved with the report instead, so it survives a reload. The
+      // note goes into the remarks as a dated line under "Notes:".
+      const row = selectedIntervalEmployee;
+      const note = customDayNote.trim();
+      const dayRecord: Partial<DailyIntervalRecord> = {
+        date: customDayDate,
+        dayOfWeek: getDayOfWeekStr(customDayDate),
+        scheduledShift:
+          emp?.shiftStartTime && emp?.shiftEndTime
+            ? `${emp.shiftStartTime}–${emp.shiftEndTime}`
+            : "09:00–17:00",
+        regularHours: Number(customDayRegularHours) || 0,
+        rawOvertimeHours: 0,
+        isOvertimeApproved: false,
+        overtimeStatus: "none",
+        isMissingPunchOut: false,
+        isAutoPunchOut: false,
+        minutesLate: 0,
+        breakMinutes: 0,
+        unloggedBreakMinutes: 0,
+        status: customDayStatus.trim() || (note ? note.slice(0, 20) : "Custom Record"),
+        isCustom: true,
+        ...(customDayPunchIn ? { punchInTime: customDayPunchIn } : {}),
+        ...(customDayPunchOut ? { punchOutTime: customDayPunchOut } : {}),
+        ...(inPunchId ? { firstInPunchId: inPunchId } : {}),
+        ...(outPunchId ? { lastOutPunchId: outPunchId } : {}),
+        ...(note ? { note } : {}),
+      };
+      const noteLine = `${formatShortDate(customDayDate)} ${note}`;
+      const remarks = row.remarks.trim();
+      const nextRemarks = !remarks
+        ? `Notes:\n${noteLine}`
+        : /(^|\n)Notes:\n/.test(remarks)
+          ? `${remarks}\n${noteLine}`
+          : `${remarks}\n\nNotes:\n${noteLine}`;
 
-      setReportRows((prev) =>
-        prev.map((row) => {
-          if (row.id !== empRowId) return row;
-
-          const existingIndex = row.dailyIntervals.findIndex((d) => d.date === customDayDate);
-          let updatedIntervals: DailyIntervalRecord[];
-
-          const updatedDayRecord: DailyIntervalRecord = {
-            date: customDayDate,
-            dayOfWeek: getDayOfWeekStr(customDayDate),
-            scheduledShift:
-              emp?.shiftStartTime && emp?.shiftEndTime
-                ? `${emp.shiftStartTime}–${emp.shiftEndTime}`
-                : "09:00–17:00",
-            punchInTime: customDayPunchIn || undefined,
-            punchOutTime: customDayPunchOut || undefined,
-            firstInPunchId: inPunchId,
-            lastOutPunchId: outPunchId,
-            regularHours: Number(customDayRegularHours) || 0,
-            rawOvertimeHours: 0,
-            isOvertimeApproved: false,
-            overtimeStatus: "none",
-            isMissingPunchOut: false,
-            isAutoPunchOut: false,
-            minutesLate: 0,
-            breakMinutes: 0,
-            unloggedBreakMinutes: 0,
-            status:
-              customDayStatus.trim() ||
-              (customDayNote ? customDayNote.slice(0, 20) : "Custom Record"),
-            note: customDayNote.trim() || undefined,
-            isCustom: true,
-          };
-
-          if (existingIndex >= 0) {
-            updatedIntervals = row.dailyIntervals.map((d, idx) =>
-              idx === existingIndex
-                ? {
-                    ...d,
-                    ...updatedDayRecord,
-                    note: customDayNote.trim() || d.note,
-                  }
-                : d,
-            );
-          } else {
-            updatedIntervals = [...row.dailyIntervals, updatedDayRecord].sort((a, b) =>
-              a.date.localeCompare(b.date),
-            );
-          }
-
-          // Recompute totals
-          let newReg = 0;
-          let newApprovedOt = 0;
-          let newPendingOt = 0;
-          const newOtDates: string[] = [];
-
-          for (const day of updatedIntervals) {
-            newReg += day.regularHours;
-            if (day.rawOvertimeHours > 0) {
-              if (day.isOvertimeApproved) {
-                newApprovedOt += day.rawOvertimeHours;
-                newOtDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
-              } else if (!day.isOvertimeRejected && day.overtimeStatus !== "rejected") {
-                newPendingOt += day.rawOvertimeHours;
-              }
-            }
-          }
-
-          const newRemarks = customDayNote.trim()
-            ? row.remarks
-              ? `${row.remarks}; [${customDayDate}: ${customDayNote.trim()}]`
-              : `[${customDayDate}: ${customDayNote.trim()}]`
-            : row.remarks;
-
-          const updatedRow: ReportRow = {
-            ...row,
-            isAdjusted: !syncToPunches,
-            dailyIntervals: updatedIntervals,
-            regularHours: Math.round(newReg * 10) / 10,
-            overtimeHours: Math.round(newApprovedOt * 10) / 10,
-            pendingOvertimeHours: Math.round(newPendingOt * 10) / 10,
-            overtimeDates: newOtDates,
-            workedDays: updatedIntervals.filter((d) => d.regularHours > 0).length,
-            remarks: newRemarks,
-            worked: newReg > 0 || newApprovedOt > 0,
-          };
-
-          if (selectedIntervalEmployee?.id === empRowId) {
-            setSelectedIntervalEmployee(updatedRow);
-          }
-
-          return updatedRow;
-        }),
+      changeReportEdits(
+        (edits) => {
+          let next = syncToPunches ? edits : editDay(edits, row.id, customDayDate, dayRecord);
+          if (note) next = editRowFields(next, row.id, { remarks: nextRemarks });
+          return next;
+        },
+        { save: true },
       );
 
       toast.success(
@@ -1630,16 +1602,31 @@ function ReportsPage() {
             <div className="flex items-center gap-2 font-medium">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <span>
-                <strong>Edit before sending:</strong> click any outlined cell to change it, including
-                leave used and leave credit, e.g. <em>2.5 Days (20 hours)</em>. Click{" "}
+                <strong>Edit before sending:</strong> click any outlined cell to change it,
+                including leave used and leave credit, e.g. <em>2.5 Days (20 hours)</em>. Click{" "}
                 <span className="font-bold text-primary underline">Inspect Days</span> on any
                 employee to see day-by-day hours, fix missed punch-outs, and review overtimes.
               </span>
             </div>
-            {hasCustomEdits && (
+            {(hasCustomEdits || editsSaveState !== "saved") && (
               <div className="flex items-center gap-2 shrink-0">
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                  Custom Edits Active
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${
+                    editsSaveState === "error"
+                      ? "bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700"
+                      : editsSaveState === "saved"
+                        ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
+                        : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                  }`}
+                  role="status"
+                >
+                  {editsSaveState === "saving"
+                    ? "Saving…"
+                    : editsSaveState === "unsaved"
+                      ? "Editing: saves when you click out"
+                      : editsSaveState === "error"
+                        ? "Not saved: click out of the box to retry"
+                        : "Edits saved"}
                 </span>
                 <button
                   type="button"
@@ -1719,6 +1706,7 @@ function ReportsPage() {
                           handleUpdateRowField(row.id, "employeeName", e.target.value)
                         }
                         placeholder="Employee Name"
+                        onBlur={saveReportEdits}
                         className="w-full font-bold text-foreground text-xs px-2 py-1 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                       {row.employeeEmail && (
@@ -1767,6 +1755,7 @@ function ReportsPage() {
                         value={row.role}
                         onChange={(e) => handleUpdateRowField(row.id, "role", e.target.value)}
                         placeholder="Role / Title"
+                        onBlur={saveReportEdits}
                         className="w-full text-xs font-medium px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
@@ -1786,6 +1775,7 @@ function ReportsPage() {
                               parseFloat(e.target.value) || 0,
                             )
                           }
+                          onBlur={saveReportEdits}
                           className="w-full text-right font-bold text-sky-700 text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                         />
                         <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
@@ -1809,6 +1799,7 @@ function ReportsPage() {
                               parseFloat(e.target.value) || 0,
                             )
                           }
+                          onBlur={saveReportEdits}
                           className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
                             row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
@@ -1847,6 +1838,7 @@ function ReportsPage() {
                           )
                         }
                         placeholder="e.g. Aug 12 (1.5h), Aug 15 (2h)"
+                        onBlur={saveReportEdits}
                         className="w-full text-xs text-foreground px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
@@ -1858,6 +1850,7 @@ function ReportsPage() {
                         value={row.paidLeaveUsed}
                         placeholder="e.g. 2.5 Days (20 hours)"
                         onChange={(e) => handleUpdateLeaveUsed(row.id, "paid", e.target.value)}
+                        onBlur={saveReportEdits}
                         className="w-full text-center font-bold text-emerald-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
@@ -1869,6 +1862,7 @@ function ReportsPage() {
                         value={row.unpaidLeaveUsed}
                         placeholder="e.g. 1 Day (8 hours)"
                         onChange={(e) => handleUpdateLeaveUsed(row.id, "unpaid", e.target.value)}
+                        onBlur={saveReportEdits}
                         className="w-full text-center font-bold text-rose-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
@@ -1882,6 +1876,7 @@ function ReportsPage() {
                         onChange={(e) =>
                           handleUpdateRowField(row.id, "availableLeaveCredit", e.target.value)
                         }
+                        onBlur={saveReportEdits}
                         className={`w-full text-center font-bold text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
                           row.availableLeaveCredit.trim().startsWith("-")
                             ? "text-rose-700"
@@ -1897,6 +1892,7 @@ function ReportsPage() {
                         rows={Math.min(8, Math.max(2, row.remarks.split("\n").length))}
                         onChange={(e) => handleUpdateRowField(row.id, "remarks", e.target.value)}
                         placeholder="Add client remarks / performance note…"
+                        onBlur={saveReportEdits}
                         className="w-full resize-y text-xs leading-snug px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
@@ -1905,7 +1901,7 @@ function ReportsPage() {
                     <td className="p-3 text-center">
                       <button
                         type="button"
-                        onClick={() => setSelectedIntervalEmployee(row)}
+                        onClick={() => setSelectedRowId(row.id)}
                         className="px-2.5 py-1.5 rounded-lg border bg-secondary/60 hover:bg-primary/10 hover:text-primary hover:border-primary/30 text-foreground text-xs font-bold inline-flex items-center gap-1 transition"
                       >
                         <Sliders className="h-3.5 w-3.5 text-primary" />
@@ -2068,7 +2064,7 @@ function ReportsPage() {
                   <span>Add Info / Day</span>
                 </button>
                 <button
-                  onClick={() => setSelectedIntervalEmployee(null)}
+                  onClick={() => setSelectedRowId(null)}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
                 >
                   <X className="h-4 w-4" />
@@ -2076,34 +2072,128 @@ function ReportsPage() {
               </div>
             </div>
 
-            {/* Quick Summary Stats for Selected Employee */}
-            <div className="grid grid-cols-3 gap-3 p-4 bg-muted/20 border-b text-xs">
-              <div className="p-2.5 rounded-lg border bg-card">
-                <div className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Regular Work Hours
-                </div>
-                <div className="text-lg font-black text-sky-600">
-                  {selectedIntervalEmployee.regularHours.toFixed(1)}h
+            {/* The same figures as the report row, edited in the same place, so the
+                table and this panel always agree. */}
+            <div className="grid grid-cols-2 gap-3 border-b bg-muted/20 p-4 text-xs sm:grid-cols-3 lg:grid-cols-6">
+              <label className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  No. of Hours Worked
+                </span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={selectedIntervalEmployee.regularHours}
+                  onChange={(e) =>
+                    handleUpdateRowField(
+                      selectedIntervalEmployee.id,
+                      "regularHours",
+                      parseFloat(e.target.value) || 0,
+                    )
+                  }
+                  onBlur={saveReportEdits}
+                  className={`${PANEL_FIELD_CLASS} text-sky-700`}
+                />
+              </label>
+              <label className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Overtime Hours
+                </span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={selectedIntervalEmployee.overtimeHours}
+                  onChange={(e) =>
+                    handleUpdateRowField(
+                      selectedIntervalEmployee.id,
+                      "overtimeHours",
+                      parseFloat(e.target.value) || 0,
+                    )
+                  }
+                  onBlur={saveReportEdits}
+                  className={`${PANEL_FIELD_CLASS} text-amber-600`}
+                />
+              </label>
+              <div className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Pending Overtime
+                </span>
+                <div className="mt-1 px-2 py-1 text-sm font-black text-rose-600">
+                  {formatAmount(selectedIntervalEmployee.pendingOvertimeHours)}h
                 </div>
               </div>
-              <div className="p-2.5 rounded-lg border bg-card">
-                <div className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Accepted Overtime
-                </div>
-                <div className="text-lg font-black text-amber-600">
-                  +{selectedIntervalEmployee.overtimeHours.toFixed(1)}h
-                </div>
-              </div>
-              <div className="p-2.5 rounded-lg border bg-card">
-                <div className="text-[10px] uppercase font-bold text-muted-foreground">
-                  Pending Overtime Approval
-                </div>
-                <div className="text-lg font-black text-rose-600">
-                  {selectedIntervalEmployee.pendingOvertimeHours > 0
-                    ? `+${selectedIntervalEmployee.pendingOvertimeHours.toFixed(1)}h`
-                    : "0.0h"}
-                </div>
-              </div>
+              <label className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Paid Leave Used
+                </span>
+                <input
+                  type="text"
+                  value={selectedIntervalEmployee.paidLeaveUsed}
+                  placeholder="e.g. 2.5 Days (20 hours)"
+                  onChange={(e) =>
+                    handleUpdateLeaveUsed(selectedIntervalEmployee.id, "paid", e.target.value)
+                  }
+                  onBlur={saveReportEdits}
+                  className={`${PANEL_FIELD_CLASS} text-emerald-700`}
+                />
+              </label>
+              <label className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Unpaid Leave Used
+                </span>
+                <input
+                  type="text"
+                  value={selectedIntervalEmployee.unpaidLeaveUsed}
+                  placeholder="e.g. 1 Day (8 hours)"
+                  onChange={(e) =>
+                    handleUpdateLeaveUsed(selectedIntervalEmployee.id, "unpaid", e.target.value)
+                  }
+                  onBlur={saveReportEdits}
+                  className={`${PANEL_FIELD_CLASS} text-rose-700`}
+                />
+              </label>
+              <label className="rounded-lg border bg-card p-2.5">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Available Leave Credit
+                </span>
+                <input
+                  type="text"
+                  value={selectedIntervalEmployee.availableLeaveCredit}
+                  placeholder="e.g. 7.54 Days (60.32 hours)"
+                  onChange={(e) =>
+                    handleUpdateRowField(
+                      selectedIntervalEmployee.id,
+                      "availableLeaveCredit",
+                      e.target.value,
+                    )
+                  }
+                  onBlur={saveReportEdits}
+                  className={`${PANEL_FIELD_CLASS} ${
+                    selectedIntervalEmployee.availableLeaveCredit.trim().startsWith("-")
+                      ? "text-rose-700"
+                      : "text-teal-700"
+                  }`}
+                />
+              </label>
+              <label className="col-span-2 rounded-lg border bg-card p-2.5 sm:col-span-3 lg:col-span-6">
+                <span className="block text-[10px] font-bold uppercase text-muted-foreground">
+                  Remarks
+                </span>
+                <textarea
+                  value={selectedIntervalEmployee.remarks}
+                  rows={Math.min(
+                    8,
+                    Math.max(2, selectedIntervalEmployee.remarks.split("\n").length),
+                  )}
+                  onChange={(e) =>
+                    handleUpdateRowField(selectedIntervalEmployee.id, "remarks", e.target.value)
+                  }
+                  onBlur={saveReportEdits}
+                  placeholder="Add client remarks / performance note…"
+                  className={`${PANEL_FIELD_CLASS} resize-y text-xs font-medium leading-snug`}
+                />
+              </label>
             </div>
 
             {/* Daily Intervals Table */}
@@ -2257,6 +2347,7 @@ function ReportsPage() {
                               regularHours: parseFloat(e.target.value) || 0,
                             })
                           }
+                          onBlur={saveReportEdits}
                           className="w-16 text-right font-bold text-sky-700 px-1.5 py-1 rounded border bg-background text-xs"
                         />
                       </td>
@@ -2273,6 +2364,7 @@ function ReportsPage() {
                               rawOvertimeHours: parseFloat(e.target.value) || 0,
                             })
                           }
+                          onBlur={saveReportEdits}
                           className={`w-16 text-right font-bold px-1.5 py-1 rounded border bg-background text-xs ${
                             day.rawOvertimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
@@ -2330,17 +2422,45 @@ function ReportsPage() {
                     </tr>
                   )}
                 </tbody>
+                {selectedDayTotals && selectedIntervalEmployee.dailyIntervals.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 bg-secondary/40 font-bold">
+                      <td colSpan={5} className="p-2.5 text-right text-muted-foreground">
+                        Days add up to
+                      </td>
+                      <td className="p-2.5 text-right text-sky-700">
+                        {formatAmount(selectedDayTotals.regularHours)}h
+                      </td>
+                      <td className="p-2.5 text-right text-amber-600">
+                        {formatAmount(selectedDayTotals.overtimeHours)}h
+                      </td>
+                      <td colSpan={2} className="p-2.5 text-[11px] font-semibold">
+                        {selectedDayTotals.regularHours === selectedIntervalEmployee.regularHours &&
+                        selectedDayTotals.overtimeHours ===
+                          selectedIntervalEmployee.overtimeHours ? (
+                          <span className="text-emerald-700">Same as the report row.</span>
+                        ) : (
+                          <span className="text-amber-700">
+                            The report row was typed over:{" "}
+                            {formatAmount(selectedIntervalEmployee.regularHours)}h worked,{" "}
+                            {formatAmount(selectedIntervalEmployee.overtimeHours)}h overtime.
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
 
             <div className="p-4 border-t bg-secondary/30 flex items-center justify-between">
               <div className="text-xs text-muted-foreground">
-                All edits immediately recalculate regular hours, overtime, and overtime dates in the
-                report table.
+                Changes save by themselves when you click out of a box, and show in the report table
+                straight away.
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedIntervalEmployee(null)}
+                onClick={() => setSelectedRowId(null)}
                 className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold shadow-sm"
               >
                 Done Inspecting

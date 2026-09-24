@@ -153,6 +153,11 @@ service cloud.firestore {
       allow read, write: if isAuthed();
     }
 
+    // Edits an admin makes on the Reports page, one document per company and period.
+    match /reportEdits/{id} {
+      allow read, write: if isAdmin();
+    }
+
     // SOD & EOD configuration and question bank
     match /reportingSettings/{id} {
       allow read: if isAuthed();
