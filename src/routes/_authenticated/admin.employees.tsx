@@ -77,6 +77,7 @@ import {
   formatWorkingDaysSummary,
   WorkingDaysPicker,
 } from "@/components/WorkingDaysPicker";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export { DAY_OPTIONS, formatWorkingDaysSummary, WorkingDaysPicker };
 
@@ -174,7 +175,7 @@ function EmployeesListPage() {
     const unsubEmps = onSnapshot(collection(db(), "employees"), (snap) =>
       setEmployees(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
     );
-    const unsubPunches = onSnapshot(collection(db(), "punches"), (snap) =>
+    const unsubPunches = onSnapshot(recentPunchesQuery(7), (snap) =>
       setPunches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
     );
     return () => {

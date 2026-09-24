@@ -42,6 +42,7 @@ import {
   markLateAlertsRead,
   readLateAlertIds,
 } from "@/lib/late-alerts";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
   head: () => ({ meta: [{ title: "Notifications — SavyTimes Admin" }] }),
@@ -111,7 +112,7 @@ function NotificationsPage() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "punches"), (snapshot) =>
+      onSnapshot(recentPunchesQuery(2), (snapshot) =>
         setPunches(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
         ),

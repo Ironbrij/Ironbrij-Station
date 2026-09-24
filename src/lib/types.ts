@@ -50,6 +50,10 @@ export interface Department {
   companyId?: string; // Belongs to specific company ID (defaults to COMPANY_ID for legacy)
   name: string;
   state?: string;
+  /** Teams told by email when someone in this department has leave approved. */
+  leaveNotifyDepartmentIds?: string[];
+  /** Extra people told by email when someone in this department has leave approved. */
+  leaveNotifyEmails?: string[];
 }
 
 export type EmployeeStatus = "active" | "inactive";

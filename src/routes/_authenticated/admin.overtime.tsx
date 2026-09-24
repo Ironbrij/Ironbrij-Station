@@ -31,6 +31,7 @@ import { toDate, toMillis } from "@/lib/time";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/overtime")({
   head: () => ({ meta: [{ title: "Overtime Approvals — SavyTimes Admin" }] }),
@@ -91,7 +92,7 @@ function AdminOvertimePage() {
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
         ),
       ),
-      onSnapshot(collection(db(), "punches"), (snapshot) =>
+      onSnapshot(recentPunchesQuery(45), (snapshot) =>
         setAllPunches(
           snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
         ),
