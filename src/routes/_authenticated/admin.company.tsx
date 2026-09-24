@@ -47,7 +47,7 @@ function CompanyPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [company, setCompany] = useState<Company>({
     id: COMPANY_ID,
-    name: "ironbrij",
+    name: "Ironbrij",
     defaultShiftHours: 8,
     holidays: [],
     holidayAssignments: [],
@@ -95,7 +95,7 @@ function CompanyPage() {
       if (!list.some((c) => c.id === COMPANY_ID)) {
         const defaultCompany: Company = {
           id: COMPANY_ID,
-          name: "ironbrij (Main)",
+          name: "Ironbrij (Main)",
           defaultShiftHours: 8,
           holidays: [],
           workingDays: [1, 2, 3, 4, 5],
@@ -116,7 +116,7 @@ function CompanyPage() {
       if (mainComp) {
         setCompany({
           ...mainComp,
-          name: mainComp.name || "ironbrij",
+          name: mainComp.name || "Ironbrij",
           defaultShiftHours: mainComp.defaultShiftHours ?? 8,
           holidays: mainComp.holidays ?? [],
           holidayAssignments: mainComp.holidayAssignments ?? [],
@@ -159,7 +159,7 @@ function CompanyPage() {
     setBusy(true);
     try {
       const payload: Company = {
-        name: updatedCompany.name.trim() || "ironbrij",
+        name: updatedCompany.name.trim() || "Ironbrij",
         defaultShiftHours: updatedCompany.defaultShiftHours || 8,
         holidays: updatedCompany.holidays,
         holidayAssignments: updatedCompany.holidayAssignments ?? [],

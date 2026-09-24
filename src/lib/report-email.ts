@@ -21,6 +21,9 @@ export interface ReportEmployeeRowPayload {
   unpaidLeaveDays: number;
   /** Paid leave credit left, as typed or calculated: "7.54 Days (60.32 hours)". */
   availableLeaveCredit?: string | null;
+  /** Paid and unpaid leave as typed or calculated, "2.5 Days (20 hours)". */
+  paidLeaveUsed?: string;
+  unpaidLeaveUsed?: string;
   remarks?: string;
 }
 
@@ -51,6 +54,11 @@ const TEAL = "#138f8f";
 const NAVY_TINT = ["#f1f4fa", "#e6ebf5"];
 const TEAL_TINT = ["#eef8f7", "#e0f1ef"];
 const BORDER = "1px solid #cfd8e3";
+
+/** What the admin typed for a leave column, else the figure worked out from the days. */
+function leaveUsedText(typed: string | undefined, days: number, hoursPerDay: number): string {
+  return typed?.trim() || formatDaysAndHours(days, hoursPerDay);
+}
 
 /** "5.51 Days (44.12 hours)" as the sheet shows it: the hours under the days. */
 function daysOverHours(value: string): string {
@@ -104,8 +112,8 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], covered: string
         ${cell(formatAmount(row.regularHours), teal, "center", " font-weight: 700;")}
         ${cell(formatAmount(row.overtimeHours), teal, "center", " font-weight: 700;")}
         ${cell(creditHtml, teal)}
-        ${cell(daysOverHours(formatDaysAndHours(row.paidLeaveDays, hoursPerDay)), teal, "center", " font-weight: 600;")}
-        ${cell(daysOverHours(formatDaysAndHours(row.unpaidLeaveDays, hoursPerDay)), teal, "center", " font-weight: 600;")}
+        ${cell(daysOverHours(leaveUsedText(row.paidLeaveUsed, row.paidLeaveDays, hoursPerDay)), teal, "center", " font-weight: 600;")}
+        ${cell(daysOverHours(leaveUsedText(row.unpaidLeaveUsed, row.unpaidLeaveDays, hoursPerDay)), teal, "center", " font-weight: 600;")}
         ${cell(renderRemarks(row.remarks), teal, "left", " min-width: 190px;")}
       </tr>`;
     })
@@ -251,8 +259,8 @@ export async function deliverReportEmail(
         `  No. of Hours Worked: ${formatAmount(r.regularHours)}`,
         `  Overtime Hours: ${formatAmount(r.overtimeHours)}`,
         `  Leave Credits Available: ${r.availableLeaveCredit?.trim() || "-"}`,
-        `  Paid Leave Used: ${formatDaysAndHours(r.paidLeaveDays, hoursPerDay)}`,
-        `  Unpaid Leave Used: ${formatDaysAndHours(r.unpaidLeaveDays, hoursPerDay)}`,
+        `  Paid Leave Used: ${leaveUsedText(r.paidLeaveUsed, r.paidLeaveDays, hoursPerDay)}`,
+        `  Unpaid Leave Used: ${leaveUsedText(r.unpaidLeaveUsed, r.unpaidLeaveDays, hoursPerDay)}`,
         r.remarks?.trim() ? `  Remarks:\n    ${r.remarks.trim().replace(/\n/g, "\n    ")}` : "",
       ]
         .filter(Boolean)

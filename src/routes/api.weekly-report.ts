@@ -360,6 +360,8 @@ async function runWeeklyReport(request: Request): Promise<Response> {
         overtimeDates: row.overtimeDates,
         paidLeaveDays: row.paidLeaveDays,
         unpaidLeaveDays: row.unpaidLeaveDays,
+        paidLeaveUsed: row.paidLeaveUsed,
+        unpaidLeaveUsed: row.unpaidLeaveUsed,
         availableLeaveCredit: row.availableLeaveCredit,
         remarks: row.remarks,
       })),

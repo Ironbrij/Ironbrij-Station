@@ -82,6 +82,7 @@ import {
 } from "@/lib/report-rows";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
+import { parseLeaveDays } from "@/lib/report-format";
 
 type AttendanceRow = {
   key: string;
@@ -174,6 +175,8 @@ function ReportsPage() {
     overtimeDates: [],
     paidLeaveDays: 0,
     unpaidLeaveDays: 0,
+    paidLeaveUsed: "0",
+    unpaidLeaveUsed: "0",
     availableLeaveCredit: "",
     remarks: "",
   });
@@ -546,6 +549,20 @@ function ReportsPage() {
     );
   }
 
+  // A typed leave figure keeps its wording for the email and its days for the totals.
+  function handleUpdateLeaveUsed(id: string, kind: "paid" | "unpaid", text: string) {
+    setHasCustomEdits(true);
+    setReportRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const days = parseLeaveDays(text, row.hoursPerDay);
+        return kind === "paid"
+          ? { ...row, isAdjusted: true, paidLeaveUsed: text, paidLeaveDays: days }
+          : { ...row, isAdjusted: true, unpaidLeaveUsed: text, unpaidLeaveDays: days };
+      }),
+    );
+  }
+
   // Toggle worked state for an employee
   function handleToggleWorked(id: string) {
     setHasCustomEdits(true);
@@ -624,6 +641,8 @@ function ReportsPage() {
       overtimeDates: [],
       paidLeaveDays: 0,
       unpaidLeaveDays: 0,
+      paidLeaveUsed: "0",
+      unpaidLeaveUsed: "0",
       availableLeaveCredit: "",
       remarks: "",
     });
@@ -1105,6 +1124,8 @@ function ReportsPage() {
               overtimeDates: r.overtimeDates || [],
               paidLeaveDays: Number(r.paidLeaveDays) || 0,
               unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
+              paidLeaveUsed: r.paidLeaveUsed,
+              unpaidLeaveUsed: r.unpaidLeaveUsed,
               availableLeaveCredit: r.availableLeaveCredit,
               remarks: r.remarks,
             };
@@ -1159,8 +1180,8 @@ function ReportsPage() {
       "Regular Hours": Number(row.regularHours).toFixed(1),
       "Accepted Overtime Hours": Number(row.overtimeHours).toFixed(1),
       "Overtime Dates": (row.overtimeDates || []).join("; "),
-      "Paid Leave Used (Days)": row.paidLeaveDays,
-      "Unpaid Leave Used (Days)": row.unpaidLeaveDays,
+      "Paid Leave Used": row.paidLeaveUsed,
+      "Unpaid Leave Used": row.unpaidLeaveUsed,
       "Available Leave Credit": row.availableLeaveCredit,
       Remarks: row.remarks,
     }));
@@ -1609,9 +1630,10 @@ function ReportsPage() {
             <div className="flex items-center gap-2 font-medium">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <span>
-                <strong>Spreadsheet & Interval Inspection:</strong> Click on{" "}
-                <span className="font-bold text-primary underline">Inspect Daily Intervals</span> on
-                any employee to see day-by-day hours, fix missed punch-outs, and review overtimes.
+                <strong>Edit before sending:</strong> click any outlined cell to change it, including
+                leave used and leave credit, e.g. <em>2.5 Days (20 hours)</em>. Click{" "}
+                <span className="font-bold text-primary underline">Inspect Days</span> on any
+                employee to see day-by-day hours, fix missed punch-outs, and review overtimes.
               </span>
             </div>
             {hasCustomEdits && (
@@ -1632,7 +1654,7 @@ function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] text-sm">
+            <table className="w-full min-w-[1420px] text-sm">
               <thead className="bg-secondary/70 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3 font-bold w-[70px] text-center">Worked?</th>
@@ -1641,8 +1663,8 @@ function ReportsPage() {
                   <th className="p-3 font-bold w-[120px] text-right">Regular Hours</th>
                   <th className="p-3 font-bold min-w-[130px] text-right">Overtime</th>
                   <th className="p-3 font-bold min-w-[180px]">Overtime Dates</th>
-                  <th className="p-3 font-bold w-[90px] text-center">Paid Leave Used</th>
-                  <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave Used</th>
+                  <th className="p-3 font-bold min-w-[150px] text-center">Paid Leave Used</th>
+                  <th className="p-3 font-bold min-w-[150px] text-center">Unpaid Leave Used</th>
                   <th
                     className="p-3 font-bold min-w-[170px] text-center"
                     title="Paid leave credit left: the yearly credits set on the employee's profile, less paid leave taken this year up to the end of this period. Type over it to show your own figure, e.g. 7.54 Days (60.32 hours)."
@@ -1697,7 +1719,7 @@ function ReportsPage() {
                           handleUpdateRowField(row.id, "employeeName", e.target.value)
                         }
                         placeholder="Employee Name"
-                        className="w-full font-bold text-foreground text-xs px-2 py-1 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full font-bold text-foreground text-xs px-2 py-1 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                       {row.employeeEmail && (
                         <div className="text-[11px] text-muted-foreground px-2">
@@ -1745,7 +1767,7 @@ function ReportsPage() {
                         value={row.role}
                         onChange={(e) => handleUpdateRowField(row.id, "role", e.target.value)}
                         placeholder="Role / Title"
-                        className="w-full text-xs font-medium px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full text-xs font-medium px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
 
@@ -1764,7 +1786,7 @@ function ReportsPage() {
                               parseFloat(e.target.value) || 0,
                             )
                           }
-                          className="w-full text-right font-bold text-sky-700 text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                          className="w-full text-right font-bold text-sky-700 text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                         />
                         <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
                           h
@@ -1787,7 +1809,7 @@ function ReportsPage() {
                               parseFloat(e.target.value) || 0,
                             )
                           }
-                          className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                          className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
                             row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
                         />
@@ -1825,48 +1847,30 @@ function ReportsPage() {
                           )
                         }
                         placeholder="e.g. Aug 12 (1.5h), Aug 15 (2h)"
-                        className="w-full text-xs text-foreground px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full text-xs text-foreground px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
 
-                    {/* Paid Leave Input */}
+                    {/* Paid Leave Used: free text such as "2.5 Days (20 hours)" */}
                     <td className="p-3 text-center">
-                      <div className="relative inline-flex items-center w-full justify-center">
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={row.paidLeaveDays}
-                          onChange={(e) =>
-                            handleUpdateRowField(
-                              row.id,
-                              "paidLeaveDays",
-                              parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className="w-14 text-center font-bold text-emerald-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        value={row.paidLeaveUsed}
+                        placeholder="e.g. 2.5 Days (20 hours)"
+                        onChange={(e) => handleUpdateLeaveUsed(row.id, "paid", e.target.value)}
+                        className="w-full text-center font-bold text-emerald-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
+                      />
                     </td>
 
-                    {/* Unpaid Leave Input */}
+                    {/* Unpaid Leave Used: free text such as "1 Day (8 hours)" */}
                     <td className="p-3 text-center">
-                      <div className="relative inline-flex items-center w-full justify-center">
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={row.unpaidLeaveDays}
-                          onChange={(e) =>
-                            handleUpdateRowField(
-                              row.id,
-                              "unpaidLeaveDays",
-                              parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className="w-14 text-center font-bold text-rose-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        value={row.unpaidLeaveUsed}
+                        placeholder="e.g. 1 Day (8 hours)"
+                        onChange={(e) => handleUpdateLeaveUsed(row.id, "unpaid", e.target.value)}
+                        className="w-full text-center font-bold text-rose-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
+                      />
                     </td>
 
                     {/* Available Leave Credit: free text such as "7.54 Days (60.32 hours)" */}
@@ -1878,7 +1882,7 @@ function ReportsPage() {
                         onChange={(e) =>
                           handleUpdateRowField(row.id, "availableLeaveCredit", e.target.value)
                         }
-                        className={`w-full text-center font-bold text-xs px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                        className={`w-full text-center font-bold text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
                           row.availableLeaveCredit.trim().startsWith("-")
                             ? "text-rose-700"
                             : "text-teal-700"
@@ -1893,7 +1897,7 @@ function ReportsPage() {
                         rows={Math.min(8, Math.max(2, row.remarks.split("\n").length))}
                         onChange={(e) => handleUpdateRowField(row.id, "remarks", e.target.value)}
                         placeholder="Add client remarks / performance note…"
-                        className="w-full resize-y text-xs leading-snug px-2 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        className="w-full resize-y text-xs leading-snug px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
 
