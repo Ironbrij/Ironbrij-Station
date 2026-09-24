@@ -140,9 +140,9 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         <th style="padding: 10px 12px; font-weight: 700;">Employee / V.A.</th>
         <th style="padding: 10px 12px; text-align: right; font-weight: 700;">Reg Hours</th>
         <th style="padding: 10px 12px; text-align: right; font-weight: 700;">Overtime & Dates</th>
-        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Paid Leave</th>
-        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Unpaid Leave</th>
-        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Leave Credits</th>
+        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Paid Leave Used</th>
+        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Unpaid Leave Used</th>
+        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Available Leave Credit</th>
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Leave Remaining</th>
         <th style="padding: 10px 12px; font-weight: 700;">Remarks</th>
       </tr>
@@ -202,11 +202,11 @@ export async function deliverReportEmail(
             <div style="font-size: 18px; font-weight: 800; color: #d97706;">${body.summary.totalOvertime.toFixed(1)}h</div>
           </div>
           <div style="display: table-cell; padding: 6px; text-align: center;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Paid Leaves</div>
+            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Paid Leave Used</div>
             <div style="font-size: 18px; font-weight: 800; color: #16a34a;">${body.summary.totalPaidLeave}d</div>
           </div>
           <div style="display: table-cell; padding: 6px; text-align: center;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Unpaid Leaves</div>
+            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Unpaid Leave Used</div>
             <div style="font-size: 18px; font-weight: 800; color: #dc2626;">${body.summary.totalUnpaidLeave}d</div>
           </div>
         </div>
@@ -240,7 +240,7 @@ export async function deliverReportEmail(
           ${tableHtml}
         </div>
         <p style="margin-top: 24px; font-size: 12px; color: #64748b; line-height: 18px;">
-          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records. Leave credits are the paid leave days given for the year; leave remaining is what is left after paid leave taken up to the end of this period.
+          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records. Available leave credit is the paid leave days given for the year; leave remaining is what is left after paid leave taken up to the end of this period.
         </p>
       `,
   });
@@ -251,7 +251,7 @@ export async function deliverReportEmail(
   Total Team Members: ${body.summary.totalEmployees}
   Total Regular Hours: ${body.summary.totalHours.toFixed(1)}h
   Total Overtime: ${body.summary.totalOvertime.toFixed(1)}h
-  Paid Leaves: ${body.summary.totalPaidLeave}d | Unpaid Leaves: ${body.summary.totalUnpaidLeave}d
+  Paid Leave Used: ${body.summary.totalPaidLeave}d | Unpaid Leave Used: ${body.summary.totalUnpaidLeave}d
 
   ${body.customMessage ? `Note: ${body.customMessage}\n\n` : ""}
   Breakdown:
@@ -262,9 +262,9 @@ export async function deliverReportEmail(
           1,
         )}h overtime ${
           r.overtimeDates?.length ? `[Dates: ${r.overtimeDates.join(", ")}]` : ""
-        }, Paid: ${r.paidLeaveDays}d, Unpaid: ${r.unpaidLeaveDays}d${
+        }, Paid Leave Used: ${r.paidLeaveDays}d, Unpaid Leave Used: ${r.unpaidLeaveDays}d${
           hasLeaveCredits(r)
-            ? `, Leave credits: ${formatLeaveDays(r.leaveCredits)}, Remaining: ${formatLeaveDays(
+            ? `, Available Leave Credit: ${formatLeaveDays(r.leaveCredits)}, Remaining: ${formatLeaveDays(
                 r.leaveRemaining,
               )}`
             : ""
