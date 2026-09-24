@@ -1516,7 +1516,7 @@ export function PromoteModal({
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Paid leave days given each calendar year. Reports show what is left after approved
-            paid leave. Leave blank to not track credits.
+            paid leave as Available Leave Credit. Leave blank to not track credits.
           </p>
         </div>
 

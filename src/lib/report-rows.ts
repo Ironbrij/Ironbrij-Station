@@ -87,10 +87,8 @@ export interface ReportRow {
   overtimeDates: string[];
   paidLeaveDays: number;
   unpaidLeaveDays: number;
-  /** Paid leave days credited for the year; null when none are set. */
-  leaveCredits: number | null;
-  /** Credits left after paid leave taken this year up to the period's end. */
-  leaveRemaining: number | null;
+  /** Paid leave credit left after leave taken this year up to the period's end; null when none is set. */
+  availableLeaveCredit: number | null;
   remarks: string;
   dailyIntervals: DailyIntervalRecord[];
 }
@@ -550,8 +548,7 @@ export function buildReportRows({
         overtimeDates: approvedOvertimeDatesList,
         paidLeaveDays,
         unpaidLeaveDays,
-        leaveCredits: leaveBalance?.credits ?? null,
-        leaveRemaining: leaveBalance?.remaining ?? null,
+        availableLeaveCredit: leaveBalance?.remaining ?? null,
         remarks: initialRemarks,
         dailyIntervals,
       });

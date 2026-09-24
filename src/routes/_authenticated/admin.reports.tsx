@@ -172,8 +172,7 @@ function ReportsPage() {
     overtimeDates: [],
     paidLeaveDays: 0,
     unpaidLeaveDays: 0,
-    leaveCredits: null,
-    leaveRemaining: null,
+    availableLeaveCredit: null,
     remarks: "",
   });
 
@@ -620,8 +619,7 @@ function ReportsPage() {
       overtimeDates: [],
       paidLeaveDays: 0,
       unpaidLeaveDays: 0,
-      leaveCredits: null,
-      leaveRemaining: null,
+      availableLeaveCredit: null,
       remarks: "",
     });
     toast.success("Added new person to report.");
@@ -1106,8 +1104,7 @@ function ReportsPage() {
               overtimeDates: r.overtimeDates || [],
               paidLeaveDays: Number(r.paidLeaveDays) || 0,
               unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
-              leaveCredits: r.leaveCredits ?? null,
-              leaveRemaining: r.leaveRemaining ?? null,
+              availableLeaveCredit: r.availableLeaveCredit ?? null,
               leaveDates,
               remarks: r.remarks,
             };
@@ -1162,8 +1159,7 @@ function ReportsPage() {
       "Overtime Dates": (row.overtimeDates || []).join("; "),
       "Paid Leave Used (Days)": row.paidLeaveDays,
       "Unpaid Leave Used (Days)": row.unpaidLeaveDays,
-      "Available Leave Credit (Days)": row.leaveCredits ?? "",
-      "Leave Remaining (Days)": row.leaveRemaining ?? "",
+      "Available Leave Credit (Days)": row.availableLeaveCredit ?? "",
       Remarks: row.remarks,
     }));
     const blob = new Blob([Papa.unparse(data)], { type: "text/csv;charset=utf-8" });
@@ -1201,7 +1197,7 @@ function ReportsPage() {
     pdf.text("Reg Hours", 125, y);
     pdf.text("Overtime & Dates", 150, y);
     pdf.text("Paid/Unpaid Used", 188, y);
-    pdf.text("Leave Left", 220, y);
+    pdf.text("Leave Credit", 220, y);
     pdf.text("Remarks", 245, y);
 
     pdf.setFont("helvetica", "normal");
@@ -1231,9 +1227,7 @@ function ReportsPage() {
       pdf.setTextColor(30, 41, 59);
       pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 188, y);
       pdf.text(
-        row.leaveCredits !== null && row.leaveRemaining !== null
-          ? `${formatLeaveDays(row.leaveRemaining)} of ${formatLeaveDays(row.leaveCredits)}`
-          : "—",
+        row.availableLeaveCredit !== null ? formatLeaveDays(row.availableLeaveCredit) : "—",
         220,
         y,
       );
@@ -1640,7 +1634,7 @@ function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] text-sm">
+            <table className="w-full min-w-[1190px] text-sm">
               <thead className="bg-secondary/70 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3 font-bold w-[70px] text-center">Worked?</th>
@@ -1653,15 +1647,9 @@ function ReportsPage() {
                   <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave Used</th>
                   <th
                     className="p-3 font-bold w-[90px] text-center"
-                    title="Paid leave days given for the year. Set on the employee's profile."
+                    title="Paid leave credit left: the yearly credits set on the employee's profile, less paid leave taken this year up to the end of this period."
                   >
                     Available Leave Credit
-                  </th>
-                  <th
-                    className="p-3 font-bold w-[90px] text-center"
-                    title="Credits left after paid leave taken this year, up to the end of this period."
-                  >
-                    Leave Remaining
                   </th>
                   <th className="p-3 font-bold min-w-[180px]">Remarks / Notes</th>
                   <th className="p-3 font-bold min-w-[130px] text-center">Daily Intervals</th>
@@ -1883,44 +1871,23 @@ function ReportsPage() {
                       </div>
                     </td>
 
-                    {/* Leave Credits Input: blank means no credits are tracked */}
+                    {/* Available Leave Credit Input: blank means no credits are tracked */}
                     <td className="p-3 text-center">
                       <div className="relative inline-flex items-center w-full justify-center">
                         <input
                           type="number"
                           step="0.5"
-                          min="0"
-                          value={row.leaveCredits ?? ""}
+                          value={row.availableLeaveCredit ?? ""}
                           placeholder="—"
                           onChange={(e) =>
                             handleUpdateRowField(
                               row.id,
-                              "leaveCredits",
-                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
-                            )
-                          }
-                          className="w-14 text-center font-bold text-foreground text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
-                        />
-                      </div>
-                    </td>
-
-                    {/* Leave Remaining Input */}
-                    <td className="p-3 text-center">
-                      <div className="relative inline-flex items-center w-full justify-center">
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={row.leaveRemaining ?? ""}
-                          placeholder="—"
-                          onChange={(e) =>
-                            handleUpdateRowField(
-                              row.id,
-                              "leaveRemaining",
+                              "availableLeaveCredit",
                               e.target.value === "" ? null : parseFloat(e.target.value) || 0,
                             )
                           }
                           className={`w-14 text-center font-bold text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
-                            (row.leaveRemaining ?? 0) < 0 ? "text-rose-700" : "text-teal-700"
+                            (row.availableLeaveCredit ?? 0) < 0 ? "text-rose-700" : "text-teal-700"
                           }`}
                         />
                       </div>
@@ -2744,8 +2711,8 @@ function ReportsPage() {
                                     : "—"}
                                 </td>
                                 <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
-                                  {row.leaveCredits !== null && row.leaveRemaining !== null
-                                    ? `${formatLeaveDays(row.leaveRemaining)} left of ${formatLeaveDays(row.leaveCredits)}`
+                                  {row.availableLeaveCredit !== null
+                                    ? formatLeaveDays(row.availableLeaveCredit)
                                     : "—"}
                                 </td>
                                 <td className="p-2 text-muted-foreground italic max-w-xs truncate">

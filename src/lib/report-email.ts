@@ -14,18 +14,9 @@ export interface ReportEmployeeRowPayload {
   paidLeaveDays: number;
   unpaidLeaveDays: number;
   leaveDates?: string[];
-  /** Paid leave days credited for the year; null or absent when none are set. */
-  leaveCredits?: number | null;
-  /** Credits left at the end of the period. */
-  leaveRemaining?: number | null;
+  /** Paid leave credit left at the end of the period; null or absent when none is set. */
+  availableLeaveCredit?: number | null;
   remarks?: string;
-}
-
-function hasLeaveCredits(row: ReportEmployeeRowPayload): row is ReportEmployeeRowPayload & {
-  leaveCredits: number;
-  leaveRemaining: number;
-} {
-  return typeof row.leaveCredits === "number" && typeof row.leaveRemaining === "number";
 }
 
 export interface SendReportInput {
@@ -73,19 +64,13 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
           ? `<div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: bold;">${row.workedDays} days worked</div>`
           : "";
 
-      const noCredits = '<span style="color: #94a3b8;">—</span>';
-      const creditsHtml = hasLeaveCredits(row) ? formatLeaveDays(row.leaveCredits) : noCredits;
-      const remainingHtml = hasLeaveCredits(row)
-        ? `<span style="font-weight: 600; color: ${row.leaveRemaining < 0 ? "#dc2626" : "#0f766e"};">${formatLeaveDays(
-            row.leaveRemaining,
-          )}</span>${
-            row.leaveCredits - row.leaveRemaining > 0
-              ? `<div style="font-size: 10px; color: #64748b; margin-top: 2px;">${formatLeaveDays(
-                  Math.round((row.leaveCredits - row.leaveRemaining) * 10) / 10,
-                )} used</div>`
-              : ""
-          }`
-        : noCredits;
+      const available = row.availableLeaveCredit;
+      const creditHtml =
+        typeof available === "number"
+          ? `<span style="font-weight: 600; color: ${available < 0 ? "#dc2626" : "#0f766e"};">${formatLeaveDays(
+              available,
+            )}</span>`
+          : '<span style="color: #94a3b8;">—</span>';
 
       const remarksHtml = row.remarks?.trim()
         ? `<div style="font-size: 11px; color: #475569; font-style: italic;">${escapeEmailHtml(
@@ -121,11 +106,8 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
           ${row.unpaidLeaveDays > 0 ? `${row.unpaidLeaveDays}d` : "0d"}
         </td>
-        <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
-          ${creditsHtml}
-        </td>
         <td style="padding: 10px 12px; text-align: center; font-size: 12px;">
-          ${remainingHtml}
+          ${creditHtml}
         </td>
         <td style="padding: 10px 12px; font-size: 12px;">
           ${remarksHtml}
@@ -143,7 +125,6 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Paid Leave Used</th>
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Unpaid Leave Used</th>
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Available Leave Credit</th>
-        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Leave Remaining</th>
         <th style="padding: 10px 12px; font-weight: 700;">Remarks</th>
       </tr>
     </thead>
@@ -240,7 +221,7 @@ export async function deliverReportEmail(
           ${tableHtml}
         </div>
         <p style="margin-top: 24px; font-size: 12px; color: #64748b; line-height: 18px;">
-          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records. Available leave credit is the paid leave days given for the year; leave remaining is what is left after paid leave taken up to the end of this period.
+          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records. Available leave credit is the paid leave days given for the year, less paid leave taken up to the end of this period.
         </p>
       `,
   });
@@ -263,10 +244,8 @@ export async function deliverReportEmail(
         )}h overtime ${
           r.overtimeDates?.length ? `[Dates: ${r.overtimeDates.join(", ")}]` : ""
         }, Paid Leave Used: ${r.paidLeaveDays}d, Unpaid Leave Used: ${r.unpaidLeaveDays}d${
-          hasLeaveCredits(r)
-            ? `, Available Leave Credit: ${formatLeaveDays(r.leaveCredits)}, Remaining: ${formatLeaveDays(
-                r.leaveRemaining,
-              )}`
+          typeof r.availableLeaveCredit === "number"
+            ? `, Available Leave Credit: ${formatLeaveDays(r.availableLeaveCredit)}`
             : ""
         } ${r.remarks ? `(Remarks: ${r.remarks})` : ""}`,
     )
