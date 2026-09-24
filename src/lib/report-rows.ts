@@ -10,6 +10,7 @@ import { COMPANY_ID } from "./types.ts";
 import { computeDay, toDate, toMillis } from "./time.ts";
 import { breakDurationMs } from "./work-breaks.ts";
 import { calculateAttendanceSession, formatWorkMinutes } from "./attendance-calculation.ts";
+import { computeLeaveCreditBalance } from "./leave-credits.ts";
 import {
   computeEmployeeLateness,
   formatInTimezone,
@@ -86,6 +87,10 @@ export interface ReportRow {
   overtimeDates: string[];
   paidLeaveDays: number;
   unpaidLeaveDays: number;
+  /** Paid leave days credited for the year; null when none are set. */
+  leaveCredits: number | null;
+  /** Credits left after paid leave taken this year up to the period's end. */
+  leaveRemaining: number | null;
   remarks: string;
   dailyIntervals: DailyIntervalRecord[];
 }
@@ -506,6 +511,9 @@ export function buildReportRows({
       }
       const initialRemarks = notes.join("; ");
 
+      // Credits are the person's, not the client's, so every leave they filed counts.
+      const leaveBalance = computeLeaveCreditBalance(rawEmployee, leaves, to, scheduledDays);
+
       const reg = Math.round(totalRegularHours * 10) / 10;
       const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
       // Someone scheduled who never punched is exactly who an admin is looking
@@ -542,6 +550,8 @@ export function buildReportRows({
         overtimeDates: approvedOvertimeDatesList,
         paidLeaveDays,
         unpaidLeaveDays,
+        leaveCredits: leaveBalance?.credits ?? null,
+        leaveRemaining: leaveBalance?.remaining ?? null,
         remarks: initialRemarks,
         dailyIntervals,
       });

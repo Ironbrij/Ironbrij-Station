@@ -99,6 +99,8 @@ export interface Employee {
   requiredWorkMinutes?: number; // Legacy/default requirement; company membership overrides this
   breakAllowanceMinutes?: number; // Break duration in minutes (e.g., 30, 40, 60, 90; default 30)
   maxDailyBreaks?: number; // Number of breaks allowed per day (e.g., 1, 2, 3; default 1)
+  /** Paid leave days credited per calendar year. Unset means no credits are tracked. */
+  annualLeaveCredits?: number | null;
 }
 
 export interface CompanyMembership {

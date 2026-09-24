@@ -80,6 +80,7 @@ import {
   type ReportRow,
 } from "@/lib/report-rows";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { formatLeaveDays } from "@/lib/leave-credits";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
 
 type AttendanceRow = {
@@ -170,6 +171,8 @@ function ReportsPage() {
     overtimeDates: [],
     paidLeaveDays: 0,
     unpaidLeaveDays: 0,
+    leaveCredits: null,
+    leaveRemaining: null,
     remarks: "",
   });
 
@@ -226,14 +229,6 @@ function ReportsPage() {
             })),
           ),
         failed("Leave requests"),
-      ),
-      onSnapshot(
-        collection(db(), "punches"),
-        (snapshot) =>
-          setPunches(
-            snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-          ),
-        failed("Attendance"),
       ),
       onSnapshot(
         collection(db(), "overtimeRequests"),
@@ -607,6 +602,8 @@ function ReportsPage() {
       overtimeDates: [],
       paidLeaveDays: 0,
       unpaidLeaveDays: 0,
+      leaveCredits: null,
+      leaveRemaining: null,
       remarks: "",
     });
     toast.success("Added new person to report.");
@@ -1091,6 +1088,8 @@ function ReportsPage() {
               overtimeDates: r.overtimeDates || [],
               paidLeaveDays: Number(r.paidLeaveDays) || 0,
               unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
+              leaveCredits: r.leaveCredits ?? null,
+              leaveRemaining: r.leaveRemaining ?? null,
               leaveDates,
               remarks: r.remarks,
             };
@@ -1145,6 +1144,8 @@ function ReportsPage() {
       "Overtime Dates": (row.overtimeDates || []).join("; "),
       "Paid Leave (Days)": row.paidLeaveDays,
       "Unpaid Leave (Days)": row.unpaidLeaveDays,
+      "Leave Credits (Days)": row.leaveCredits ?? "",
+      "Leave Remaining (Days)": row.leaveRemaining ?? "",
       Remarks: row.remarks,
     }));
     const blob = new Blob([Papa.unparse(data)], { type: "text/csv;charset=utf-8" });
@@ -1180,9 +1181,10 @@ function ReportsPage() {
     pdf.text("Worked", 60, y);
     pdf.text("Dept / Role", 80, y);
     pdf.text("Reg Hours", 125, y);
-    pdf.text("Overtime & Dates", 155, y);
-    pdf.text("Paid / Unpaid", 205, y);
-    pdf.text("Remarks", 235, y);
+    pdf.text("Overtime & Dates", 150, y);
+    pdf.text("Paid / Unpaid", 188, y);
+    pdf.text("Leave Left", 220, y);
+    pdf.text("Remarks", 245, y);
 
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8.5);
@@ -1207,11 +1209,18 @@ function ReportsPage() {
         row.overtimeHours > 0
           ? `+${Number(row.overtimeHours).toFixed(1)}h ${otDates.length ? `(${otDates.length} dates)` : ""}`
           : "—";
-      pdf.text(otText, 155, y);
+      pdf.text(otText, 150, y);
       pdf.setTextColor(30, 41, 59);
-      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 205, y);
+      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 188, y);
+      pdf.text(
+        row.leaveCredits !== null && row.leaveRemaining !== null
+          ? `${formatLeaveDays(row.leaveRemaining)} of ${formatLeaveDays(row.leaveCredits)}`
+          : "—",
+        220,
+        y,
+      );
       pdf.setTextColor(71, 85, 105);
-      pdf.text((row.remarks || "—").slice(0, 25), 235, y);
+      pdf.text((row.remarks || "—").slice(0, 22), 245, y);
     }
 
     pdf.save(`report_${companyDisplayName.replace(/\s+/g, "_")}_${from}_to_${to}.pdf`);
@@ -1613,7 +1622,7 @@ function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[1280px] text-sm">
               <thead className="bg-secondary/70 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3 font-bold w-[70px] text-center">Worked?</th>
@@ -1624,6 +1633,18 @@ function ReportsPage() {
                   <th className="p-3 font-bold min-w-[180px]">Overtime Dates</th>
                   <th className="p-3 font-bold w-[90px] text-center">Paid Leave</th>
                   <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave</th>
+                  <th
+                    className="p-3 font-bold w-[90px] text-center"
+                    title="Paid leave days given for the year. Set on the employee's profile."
+                  >
+                    Leave Credits
+                  </th>
+                  <th
+                    className="p-3 font-bold w-[90px] text-center"
+                    title="Credits left after paid leave taken this year, up to the end of this period."
+                  >
+                    Leave Remaining
+                  </th>
                   <th className="p-3 font-bold min-w-[180px]">Remarks / Notes</th>
                   <th className="p-3 font-bold min-w-[130px] text-center">Daily Intervals</th>
                   <th className="p-3 font-bold w-[45px] text-center"></th>
@@ -1840,6 +1861,49 @@ function ReportsPage() {
                             )
                           }
                           className="w-14 text-center font-bold text-rose-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Leave Credits Input: blank means no credits are tracked */}
+                    <td className="p-3 text-center">
+                      <div className="relative inline-flex items-center w-full justify-center">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={row.leaveCredits ?? ""}
+                          placeholder="—"
+                          onChange={(e) =>
+                            handleUpdateRowField(
+                              row.id,
+                              "leaveCredits",
+                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-14 text-center font-bold text-foreground text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Leave Remaining Input */}
+                    <td className="p-3 text-center">
+                      <div className="relative inline-flex items-center w-full justify-center">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={row.leaveRemaining ?? ""}
+                          placeholder="—"
+                          onChange={(e) =>
+                            handleUpdateRowField(
+                              row.id,
+                              "leaveRemaining",
+                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className={`w-14 text-center font-bold text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                            (row.leaveRemaining ?? 0) < 0 ? "text-rose-700" : "text-teal-700"
+                          }`}
                         />
                       </div>
                     </td>
@@ -2622,6 +2686,7 @@ function ReportsPage() {
                               <th className="p-2 text-right">Reg Hours</th>
                               <th className="p-2 text-right">Overtime</th>
                               <th className="p-2 text-center">Leaves</th>
+                              <th className="p-2 text-center">Leave Credits</th>
                               <th className="p-2">Remarks</th>
                             </tr>
                           </thead>
@@ -2658,6 +2723,11 @@ function ReportsPage() {
                                 <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
                                   {row.paidLeaveDays > 0 || row.unpaidLeaveDays > 0
                                     ? `Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`
+                                    : "—"}
+                                </td>
+                                <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
+                                  {row.leaveCredits !== null && row.leaveRemaining !== null
+                                    ? `${formatLeaveDays(row.leaveRemaining)} left of ${formatLeaveDays(row.leaveCredits)}`
                                     : "—"}
                                 </td>
                                 <td className="p-2 text-muted-foreground italic max-w-xs truncate">

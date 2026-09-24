@@ -355,6 +355,8 @@ async function runWeeklyReport(request: Request): Promise<Response> {
         overtimeDates: row.overtimeDates,
         paidLeaveDays: row.paidLeaveDays,
         unpaidLeaveDays: row.unpaidLeaveDays,
+        leaveCredits: row.leaveCredits,
+        leaveRemaining: row.leaveRemaining,
         remarks: row.remarks,
       })),
     },

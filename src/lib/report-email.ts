@@ -1,5 +1,6 @@
 import type { CompanyEmailBranding } from "./email-branding";
 import { escapeEmailHtml, renderCompanyEmail } from "./email-template";
+import { formatLeaveDays } from "./leave-credits";
 
 export interface ReportEmployeeRowPayload {
   employeeName: string;
@@ -13,7 +14,18 @@ export interface ReportEmployeeRowPayload {
   paidLeaveDays: number;
   unpaidLeaveDays: number;
   leaveDates?: string[];
+  /** Paid leave days credited for the year; null or absent when none are set. */
+  leaveCredits?: number | null;
+  /** Credits left at the end of the period. */
+  leaveRemaining?: number | null;
   remarks?: string;
+}
+
+function hasLeaveCredits(row: ReportEmployeeRowPayload): row is ReportEmployeeRowPayload & {
+  leaveCredits: number;
+  leaveRemaining: number;
+} {
+  return typeof row.leaveCredits === "number" && typeof row.leaveRemaining === "number";
 }
 
 export interface SendReportInput {
@@ -61,6 +73,20 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
           ? `<div style="font-size: 10px; color: #059669; margin-top: 2px; font-weight: bold;">${row.workedDays} days worked</div>`
           : "";
 
+      const noCredits = '<span style="color: #94a3b8;">—</span>';
+      const creditsHtml = hasLeaveCredits(row) ? formatLeaveDays(row.leaveCredits) : noCredits;
+      const remainingHtml = hasLeaveCredits(row)
+        ? `<span style="font-weight: 600; color: ${row.leaveRemaining < 0 ? "#dc2626" : "#0f766e"};">${formatLeaveDays(
+            row.leaveRemaining,
+          )}</span>${
+            row.leaveCredits - row.leaveRemaining > 0
+              ? `<div style="font-size: 10px; color: #64748b; margin-top: 2px;">${formatLeaveDays(
+                  Math.round((row.leaveCredits - row.leaveRemaining) * 10) / 10,
+                )} used</div>`
+              : ""
+          }`
+        : noCredits;
+
       const remarksHtml = row.remarks?.trim()
         ? `<div style="font-size: 11px; color: #475569; font-style: italic;">${escapeEmailHtml(
             row.remarks,
@@ -95,6 +121,12 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
           ${row.unpaidLeaveDays > 0 ? `${row.unpaidLeaveDays}d` : "0d"}
         </td>
+        <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: #334155;">
+          ${creditsHtml}
+        </td>
+        <td style="padding: 10px 12px; text-align: center; font-size: 12px;">
+          ${remainingHtml}
+        </td>
         <td style="padding: 10px 12px; font-size: 12px;">
           ${remarksHtml}
         </td>
@@ -110,6 +142,8 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], accentColor = "
         <th style="padding: 10px 12px; text-align: right; font-weight: 700;">Overtime & Dates</th>
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Paid Leave</th>
         <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Unpaid Leave</th>
+        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Leave Credits</th>
+        <th style="padding: 10px 12px; text-align: center; font-weight: 700;">Leave Remaining</th>
         <th style="padding: 10px 12px; font-weight: 700;">Remarks</th>
       </tr>
     </thead>
@@ -206,7 +240,7 @@ export async function deliverReportEmail(
           ${tableHtml}
         </div>
         <p style="margin-top: 24px; font-size: 12px; color: #64748b; line-height: 18px;">
-          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records.
+          This report includes verified regular work hours, tracked overtime sessions with specific dates, and approved leave records. Leave credits are the paid leave days given for the year; leave remaining is what is left after paid leave taken up to the end of this period.
         </p>
       `,
   });
@@ -228,9 +262,13 @@ export async function deliverReportEmail(
           1,
         )}h overtime ${
           r.overtimeDates?.length ? `[Dates: ${r.overtimeDates.join(", ")}]` : ""
-        }, Paid: ${r.paidLeaveDays}d, Unpaid: ${r.unpaidLeaveDays}d ${
-          r.remarks ? `(Remarks: ${r.remarks})` : ""
-        }`,
+        }, Paid: ${r.paidLeaveDays}d, Unpaid: ${r.unpaidLeaveDays}d${
+          hasLeaveCredits(r)
+            ? `, Leave credits: ${formatLeaveDays(r.leaveCredits)}, Remaining: ${formatLeaveDays(
+                r.leaveRemaining,
+              )}`
+            : ""
+        } ${r.remarks ? `(Remarks: ${r.remarks})` : ""}`,
     )
     .join("\n")}`;
 
