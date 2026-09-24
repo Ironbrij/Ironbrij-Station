@@ -1160,9 +1160,9 @@ function ReportsPage() {
       "Regular Hours": Number(row.regularHours).toFixed(1),
       "Accepted Overtime Hours": Number(row.overtimeHours).toFixed(1),
       "Overtime Dates": (row.overtimeDates || []).join("; "),
-      "Paid Leave (Days)": row.paidLeaveDays,
-      "Unpaid Leave (Days)": row.unpaidLeaveDays,
-      "Leave Credits (Days)": row.leaveCredits ?? "",
+      "Paid Leave Used (Days)": row.paidLeaveDays,
+      "Unpaid Leave Used (Days)": row.unpaidLeaveDays,
+      "Available Leave Credit (Days)": row.leaveCredits ?? "",
       "Leave Remaining (Days)": row.leaveRemaining ?? "",
       Remarks: row.remarks,
     }));
@@ -1200,7 +1200,7 @@ function ReportsPage() {
     pdf.text("Dept / Role", 80, y);
     pdf.text("Reg Hours", 125, y);
     pdf.text("Overtime & Dates", 150, y);
-    pdf.text("Paid / Unpaid", 188, y);
+    pdf.text("Paid/Unpaid Used", 188, y);
     pdf.text("Leave Left", 220, y);
     pdf.text("Remarks", 245, y);
 
@@ -1592,7 +1592,7 @@ function ReportsPage() {
 
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Paid Leaves
+            Paid Leave Used
           </div>
           <div className="mt-1 text-2xl font-black text-emerald-600">
             {reportTotals.totalPaidLeave}d
@@ -1601,7 +1601,7 @@ function ReportsPage() {
 
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Unpaid Leaves
+            Unpaid Leave Used
           </div>
           <div className="mt-1 text-2xl font-black text-rose-600">
             {reportTotals.totalUnpaidLeave}d
@@ -1649,13 +1649,13 @@ function ReportsPage() {
                   <th className="p-3 font-bold w-[120px] text-right">Regular Hours</th>
                   <th className="p-3 font-bold min-w-[130px] text-right">Overtime</th>
                   <th className="p-3 font-bold min-w-[180px]">Overtime Dates</th>
-                  <th className="p-3 font-bold w-[90px] text-center">Paid Leave</th>
-                  <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave</th>
+                  <th className="p-3 font-bold w-[90px] text-center">Paid Leave Used</th>
+                  <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave Used</th>
                   <th
                     className="p-3 font-bold w-[90px] text-center"
                     title="Paid leave days given for the year. Set on the employee's profile."
                   >
-                    Leave Credits
+                    Available Leave Credit
                   </th>
                   <th
                     className="p-3 font-bold w-[90px] text-center"
@@ -2704,7 +2704,7 @@ function ReportsPage() {
                               <th className="p-2 text-right">Reg Hours</th>
                               <th className="p-2 text-right">Overtime</th>
                               <th className="p-2 text-center">Leaves</th>
-                              <th className="p-2 text-center">Leave Credits</th>
+                              <th className="p-2 text-center">Available Leave Credit</th>
                               <th className="p-2">Remarks</th>
                             </tr>
                           </thead>
