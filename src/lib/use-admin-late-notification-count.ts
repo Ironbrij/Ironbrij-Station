@@ -4,6 +4,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 import type { Company, Employee, LeaveRequest, Punch } from "./types";
 import { buildAdminLateAlerts, LATE_ALERT_READ_EVENT, readLateAlertIds } from "./late-alerts";
+import { recentPunchesQuery } from "./punch-queries";
 
 export function useAdminLateNotificationCount({
   enabled,
@@ -29,7 +30,7 @@ export function useAdminLateNotificationCount({
         })),
       ),
     );
-    const unsubscribePunches = onSnapshot(collection(db(), "punches"), (snapshot) =>
+    const unsubscribePunches = onSnapshot(recentPunchesQuery(2), (snapshot) =>
       setPunches(
         snapshot.docs.map((item) => ({
           id: item.id,

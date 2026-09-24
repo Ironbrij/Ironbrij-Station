@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, doc, onSnapshot, setDoc, Timestamp } from "firebase/firestore";
+import { employeePunchesQuery } from "@/lib/punch-queries";
 import {
   ArrowLeft,
   BriefcaseBusiness,
@@ -153,14 +154,6 @@ function EmployeeDetail() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "punches"), (snapshot) =>
-        setAllPunches(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Punch, "id">),
-          })),
-        ),
-      ),
       onSnapshot(collection(db(), "leaveRequests"), (snapshot) => {
         setLeaves(
           snapshot.docs.map((item) => ({
@@ -197,6 +190,21 @@ function EmployeeDetail() {
     () => employees.find((item) => item.id === id || item.authUid === id),
     [employees, id],
   );
+
+  // Only this person's punches, not the whole company's history.
+  const punchOwnerIds = [...new Set([id, rawEmployee?.id, rawEmployee?.authUid].filter(Boolean))]
+    .sort()
+    .join(",");
+  useEffect(() => {
+    return onSnapshot(employeePunchesQuery(punchOwnerIds.split(",")), (snapshot) =>
+      setAllPunches(
+        snapshot.docs.map((item) => ({
+          id: item.id,
+          ...(item.data() as Omit<Punch, "id">),
+        })),
+      ),
+    );
+  }, [punchOwnerIds]);
   // The client chosen in the header is the admin's, not this employee's. Opening
   // a profile from another client's list used to scope the page to a company the
   // employee is not in, which showed an empty history against a schedule they

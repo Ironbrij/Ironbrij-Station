@@ -7,6 +7,7 @@ import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
@@ -126,10 +127,6 @@ function LateArrivalsPage() {
           })),
         ),
       ),
-      onSnapshot(collection(db(), "punches"), { includeMetadataChanges: true }, (snapshot) => {
-        setPunches(snapshot.docs.map((item) => ({ ...(item.data() as Omit<Punch, "id">), id: item.id })).filter((p) => !p.voidedAt));
-        setPunchesReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
-      }, () => { setPunchesReady(false); toast.error("Late logs could not sync. Refresh to reconnect."); }),
       onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
         setLeaves(
           snapshot.docs.map((item) => ({
@@ -144,6 +141,17 @@ function LateArrivalsPage() {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
+
+  // Load only as far back as the chosen period; "all" still reads the full history.
+  useEffect(() => {
+    setPunchesReady(false);
+    const days = filterPeriod === "all" ? null : filterPeriod === "month" ? 32 : 8;
+    const source = days === null ? collection(db(), "punches") : recentPunchesQuery(days);
+    return onSnapshot(source, { includeMetadataChanges: true }, (snapshot) => {
+      setPunches(snapshot.docs.map((item) => ({ ...(item.data() as Omit<Punch, "id">), id: item.id })).filter((p) => !p.voidedAt));
+      setPunchesReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
+    }, () => { setPunchesReady(false); toast.error("Late logs could not sync. Refresh to reconnect."); });
+  }, [filterPeriod]);
 
   const records = useMemo(() => buildLateRecords(employees, punches, leaves, companies, now, { period: filterPeriod }),
     [employees, punches, leaves, companies, now, filterPeriod]);

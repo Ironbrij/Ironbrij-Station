@@ -10,6 +10,7 @@ import { zonedDateKey } from "@/lib/attendance";
 import { buildAttendanceLog, type AttendanceLogStatus } from "@/lib/dashboard-attendance";
 import { AttendanceLogTable, attendanceStatusLabels } from "@/components/AttendanceLogTable";
 import type { Employee, LeaveRequest, Punch } from "@/lib/types";
+import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
@@ -73,7 +74,7 @@ function AdminHome() {
       () => failed("employees"),
     );
     const unsubPunches = onSnapshot(
-      collection(db(), "punches"),
+      recentPunchesQuery(7),
       { includeMetadataChanges: true },
       (snapshot) => {
         setNow(attendanceNow());

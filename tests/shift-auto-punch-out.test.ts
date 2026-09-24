@@ -34,6 +34,7 @@ function harness(now: Date) {
     "firebase/firestore": firestore,
     sonner: { toast: { info() {} } },
     "./firebase": { db: () => ({}) },
+    "./punch-queries": { recentPunchesQuery: () => ({}) },
     "./attendance": attendance,
     "./company-context": companyContext,
     "./time": time,

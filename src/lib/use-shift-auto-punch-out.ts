@@ -26,6 +26,7 @@ import {
 import { companyEmailBranding } from "./email-branding";
 import { toDate, toMillis } from "./time";
 import type { Company, Employee, Punch } from "./types";
+import { recentPunchesQuery } from "./punch-queries";
 
 const RECONCILE_INTERVAL_MS = 15_000;
 
@@ -310,7 +311,8 @@ export function useCompanyShiftAutoPunchOut({
       (error) => console.error("Company auto punch-out employee snapshot failed:", error),
     );
     const unsubscribePunches = onSnapshot(
-      collection(db(), "punches"),
+      // Forgotten punch-outs are closed within hours, so recent days are enough.
+      recentPunchesQuery(3),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { companyPunchesRef.current = []; return; }

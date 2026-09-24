@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, doc, onSnapshot, Timestamp, updateDoc } from "firebase/firestore";
+import { punchesSinceQuery } from "@/lib/punch-queries";
 import {
   Download,
   FileText,
@@ -244,6 +245,23 @@ function ReportsPage() {
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  // Punches from the report's start date on, with two days' slack for timezones.
+  const punchesSince = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : "";
+  useEffect(() => {
+    const start = punchesSince
+      ? new Date(Date.parse(`${punchesSince}T00:00:00Z`) - 2 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() - 32 * 24 * 60 * 60 * 1000);
+    return onSnapshot(
+      punchesSinceQuery(start),
+      (snapshot) =>
+        setPunches(
+          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
+        ),
+      (error) =>
+        setSyncError(`Attendance could not sync (${error.message}). Refresh to reconnect.`),
+    );
+  }, [punchesSince]);
 
   const selectedCompany = useMemo(() => {
     if (companyFilter === "all") return authCompany;
