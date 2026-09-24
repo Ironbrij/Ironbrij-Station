@@ -35,6 +35,10 @@ export interface Company {
   maxDailyBreaks?: number;
   /** Deduct the configured break from a shift that never punched one. Default on. */
   autoDeductUnloggedBreak?: boolean;
+  /** Who receives this client's automated Monday-to-Friday report. */
+  weeklyReportRecipients?: string[];
+  /** Who receives the all-clients weekly report. Only read on the main company. */
+  weeklyReportAllRecipients?: string[];
   archived?: boolean;
   status?: "active" | "archived";
   isMain?: boolean;
@@ -95,6 +99,8 @@ export interface Employee {
   requiredWorkMinutes?: number; // Legacy/default requirement; company membership overrides this
   breakAllowanceMinutes?: number; // Break duration in minutes (e.g., 30, 40, 60, 90; default 30)
   maxDailyBreaks?: number; // Number of breaks allowed per day (e.g., 1, 2, 3; default 1)
+  /** Paid leave days credited per calendar year. Unset means no credits are tracked. */
+  annualLeaveCredits?: number | null;
 }
 
 export interface CompanyMembership {

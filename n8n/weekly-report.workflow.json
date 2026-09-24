@@ -1,0 +1,179 @@
+{
+  "name": "SavyTimes - Weekly Monday to Friday Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * 6"
+            }
+          ]
+        }
+      },
+      "id": "weekly-report-schedule",
+      "name": "Every Saturday 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "base-url",
+              "name": "baseUrl",
+              "value": "https://station.savykids.com",
+              "type": "string"
+            },
+            {
+              "id": "admin-key",
+              "name": "adminKey",
+              "value": "REPLACE_WITH_ADMIN_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "weeks-ago",
+              "name": "weeksAgo",
+              "value": "0",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "weekly-report-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0],
+      "notes": "The only node to edit. adminKey must match ADMIN_API_KEY in the SavyTimes deployment. weeksAgo 0 is the week that just finished; 1 replays the week before."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.baseUrl }}/api/weekly-report?list=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-key",
+              "value": "={{ $json.adminKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "weekly-report-targets",
+      "name": "List Clients To Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "notes": "Returns every client with weekly report recipients configured, plus the all-clients report. Adding a client never means editing this workflow."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "targets",
+        "options": {}
+      },
+      "id": "weekly-report-split",
+      "name": "One Item Per Client",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.baseUrl }}/api/weekly-report?companyId={{ encodeURIComponent($json.companyId) }}&weeksAgo={{ $('Config').first().json.weeksAgo }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-key",
+              "value": "={{ $('Config').first().json.adminKey }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "weekly-report-send",
+      "name": "Build And Email Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0],
+      "onError": "continueRegularOutput",
+      "notes": "One client at a time, two seconds apart, so one failing client never stops the rest."
+    },
+    {
+      "parameters": {
+        "jsCode": "// One line per client, so the run summary says what actually went out.\nconst results = items.map((item) => item.json);\nconst sent = results.filter((r) => r.sent);\nconst skipped = results.filter((r) => r && r.ok && !r.sent);\nconst failed = results.filter((r) => !r || r.ok === false);\n\nconst line = (r) =>\n  `${r.companyName || r.companyId || 'unknown'}: ${\n    r.sent\n      ? `sent to ${(r.recipients || []).join(', ')} - ${r.employees} people, ${r.totalHours}h`\n      : r.skippedReason || 'failed'\n  }`;\n\nconst period = results.find((r) => r && r.period)?.period || 'the last working week';\n\nreturn [\n  {\n    json: {\n      period,\n      sentCount: sent.length,\n      skippedCount: skipped.length,\n      failedCount: failed.length,\n      subject: `Weekly reports for ${period}: ${sent.length} sent, ${skipped.length} skipped, ${failed.length} failed`,\n      html: `<p>Weekly report run for <strong>${period}</strong>.</p><ul>${results\n        .map((r) => `<li>${line(r)}</li>`)\n        .join('')}</ul>`,\n      lines: results.map(line),\n    },\n  },\n];"
+      },
+      "id": "weekly-report-summary",
+      "name": "Summarise The Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "notes": "Runs once over every client's result."
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_WITH_ADMIN_EMAIL",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "SavyTimes"
+        }
+      },
+      "id": "weekly-report-notify",
+      "name": "Email The Run Summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1320, 0],
+      "notes": "Optional. Tells you a client was skipped rather than leaving it silent. Delete this node if you do not want it."
+    }
+  ],
+  "connections": {
+    "Every Saturday 18:00": {
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
+    },
+    "Config": {
+      "main": [[{ "node": "List Clients To Send", "type": "main", "index": 0 }]]
+    },
+    "List Clients To Send": {
+      "main": [[{ "node": "One Item Per Client", "type": "main", "index": 0 }]]
+    },
+    "One Item Per Client": {
+      "main": [[{ "node": "Build And Email Report", "type": "main", "index": 0 }]]
+    },
+    "Build And Email Report": {
+      "main": [[{ "node": "Summarise The Run", "type": "main", "index": 0 }]]
+    },
+    "Summarise The Run": {
+      "main": [[{ "node": "Email The Run Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Australia/Sydney"
+  },
+  "pinData": {}
+}

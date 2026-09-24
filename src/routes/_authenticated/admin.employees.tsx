@@ -1361,11 +1361,20 @@ export function PromoteModal({
   const [shiftStartTime, setShiftStartTime] = useState(emp.shiftStartTime ?? "09:00");
   const [shiftEndTime, setShiftEndTime] = useState(emp.shiftEndTime ?? "17:00");
   const [workingDays, setWorkingDays] = useState<number[]>(emp.workingDays ?? [0, 1, 2, 3, 4, 5]);
+  const [annualLeaveCredits, setAnnualLeaveCredits] = useState(
+    typeof emp.annualLeaveCredits === "number" ? String(emp.annualLeaveCredits) : "",
+  );
   const [busy, setBusy] = useState(false);
   const { user, company } = useAuth();
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    const creditsText = annualLeaveCredits.trim();
+    const credits = creditsText === "" ? null : Number(creditsText);
+    if (credits !== null && (!Number.isFinite(credits) || credits < 0)) {
+      toast.error("Annual leave credits must be zero or more days, or left blank.");
+      return;
+    }
     setBusy(true);
     const cleanEmail = email.toLowerCase().trim();
     const cleanName = name.trim() || emp.name;
@@ -1408,6 +1417,8 @@ export function PromoteModal({
           shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
           shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
           workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
+          // null clears credits, so a blank field stops tracking them.
+          annualLeaveCredits: credits,
         }),
       );
 
@@ -1491,6 +1502,22 @@ export function PromoteModal({
         <Field label="Full name" value={name} onChange={setName} />
         <Field label="Email address" type="email" value={email} onChange={setEmail} />
         <Field label="Job title" value={jobTitle} onChange={setJobTitle} />
+        <div>
+          <label className="text-sm font-medium">Annual leave credits (days)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={annualLeaveCredits}
+            onChange={(e) => setAnnualLeaveCredits(e.target.value)}
+            placeholder="Not tracked"
+            className="mt-1 w-full rounded-md border px-3 py-2"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Paid leave days given each calendar year. Reports show what is left after approved
+            paid leave. Leave blank to not track credits.
+          </p>
+        </div>
 
         <div>
           <label className="text-sm font-medium">Company Allocation</label>

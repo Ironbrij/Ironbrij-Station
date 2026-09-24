@@ -70,67 +70,18 @@ import {
 } from "@/lib/company-context";
 import { filterEmployeeList } from "@/lib/employee-list";
 import { companyEmailBranding } from "@/lib/email-branding";
+import {
+  addCalendarDay,
+  buildReportRows,
+  describeLeave,
+  getDayOfWeekStr,
+  type DailyIntervalRecord,
+  type PunchSessionRecord,
+  type ReportRow,
+} from "@/lib/report-rows";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { formatLeaveDays } from "@/lib/leave-credits";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
-
-export interface PunchSessionRecord {
-  inTime: string;
-  outTime?: string;
-  durationMinutes: number;
-  isOvertime: boolean;
-  isAuto: boolean;
-  type: string;
-}
-
-export interface DailyIntervalRecord {
-  date: string;
-  dayOfWeek: string;
-  scheduledShift: string;
-  punchInTime?: string; // HH:mm
-  punchOutTime?: string; // HH:mm
-  firstInPunchId?: string;
-  lastOutPunchId?: string;
-  sessions?: PunchSessionRecord[];
-  isMissingPunchOut: boolean;
-  isAutoPunchOut: boolean;
-  minutesLate: number;
-  /** Break the employee actually punched, in minutes. */
-  breakMinutes: number;
-  /** Break allowance charged because none was punched, in minutes. */
-  unloggedBreakMinutes: number;
-  regularHours: number;
-  rawOvertimeHours: number;
-  isOvertimeApproved: boolean;
-  isOvertimeRejected?: boolean;
-  overtimeStatus?: "approved" | "pending" | "rejected" | "none";
-  status: string;
-  note?: string;
-  isCustom?: boolean;
-}
-
-export interface ReportRow {
-  id: string;
-  isCustom?: boolean;
-  isAdjusted?: boolean;
-  worked: boolean; // toggle if the person worked or not
-  employeeId?: string;
-  employeeName: string;
-  employeeEmail?: string;
-  department: string;
-  role: string;
-  workedDays: number;
-  absentDays: number;
-  lateDays: number;
-  leaveDays: number;
-  regularHours: number;
-  overtimeHours: number;
-  pendingOvertimeHours: number;
-  overtimeDates: string[];
-  paidLeaveDays: number;
-  unpaidLeaveDays: number;
-  remarks: string;
-  dailyIntervals: DailyIntervalRecord[];
-}
 
 type AttendanceRow = {
   key: string;
@@ -145,6 +96,8 @@ type AttendanceRow = {
   isAutoPunchOut: boolean;
 };
 
+export type { DailyIntervalRecord, PunchSessionRecord, ReportRow };
+
 export const Route = createFileRoute("/_authenticated/admin/reports")({
   head: () => ({ meta: [{ title: "Reports & Client Delivery — SavyTimes Admin" }] }),
   component: ReportsPage,
@@ -154,30 +107,6 @@ function monthBounds(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
-}
-
-function addCalendarDay(dateKey: string): string {
-  const next = new Date(`${dateKey}T12:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
-}
-
-/** "sick leave (unpaid) - dentist", so a zero-hours day explains itself. */
-function describeLeave(leave: LeaveRequest): string {
-  const category = leave.leaveCategory ? `${leave.leaveCategory} leave` : "Leave";
-  const payment = leave.paymentStatus === "unpaid" ? " (unpaid)" : "";
-  const reason = leave.reason?.trim();
-  return `${category}${payment}${reason ? ` - ${reason}` : ""}`;
-}
-
-function getDayOfWeekStr(dateStr: string): string {
-  try {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
-  } catch {
-    return "";
-  }
 }
 
 function ReportsPage() {
@@ -242,6 +171,8 @@ function ReportsPage() {
     overtimeDates: [],
     paidLeaveDays: 0,
     unpaidLeaveDays: 0,
+    leaveCredits: null,
+    leaveRemaining: null,
     remarks: "",
   });
 
@@ -298,14 +229,6 @@ function ReportsPage() {
             })),
           ),
         failed("Leave requests"),
-      ),
-      onSnapshot(
-        collection(db(), "punches"),
-        (snapshot) =>
-          setPunches(
-            snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-          ),
-        failed("Attendance"),
       ),
       onSnapshot(
         collection(db(), "overtimeRequests"),
@@ -514,422 +437,33 @@ function ReportsPage() {
   ]);
 
   // Compute Auto-Aggregated Report Rows & Daily Intervals per Employee/VA
-  const computedSummaryRows = useMemo(() => {
-    const rows: ReportRow[] = [];
-
-    for (const rawEmployee of filteredEmployees) {
-      const employee =
-        companyFilter === "all" ? rawEmployee : getEmployeeForCompany(rawEmployee, companyFilter);
-      const reportCompany =
-        companyFilter === "all"
-          ? authCompany
-          : companies.find(
-              (item) => normalizeCompanyId(item.id) === normalizeCompanyId(companyFilter),
-            ) || authCompany;
-
-      const employeeLeaves = getEmployeeLeavesForCompany(
-        leaves,
-        rawEmployee,
-        companyFilter,
-      ).filter((leave) => leave.status === "approved");
-
-      const shiftTimezone = getShiftTimezone(employee);
-      const dayPunchGroups = new Map<string, Punch[]>();
-
-      // Shared scoping drops voided corrections and matches company aliases.
-      for (const punch of getEmployeePunchesForCompany(
+  const computedSummaryRows = useMemo(
+    () =>
+      buildReportRows({
+        employees: filteredEmployees,
         punches,
-        rawEmployee,
+        leaves,
+        overtimeRequests,
+        departments,
+        companies,
         companyFilter,
-        reportCompany?.name,
-      )) {
-        if (!punch.timestamp) continue;
-        const punchedAt = toDate(punch.timestamp);
-        if (!punchedAt) continue;
-        const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
-        if (date < from || date > to) continue;
-        if (!dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
-        dayPunchGroups.get(date)!.push(punch);
-      }
-
-      // Collect dates from leaves and holidays within range as well
-      for (const date of getEmployeeHolidayDates(reportCompany, employee)) {
-        if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
-      }
-      for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
-        if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
-      }
-      // A scheduled day with neither punch nor leave is exactly the day an admin
-      // is asking about when a week reads as zero worked days. Seed every one so
-      // it gets a row that says what happened instead of going missing.
-      const scheduledDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
-      const todayKey = zonedDateKey(new Date(), shiftTimezone);
-      const joinedKey = rawEmployee.createdAt
-        ? zonedDateKey(new Date(rawEmployee.createdAt), shiftTimezone)
-        : "";
-      const lastCountedDay = to < todayKey ? to : todayKey;
-      for (let date = from; date <= lastCountedDay; date = addCalendarDay(date)) {
-        if (dayPunchGroups.has(date) || (joinedKey && date < joinedKey)) continue;
-        if (!scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay())) continue;
-        dayPunchGroups.set(date, []);
-      }
-
-      let totalRegularHours = 0;
-      let totalApprovedOvertimeHours = 0;
-      let totalPendingOvertimeHours = 0;
-      const approvedOvertimeDatesList: string[] = [];
-      let totalLateDays = 0;
-      let workedDaysCount = 0;
-      let absentDaysCount = 0;
-      let leaveDaysCount = 0;
-
-      const dailyIntervals: DailyIntervalRecord[] = [];
-
-      const sortedDates = Array.from(dayPunchGroups.keys()).sort();
-
-      for (const date of sortedDates) {
-        const dayPunches = dayPunchGroups.get(date) || [];
-        const sorted = [...dayPunches].sort(
-          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
-        );
-
-        const firstIn = sorted.find((punch) => punch.type === "in");
-        const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
-
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
-        const holiday = getEmployeeHoliday(reportCompany, employee, date);
-        const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
-        const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
-        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
-          employee,
-          reportCompany?.workingDays,
-        );
-        const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
-        const isOffShiftDay = !isScheduledDay;
-
-        if (firstIn) {
-          workedDaysCount++;
-        } else if (isScheduledDay && !approvedLeave) {
-          absentDaysCount++;
-        }
-        if (approvedLeave) {
-          leaveDaysCount++;
-        }
-
-        // Build individual punch sessions breakdown for the day
-        const sessions: PunchSessionRecord[] = [];
-        let currentIn: Punch | null = null;
-        for (const p of sorted) {
-          if (p.type === "in" || p.type === "extra_in") {
-            currentIn = p;
-          } else if ((p.type === "out" || p.type === "extra_out") && currentIn) {
-            const inDate = toDate(currentIn.timestamp);
-            const outDate = toDate(p.timestamp);
-            if (inDate && outDate) {
-              const durMins = Math.max(
-                0,
-                Math.floor((outDate.getTime() - inDate.getTime()) / 60_000),
-              );
-              const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              });
-              const outTimeStr = formatInTimezone(outDate, shiftTimezone, {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              });
-              const isOt =
-                p.type === "extra_out" ||
-                (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0);
-              sessions.push({
-                inTime: inTimeStr,
-                outTime: outTimeStr,
-                durationMinutes: durMins,
-                isOvertime: isOt,
-                isAuto: Boolean(p.isAuto),
-                type: p.type === "extra_out" ? "Extra / OT" : "Regular",
-              });
-            }
-            currentIn = null;
-          }
-        }
-        if (currentIn) {
-          const inDate = toDate(currentIn.timestamp);
-          if (inDate) {
-            const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            });
-            sessions.push({
-              inTime: inTimeStr,
-              durationMinutes: Math.max(0, Math.floor((Date.now() - inDate.getTime()) / 60_000)),
-              isOvertime: currentIn.type === "extra_in",
-              isAuto: false,
-              type: "In Progress",
-            });
-          }
-        }
-
-        const sessionCalc = firstIn
-          ? calculateAttendanceSession({
-              employee,
-              company: reportCompany,
-          punchIn: toDate(firstIn.timestamp) ?? new Date(),
-              punchOut: lastOut ? (toDate(lastOut.timestamp) ?? new Date()) : null,
-              requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
-              isOffShiftDay,
-            })
-          : null;
-
-        const isExcused = Boolean(firstIn?.isExcused);
-        const lateness =
-          firstIn && isScheduledDay
-            ? computeEmployeeLateness(
-                toDate(firstIn.timestamp) ?? new Date(),
-                employee,
-                getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
-                isExcused,
-              )
-            : null;
-
-        if (lateness?.isLate) totalLateDays++;
-
-        const isMissingPunchOut = Boolean(firstIn && !lastOut && sessionCalc?.missingPunchOut);
-        const isAutoPunchOut = Boolean(lastOut?.isAuto);
-
-        const regHours = sessionCalc ? sessionCalc.normalWorkMinutes / 60 : 0;
-        const otHours = sessionCalc ? sessionCalc.overtimeMinutes / 60 : 0;
-
-        // Check all overtime requests for this employee on this day
-        const dayOtRequests = overtimeRequests.filter(
-          (r) =>
-            (r.employeeId === employee.id ||
-              (employee.authUid && r.employeeId === employee.authUid)) &&
-            r.date === date,
-        );
-
-        const approvedDayOtMinutes = dayOtRequests
-          .filter((r) => r.status === "approved")
-          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
-
-        const pendingDayOtMinutes = dayOtRequests
-          .filter((r) => r.status === "pending")
-          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
-
-        const approvedOtHours = approvedDayOtMinutes / 60;
-        const pendingOtHours = pendingDayOtMinutes / 60;
-
-        totalRegularHours += regHours;
-        if (approvedOtHours > 0) {
-          totalApprovedOvertimeHours += approvedOtHours;
-          const displayOtText =
-            approvedOtHours >= 0.1
-              ? `+${approvedOtHours.toFixed(1)}h`
-              : `+${Math.round(approvedDayOtMinutes)}m`;
-          approvedOvertimeDatesList.push(`${date} (${displayOtText})`);
-        }
-        if (pendingOtHours > 0) {
-          totalPendingOvertimeHours += pendingOtHours;
-        }
-
-        const isOvertimeApproved = approvedOtHours > 0;
-        const isOvertimePending = pendingOtHours > 0;
-        const isOvertimeRejected =
-          dayOtRequests.some((r) => r.status === "rejected") && !isOvertimeApproved && !isOvertimePending;
-
-        const overtimeStatus: "approved" | "pending" | "rejected" | "none" = isOvertimeApproved
-          ? "approved"
-          : isOvertimePending
-            ? "pending"
-            : isOvertimeRejected
-              ? "rejected"
-              : "none";
-
-        const displayOtHours =
-          approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : 0;
-
-        const scheduledShiftStr =
-          employee.shiftStartTime && employee.shiftEndTime
-            ? `${employee.shiftStartTime}–${employee.shiftEndTime}`
-            : "09:00–17:00";
-
-        const punchInTimeStr = firstIn
-          ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), shiftTimezone, {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          : undefined;
-
-        const punchOutTimeStr = lastOut
-          ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), shiftTimezone, {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          : undefined;
-
-        // Lunch and other breaks the employee punched, plus any allowance charged
-        // because none was punched: both explain the gap between clock and hours.
-        const punchedBreakMinutes =
-          firstIn && lastOut
-            ? Math.round(
-                breakDurationMs(
-                  sorted,
-                  toDate(firstIn.timestamp) ?? new Date(),
-                  toDate(lastOut.timestamp) ?? new Date(),
-                ) / 60_000,
-              )
-            : 0;
-
-        dailyIntervals.push({
-          date,
-          dayOfWeek: getDayOfWeekStr(date),
-          breakMinutes: punchedBreakMinutes,
-          unloggedBreakMinutes: sessionCalc?.unloggedBreakMinutes || 0,
-          scheduledShift: scheduledShiftStr,
-          punchInTime: punchInTimeStr,
-          punchOutTime: punchOutTimeStr,
-          firstInPunchId: firstIn?.id,
-          lastOutPunchId: lastOut?.id,
-          sessions,
-          isMissingPunchOut,
-          isAutoPunchOut,
-          minutesLate: lateness?.isLate ? lateness.minutes : 0,
-          regularHours: Math.round(regHours * 10) / 10,
-          rawOvertimeHours: Math.round(displayOtHours * 10) / 10,
-          isOvertimeApproved,
-          isOvertimeRejected,
-          overtimeStatus,
-          note:
-            approvedLeave
-              ? describeLeave(approvedLeave)
-              : holiday?.name ||
-                (sessionCalc?.unloggedBreakMinutes
-                  ? `${formatWorkMinutes(sessionCalc.unloggedBreakMinutes)} break deducted (none punched)`
-                  : undefined),
-          status: holiday
-            ? "Holiday"
-            : approvedLeave
-              ? getLeaveLabel(approvedLeave)
-              : isMissingPunchOut
-                ? "Missing Punch Out"
-                : isAutoPunchOut
-                  ? "Auto Punched Out"
-                  : isOffShiftDay && firstIn
-                    ? "Off-day Shift"
-                    : isExcused
-                      ? "Excused (Not Late)"
-                      : lateness?.isLate
-                        ? `Late (${lateness.minutes}m)`
-                        : firstIn
-                          ? "Complete"
-                          : isScheduledDay
-                            ? "Absent (no punch)"
-                            : "Off / No punches",
-        });
-      }
-
-      // Count Paid vs Unpaid Leaves within date bounds
-      let paidLeaveDays = 0;
-      let unpaidLeaveDays = 0;
-      for (const leave of employeeLeaves) {
-        const leaveDates = getEmployeeApprovedLeaveDates(employee, [leave]).filter(
-          (d) => d >= from && d <= to,
-        );
-        if (leave.paymentStatus === "unpaid") {
-          unpaidLeaveDays += leaveDates.length;
-        } else {
-          paidLeaveDays += leaveDates.length;
-        }
-      }
-
-      // Zero worked days is only useful next to its reason, so the remarks open
-      // with the leave and absence behind it.
-      const leaveReasons = [
-        ...new Set(
-          employeeLeaves
-            .filter((leave) =>
-              getEmployeeApprovedLeaveDates(employee, [leave]).some((d) => d >= from && d <= to),
-            )
-            .map((leave) => leave.leaveCategory || "leave"),
-        ),
-      ];
-      const notes: string[] = [];
-      if (leaveDaysCount > 0) {
-        notes.push(
-          `On leave ${leaveDaysCount} day${leaveDaysCount > 1 ? "s" : ""}` +
-            (leaveReasons.length ? ` (${leaveReasons.join(", ")})` : ""),
-        );
-      }
-      if (absentDaysCount > 0) {
-        notes.push(
-          `Absent ${absentDaysCount} scheduled day${absentDaysCount > 1 ? "s" : ""}`,
-        );
-      }
-      if (totalLateDays > 0) {
-        notes.push(`Late on ${totalLateDays} shift${totalLateDays > 1 ? "s" : ""}`);
-      }
-      const initialRemarks = notes.join("; ");
-
-      const reg = Math.round(totalRegularHours * 10) / 10;
-      const ot = Math.round(totalApprovedOvertimeHours * 10) / 10;
-      // Someone scheduled who never punched is exactly who an admin is looking
-      // for, so keep the row and let its remarks say absent rather than drop it.
-      const hasWork =
-        reg > 0 ||
-        ot > 0 ||
-        paidLeaveDays > 0 ||
-        unpaidLeaveDays > 0 ||
-        workedDaysCount > 0 ||
-        absentDaysCount > 0;
-
-      // Nothing scheduled and nothing worked in this period: not this report's row.
-      if (!hasWork) {
-        continue;
-      }
-
-      rows.push({
-        id: employee.id,
-        isCustom: false,
-        worked: true,
-        employeeId: employee.id,
-        employeeName: employee.name,
-        employeeEmail: employee.email,
-        department: departments.find((d) => d.id === employee.deptId)?.name || "General",
-        role: employee.jobTitle || "V.A.",
-        workedDays: workedDaysCount,
-        absentDays: absentDaysCount,
-        lateDays: totalLateDays,
-        leaveDays: leaveDaysCount,
-        regularHours: reg,
-        overtimeHours: ot,
-        pendingOvertimeHours: Math.round(totalPendingOvertimeHours * 10) / 10,
-        overtimeDates: approvedOvertimeDatesList,
-        paidLeaveDays,
-        unpaidLeaveDays,
-        remarks: initialRemarks,
-        dailyIntervals,
-      });
-    }
-
-    return rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-  }, [
-    filteredEmployees,
-    punches,
-    leaves,
-    overtimeRequests,
-    departments,
-    from,
-    to,
-    authCompany,
-    companies,
-    companyFilter,
-  ]);
-
+        fallbackCompany: authCompany,
+        from,
+        to,
+      }),
+    [
+      filteredEmployees,
+      punches,
+      leaves,
+      overtimeRequests,
+      departments,
+      from,
+      to,
+      authCompany,
+      companies,
+      companyFilter,
+    ],
+  );
   // Manual edits belong to the period and company they were made for, so a scope
   // change releases them rather than pinning the report to the previous scope.
   const reportScope = `${companyFilter}|${from}|${to}|${departmentId}|${employeeId}`;
@@ -1068,6 +602,8 @@ function ReportsPage() {
       overtimeDates: [],
       paidLeaveDays: 0,
       unpaidLeaveDays: 0,
+      leaveCredits: null,
+      leaveRemaining: null,
       remarks: "",
     });
     toast.success("Added new person to report.");
@@ -1552,6 +1088,8 @@ function ReportsPage() {
               overtimeDates: r.overtimeDates || [],
               paidLeaveDays: Number(r.paidLeaveDays) || 0,
               unpaidLeaveDays: Number(r.unpaidLeaveDays) || 0,
+              leaveCredits: r.leaveCredits ?? null,
+              leaveRemaining: r.leaveRemaining ?? null,
               leaveDates,
               remarks: r.remarks,
             };
@@ -1606,6 +1144,8 @@ function ReportsPage() {
       "Overtime Dates": (row.overtimeDates || []).join("; "),
       "Paid Leave (Days)": row.paidLeaveDays,
       "Unpaid Leave (Days)": row.unpaidLeaveDays,
+      "Leave Credits (Days)": row.leaveCredits ?? "",
+      "Leave Remaining (Days)": row.leaveRemaining ?? "",
       Remarks: row.remarks,
     }));
     const blob = new Blob([Papa.unparse(data)], { type: "text/csv;charset=utf-8" });
@@ -1641,9 +1181,10 @@ function ReportsPage() {
     pdf.text("Worked", 60, y);
     pdf.text("Dept / Role", 80, y);
     pdf.text("Reg Hours", 125, y);
-    pdf.text("Overtime & Dates", 155, y);
-    pdf.text("Paid / Unpaid", 205, y);
-    pdf.text("Remarks", 235, y);
+    pdf.text("Overtime & Dates", 150, y);
+    pdf.text("Paid / Unpaid", 188, y);
+    pdf.text("Leave Left", 220, y);
+    pdf.text("Remarks", 245, y);
 
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(8.5);
@@ -1668,11 +1209,18 @@ function ReportsPage() {
         row.overtimeHours > 0
           ? `+${Number(row.overtimeHours).toFixed(1)}h ${otDates.length ? `(${otDates.length} dates)` : ""}`
           : "—";
-      pdf.text(otText, 155, y);
+      pdf.text(otText, 150, y);
       pdf.setTextColor(30, 41, 59);
-      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 205, y);
+      pdf.text(`Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`, 188, y);
+      pdf.text(
+        row.leaveCredits !== null && row.leaveRemaining !== null
+          ? `${formatLeaveDays(row.leaveRemaining)} of ${formatLeaveDays(row.leaveCredits)}`
+          : "—",
+        220,
+        y,
+      );
       pdf.setTextColor(71, 85, 105);
-      pdf.text((row.remarks || "—").slice(0, 25), 235, y);
+      pdf.text((row.remarks || "—").slice(0, 22), 245, y);
     }
 
     pdf.save(`report_${companyDisplayName.replace(/\s+/g, "_")}_${from}_to_${to}.pdf`);
@@ -2074,7 +1622,7 @@ function ReportsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[1280px] text-sm">
               <thead className="bg-secondary/70 text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="p-3 font-bold w-[70px] text-center">Worked?</th>
@@ -2085,6 +1633,18 @@ function ReportsPage() {
                   <th className="p-3 font-bold min-w-[180px]">Overtime Dates</th>
                   <th className="p-3 font-bold w-[90px] text-center">Paid Leave</th>
                   <th className="p-3 font-bold w-[90px] text-center">Unpaid Leave</th>
+                  <th
+                    className="p-3 font-bold w-[90px] text-center"
+                    title="Paid leave days given for the year. Set on the employee's profile."
+                  >
+                    Leave Credits
+                  </th>
+                  <th
+                    className="p-3 font-bold w-[90px] text-center"
+                    title="Credits left after paid leave taken this year, up to the end of this period."
+                  >
+                    Leave Remaining
+                  </th>
                   <th className="p-3 font-bold min-w-[180px]">Remarks / Notes</th>
                   <th className="p-3 font-bold min-w-[130px] text-center">Daily Intervals</th>
                   <th className="p-3 font-bold w-[45px] text-center"></th>
@@ -2301,6 +1861,49 @@ function ReportsPage() {
                             )
                           }
                           className="w-14 text-center font-bold text-rose-700 text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Leave Credits Input: blank means no credits are tracked */}
+                    <td className="p-3 text-center">
+                      <div className="relative inline-flex items-center w-full justify-center">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={row.leaveCredits ?? ""}
+                          placeholder="—"
+                          onChange={(e) =>
+                            handleUpdateRowField(
+                              row.id,
+                              "leaveCredits",
+                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-14 text-center font-bold text-foreground text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Leave Remaining Input */}
+                    <td className="p-3 text-center">
+                      <div className="relative inline-flex items-center w-full justify-center">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={row.leaveRemaining ?? ""}
+                          placeholder="—"
+                          onChange={(e) =>
+                            handleUpdateRowField(
+                              row.id,
+                              "leaveRemaining",
+                              e.target.value === "" ? null : parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className={`w-14 text-center font-bold text-xs px-1 py-1.5 rounded border border-transparent hover:border-border focus:border-primary bg-transparent focus:bg-background outline-none transition ${
+                            (row.leaveRemaining ?? 0) < 0 ? "text-rose-700" : "text-teal-700"
+                          }`}
                         />
                       </div>
                     </td>
@@ -3083,6 +2686,7 @@ function ReportsPage() {
                               <th className="p-2 text-right">Reg Hours</th>
                               <th className="p-2 text-right">Overtime</th>
                               <th className="p-2 text-center">Leaves</th>
+                              <th className="p-2 text-center">Leave Credits</th>
                               <th className="p-2">Remarks</th>
                             </tr>
                           </thead>
@@ -3119,6 +2723,11 @@ function ReportsPage() {
                                 <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
                                   {row.paidLeaveDays > 0 || row.unpaidLeaveDays > 0
                                     ? `Paid: ${row.paidLeaveDays}d | Unpaid: ${row.unpaidLeaveDays}d`
+                                    : "—"}
+                                </td>
+                                <td className="p-2 text-center text-muted-foreground whitespace-nowrap">
+                                  {row.leaveCredits !== null && row.leaveRemaining !== null
+                                    ? `${formatLeaveDays(row.leaveRemaining)} left of ${formatLeaveDays(row.leaveCredits)}`
                                     : "—"}
                                 </td>
                                 <td className="p-2 text-muted-foreground italic max-w-xs truncate">
