@@ -1,14 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
-import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 import { resolveAppUrl } from "@/lib/app-url";
-import {
-  buildLeaveTeamNoticeText,
-  describeLeaveDates,
-  findLeaveEmployee,
-  resolveLeaveNoticeRecipients,
-  type LeaveTeamNoticeEvent,
-} from "@/lib/leave-team-notice";
+import { sendLeaveTeamNotice } from "@/lib/leave-team-email";
+import type { LeaveTeamNoticeEvent } from "@/lib/leave-team-notice";
 import type { Department, Employee, LeaveRequest } from "@/lib/types";
 
 /**
@@ -189,91 +183,20 @@ export const Route = createFileRoute("/api/leave-team-notification")({
         if (!leave) {
           return Response.json({ ok: false, error: "Leave request not found" }, { status: 404 });
         }
-        // The team hears about leave only once an admin has approved it.
-        const expectedStatus = body.event === "approved" ? "approved" : "rejected";
-        if (leave.status !== expectedStatus) {
-          return Response.json(
-            { ok: false, error: `Leave is ${leave.status}, not ${expectedStatus}` },
-            { status: 409 },
-          );
-        }
 
-        const employee = findLeaveEmployee(leave, employees);
-        if (!employee) {
-          return Response.json({ ok: false, error: "Employee not found" }, { status: 404 });
-        }
-        const recipients = resolveLeaveNoticeRecipients(employee, departments, employees);
-        if (recipients.length === 0) {
-          return Response.json({ ok: true, sent: 0 });
-        }
-
-        const company = body.company || { name: "SavyTimes" };
-        const companyName = company.name?.trim() || "SavyTimes";
-        const teamName = departments.find((item) => item.id === employee.deptId)?.name;
-        const notice = buildLeaveTeamNoticeText({
+        const result = await sendLeaveTeamNotice({
           event: body.event,
-          employeeName: employee.name,
-          teamName,
-          companyName,
+          leaveRequestId: body.leaveRequestId,
           leave,
+          employees,
+          departments,
+          company: body.company || { name: "SavyTimes" },
+          appUrl: resolveAppUrl(request.url),
         });
-        const accentColor = body.event === "approved" ? "#7c3aed" : "#475569";
-        const when = describeLeaveDates(leave);
-        const html = renderCompanyEmail({
-          company,
-          preheader: notice.headline,
-          label: body.event === "approved" ? "Team leave" : "Leave update",
-          title: body.event === "approved" ? "A teammate will be away" : "Leave cancelled",
-          introHtml: escapeEmailHtml(notice.headline),
-          contentHtml: `
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
-              [
-                { label: "Who", value: employee.name },
-                ...(teamName ? [{ label: "Team", value: teamName }] : []),
-                {
-                  label: "When",
-                  value: when.charAt(0).toUpperCase() + when.slice(1),
-                },
-                ...(body.event === "revoked"
-                  ? [{ label: "Status", value: "Working as usual" }]
-                  : []),
-              ],
-              accentColor,
-            )}</table>`,
-          cta: { label: "Open SavyTimes", url: resolveAppUrl(request.url) },
-          accentColor,
-        });
-
-        // Any n8n workflow that mails email.to works; the report workflow is one.
-        const webhookUrl =
-          process.env.N8N_LEAVE_TEAM_WEBHOOK_URL ||
-          process.env.N8N_REPORT_WEBHOOK_URL ||
-          "https://vmi3182726.contaboserver.net/webhook/time-station-report-email";
-        const webhookResponse = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            event: body.event === "approved" ? "leave_team_notice" : "leave_team_revoked",
-            company,
-            leaveRequestId: body.leaveRequestId,
-            employeeId: employee.id,
-            employeeName: employee.name,
-            team: teamName,
-            email: {
-              to: recipients.join(","),
-              subject: notice.subject,
-              text: notice.text,
-              html,
-            },
-          }),
-        });
-        if (!webhookResponse.ok) {
-          return Response.json(
-            { ok: false, error: `n8n webhook returned ${webhookResponse.status}` },
-            { status: 502 },
-          );
+        if (!result.ok) {
+          return Response.json({ ok: false, error: result.error }, { status: result.status });
         }
-        return Response.json({ ok: true, sent: recipients.length });
+        return Response.json({ ok: true, sent: result.sent });
       },
     },
   },

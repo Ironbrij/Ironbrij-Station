@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { resolveAppUrl } from "@/lib/app-url";
 import { fromFirestoreFields, patchIfUnchanged, toFirestoreFields } from "@/lib/firestore-rest";
 import { getShiftTimezone, zonedDateKey } from "@/lib/attendance";
+import { describeLeaveTeamNoticeResult, sendLeaveTeamNoticeWithKey } from "@/lib/leave-team-email";
+import type { LeaveRequest } from "@/lib/types";
 
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
@@ -1855,10 +1857,28 @@ export const Route = createFileRoute("/api/mcp-action")({
               console.warn("Decision webhook dispatch failed:", notifyErr);
             }
 
+            // Tell the employee's team they will be away, as the admin screen does.
+            let teamNote = "";
+            if (params.decision === "approved") {
+              const teamResult = await sendLeaveTeamNoticeWithKey({
+                baseUrl,
+                apiKey,
+                event: "approved",
+                leaveRequestId: String(params.leaveId),
+                leave: {
+                  ...decided.before,
+                  ...fieldsToUpdate,
+                  id: String(params.leaveId),
+                } as unknown as LeaveRequest,
+                appUrl: resolveAppUrl(request.url),
+              });
+              teamNote = ` ${describeLeaveTeamNoticeResult(teamResult)}`;
+            }
+
             return Response.json({
               ok: true,
               result: {
-                message: `Leave request ${params.leaveId} marked as ${params.decision} and notification dispatched.`,
+                message: `Leave request ${params.leaveId} marked as ${params.decision} and notification dispatched.${teamNote}`,
               },
             });
           }

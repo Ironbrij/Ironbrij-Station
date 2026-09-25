@@ -1,4 +1,4 @@
-import { COMPANY_ID, type Company, type Department, type Employee } from "@/lib/types";
+import { COMPANY_ID, type Company, type Department, type Employee } from "./types.ts";
 
 export type CompanyEmailBranding = {
   id?: string;
