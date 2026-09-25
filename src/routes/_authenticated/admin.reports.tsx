@@ -96,6 +96,7 @@ import {
 import { applyPunchCorrection } from "@/lib/punch-corrections";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
 import { formatAmount, formatShortDate, parseLeaveDays } from "@/lib/report-format";
+import { buildReportCoverMessage } from "@/lib/report-cover-message";
 import {
   applyReportEdits,
   clearDayEdit,
@@ -230,6 +231,9 @@ function ReportsPage() {
   const [clientName, setClientName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [customNote, setCustomNote] = useState("");
+  // Until the admin types in it, the cover message is written from the report
+  // and follows every change to the figures and the recipient's name.
+  const [isCoverNoteEdited, setIsCoverNoteEdited] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
 
@@ -913,12 +917,19 @@ function ReportsPage() {
   const companyDisplayName =
     companyFilter === "all" ? "All Companies" : selectedCompany?.name || "Company";
 
+  const autoCoverNote = useMemo(
+    () => buildReportCoverMessage({ clientName, from, to, rows: reportRows }),
+    [clientName, from, reportRows, to],
+  );
+  const coverNote = isCoverNoteEdited ? customNote : autoCoverNote;
+
   // Open Send Modal with Pre-filled Defaults
   function openSendEmailModal() {
     setEmailSubject(`${companyDisplayName} Attendance & Work Report (${periodLabel})`);
     setClientName(selectedCompany?.name || "");
     setRecipientEmailsText("");
     setCustomNote("");
+    setIsCoverNoteEdited(false);
     setShowEmailPreview(false);
     setIsSendModalOpen(true);
   }
@@ -956,7 +967,7 @@ function ReportsPage() {
         body: JSON.stringify({
           recipientEmails: emailList,
           subject: emailSubject,
-          customMessage: customNote,
+          customMessage: coverNote,
           company: companyEmailBranding(selectedCompany),
           companyName: companyDisplayName,
           clientName: clientName.trim(),
@@ -2590,16 +2601,38 @@ function ReportsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-foreground mb-1">
-                  Custom Cover Message / Remarks for Client (Optional)
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="block text-xs font-bold text-foreground">
+                    Cover Message for Client
+                  </label>
+                  {isCoverNoteEdited ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCoverNoteEdited(false)}
+                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <RotateCcw className="h-3 w-3" /> Rewrite from report
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                      <Sparkles className="h-3 w-3" /> Written from the report
+                    </span>
+                  )}
+                </div>
                 <textarea
-                  rows={3}
-                  value={customNote}
-                  onChange={(e) => setCustomNote(e.target.value)}
-                  placeholder="e.g. Please find the work hours and overtime summary for this month attached below. All shifts and leaves have been reviewed and approved."
-                  className="w-full px-3 py-2 rounded-lg border bg-background text-foreground text-sm resize-none"
+                  rows={14}
+                  value={coverNote}
+                  onChange={(e) => {
+                    setCustomNote(e.target.value);
+                    setIsCoverNoteEdited(true);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border bg-background text-foreground text-sm resize-y"
                 />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {isCoverNoteEdited
+                    ? "Your wording is kept. Use Rewrite from report to bring back the latest figures."
+                    : "Follows the report's figures and the recipient name. Type in it to change the wording."}
+                </p>
               </div>
 
               {/* Toggle Live Preview */}
@@ -2618,9 +2651,9 @@ function ReportsPage() {
                     <div className="font-bold text-foreground border-b pb-2">
                       Subject: {emailSubject}
                     </div>
-                    {customNote && (
+                    {coverNote.trim() && (
                       <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg whitespace-pre-wrap">
-                        {customNote}
+                        {coverNote}
                       </div>
                     )}
                     <div className="grid grid-cols-4 gap-2 text-center py-2 bg-background rounded-lg border">

@@ -57,6 +57,44 @@ export function formatCovered(from: string, to: string): string {
   return `${start.month} ${start.day} - ${end.day}, ${end.year}`;
 }
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * The period in a letter's words: "September 1–30, 2026",
+ * "August 31 – September 4, 2026", "December 29, 2026 – January 2, 2027".
+ */
+export function formatLongPeriod(from: string, to: string): string {
+  const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!isDate(from) || !isDate(to)) return `${from} to ${to}`;
+  const long = (dateKey: string) => {
+    const [year, month, day] = dateKey.split("-").map(Number);
+    return { year, month: MONTH_NAMES[month - 1] || "", day };
+  };
+  const start = long(from);
+  const end = long(to);
+  if (from === to) return `${start.month} ${start.day}, ${start.year}`;
+  if (start.year !== end.year) {
+    return `${start.month} ${start.day}, ${start.year} – ${end.month} ${end.day}, ${end.year}`;
+  }
+  if (start.month !== end.month) {
+    return `${start.month} ${start.day} – ${end.month} ${end.day}, ${end.year}`;
+  }
+  return `${start.month} ${start.day}–${end.day}, ${end.year}`;
+}
+
 /** "14-Sep-26", the date style used in the sheet's remarks. */
 export function formatShortDate(dateKey: string): string {
   const { year, month, day } = parts(dateKey);
