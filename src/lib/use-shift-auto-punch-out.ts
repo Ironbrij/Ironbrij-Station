@@ -1,19 +1,15 @@
 import { attendanceNow } from "./attendance-clock";
 import { useAppRuntime } from "./app-runtime";
 import { useEffect, useRef } from "react";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  runTransaction,
-  setDoc,
-  Timestamp,
-  where,
-} from "firebase/firestore";
+import { doc, setDoc, Timestamp } from "firebase/firestore";
 import { toast } from "sonner";
-import { auth, db } from "./firebase";
-import { formatInTimezone, getShiftTimeout } from "./attendance";
+import { db } from "./firebase";
+import {
+  formatInTimezone,
+  getShiftTimeout,
+  getShiftTimezone,
+  zonedDateKey,
+} from "./attendance";
 import {
   cleanFirestoreData,
   indexPunchesByEmployee,
@@ -22,17 +18,32 @@ import {
   getEmployeeForCompany,
   getPunchCompanyId,
   getRequiredWorkMinutes,
+  normalizeCompanyId,
 } from "./company-context";
-import { companyEmailBranding } from "./email-branding";
 import { toDate, toMillis } from "./time";
 import type { Company, Employee, Punch } from "./types";
-import { recentPunchesQuery } from "./punch-queries";
+import {
+  activePunchesInOrder,
+  isSettled,
+  listOf,
+  useCompaniesLive,
+  useEmployeePunchesLive,
+  useEmployeesLive,
+  useRecentPunchesLive,
+} from "./live-data";
+import { sessionCloseId } from "./punch-session";
+import { autoCloseSession } from "./punch-writes";
 
 const RECONCILE_INTERVAL_MS = 15_000;
 
-function timeoutDocumentId(punchId: string) {
-  return `shift-timeout-${encodeURIComponent(punchId)}`;
-}
+/**
+ * A close the database turned away (someone already closed or changed the
+ * shift) is not tried again for a while. The live punches normally catch up in
+ * a second; if they never show the reason, retrying every 15 seconds would
+ * spend reads all day for nothing.
+ */
+const DECLINED_RETRY_MS = 10 * 60_000;
+const declinedCloses = new Map<string, number>();
 
 export async function reconcileEmployeeShift(
   employee: Employee,
@@ -40,6 +51,7 @@ export async function reconcileEmployeeShift(
   company: Company | null | undefined,
   activeCompanyId: string,
   announceToCurrentUser: boolean,
+  companies: Company[] = [],
 ) {
   punches = punches.filter((punch) => !punch.voidedAt);
   const companyIds = getEmployeeCompanyIds(employee);
@@ -90,53 +102,69 @@ export async function reconcileEmployeeShift(
         ? toDate(subsequentOtherPunch.timestamp) || attendanceNow()
         : timeout!.punchOutAt;
 
-      const recordId = timeoutDocumentId(sessionIn.id);
-      const punchRef = doc(db(), "punches", recordId);
+      const recordId = sessionCloseId(sessionIn.id);
       const noticeRef = doc(db(), "notices", recordId);
       const requiredWorkMinutes = getRequiredWorkMinutes(cCompanyEmployee, company);
       const autoReason = subsequentOtherPunch ? "switch_company" : "forgot_punch_out";
+      // The close is filed under the shift it ends. The UTC date used to put a
+      // switch made early in an Asian morning on the previous day.
+      const attendanceDate =
+        sessionIn.attendanceDate ||
+        sessionIn.date ||
+        timeout?.shift.dateKey ||
+        zonedDateKey(punchedInAt, getShiftTimezone(cCompanyEmployee));
+      const companyName =
+        companies.find((item) => normalizeCompanyId(item.id) === cId)?.name ||
+        sessionIn.companyName ||
+        (cId === activeCompanyId ? company?.name : "") ||
+        cId;
+
+      const attemptKey = `${sessionIn.id}|${(sessionIn as Punch & { correctedAt?: string }).correctedAt || ""}|${autoReason}`;
+      const declinedAt = declinedCloses.get(attemptKey);
+      if (declinedAt !== undefined && attendanceNow().getTime() - declinedAt < DECLINED_RETRY_MS) {
+        continue;
+      }
 
       let created = false;
       try {
-        created = await runTransaction(db(), async (transaction) => {
-          const existingPunch = await transaction.get(punchRef);
-          const sourcePunch = await transaction.get(doc(db(), "punches", sessionIn.id));
-          if (!sourcePunch.exists() || sourcePunch.data().voidedAt ||
-              (sourcePunch.data().correctedAt || "") !== ((sessionIn as Punch & { correctedAt?: string }).correctedAt || "") ||
-              toMillis(sourcePunch.data().timestamp) !== punchedInAt.getTime()) return false;
-          if (existingPunch.exists() && !existingPunch.data().voidedAt) return false;
-
-          transaction.set(
-            punchRef,
-            cleanFirestoreData({
-              employeeId: employee.id,
-              employeeName: employee.name,
-              companyId: cId,
-              companyName: cId === activeCompanyId ? company?.name || "Company" : cId,
-              date: timeout?.shift.dateKey || attendanceNow().toISOString().slice(0, 10),
-              attendanceDate: timeout?.shift.dateKey || attendanceNow().toISOString().slice(0, 10),
-              type: "out",
-              punchInId: sessionIn.id,
-              timestamp: Timestamp.fromDate(autoOutDate),
-              source: "auto",
-              isAuto: true,
-              autoReason,
-              notes: subsequentOtherPunch
-                ? `Auto punched out upon starting work in another company`
-                : "Auto punched out at shift end",
-              scheduledShiftStart: timeout?.shift.start.toISOString(),
-              scheduledShiftEnd: timeout?.shift.end.toISOString(),
-              shiftTimezone: timeout?.shift.timezone,
-              requiredWorkMinutes,
-              normalWorkMinutes: requiredWorkMinutes,
-              overtimeMinutes: 0,
-              totalEligibleMinutes: requiredWorkMinutes,
-              attendanceStatus: "complete",
-            }),
-          );
-
-          return true;
+        // Checked against the saved shift: an employee's own clock-out, an
+        // admin's correction or another device closing it first all win.
+        created = await autoCloseSession({
+          sessionInId: sessionIn.id,
+          expected: {
+            timestampMs: punchedInAt.getTime(),
+            correctedAt: (sessionIn as Punch & { correctedAt?: string }).correctedAt,
+          },
+          nextPunchInId: subsequentOtherPunch?.id,
+          stamp: attendanceNow().toISOString(),
+          close: cleanFirestoreData({
+            employeeId: sessionIn.employeeId || employee.id,
+            employeeName: employee.name,
+            companyId: cId,
+            companyName,
+            date: attendanceDate,
+            attendanceDate,
+            type: "out",
+            timestamp: Timestamp.fromDate(autoOutDate),
+            createdAt: attendanceNow().toISOString(),
+            source: "auto",
+            isAuto: true,
+            autoReason,
+            notes: subsequentOtherPunch
+              ? `Auto punched out upon starting work in another company`
+              : "Auto punched out at shift end",
+            scheduledShiftStart:
+              timeout?.shift.start.toISOString() || sessionIn.scheduledShiftStart,
+            scheduledShiftEnd: timeout?.shift.end.toISOString() || sessionIn.scheduledShiftEnd,
+            shiftTimezone: timeout?.shift.timezone || sessionIn.shiftTimezone,
+            requiredWorkMinutes,
+            normalWorkMinutes: requiredWorkMinutes,
+            overtimeMinutes: 0,
+            totalEligibleMinutes: requiredWorkMinutes,
+            attendanceStatus: "complete",
+          }),
         });
+        if (!created) declinedCloses.set(attemptKey, attendanceNow().getTime());
       } catch (txError) {
         console.error("Shift auto punch-out transaction failed:", txError);
       }
@@ -190,13 +218,17 @@ export function useShiftAutoPunchOut({
   activeCompanyId: string;
 }) {
   const { ready } = useAppRuntime();
-  const punchesRef = useRef<Punch[]>([]);
+  // The same punches the punch page shows, so both judge the same shift.
+  const punchesLive = useEmployeePunchesLive(ready ? employee : null);
+  // Never act on the local cache or on our own unconfirmed writes.
+  const punches = isSettled(punchesLive) ? punchesLive.data : undefined;
   const reconcilingRef = useRef(false);
 
   useEffect(() => {
-    if (!employee || !ready) return;
+    if (!employee || !ready || !punches) return;
 
     const activeEmployee = employee;
+    const ordered = activePunchesInOrder(punches);
     let active = true;
 
     async function reconcile() {
@@ -206,7 +238,7 @@ export function useShiftAutoPunchOut({
       try {
         await reconcileEmployeeShift(
           activeEmployee,
-          punchesRef.current,
+          ordered,
           company,
           activeCompanyId,
           active,
@@ -218,34 +250,14 @@ export function useShiftAutoPunchOut({
       }
     }
 
-    const employeeIds = Array.from(
-      new Set([activeEmployee.id, activeEmployee.authUid].filter((v): v is string => Boolean(v))),
-    );
-    const punchesQuery =
-      employeeIds.length > 1
-        ? query(collection(db(), "punches"), where("employeeId", "in", employeeIds))
-        : query(collection(db(), "punches"), where("employeeId", "==", activeEmployee.id));
-    const unsubscribe = onSnapshot(
-      punchesQuery,
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { punchesRef.current = []; return; }
-        punchesRef.current = snapshot.docs
-          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .filter((punch) => punch.timestamp)
-          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-        void reconcile();
-      },
-      (error) => console.error("Auto punch-out punch snapshot failed:", error),
-    );
+    void reconcile();
     const interval = window.setInterval(() => void reconcile(), RECONCILE_INTERVAL_MS);
 
     return () => {
       active = false;
-      unsubscribe();
       window.clearInterval(interval);
     };
-  }, [activeCompanyId, company, employee, ready]);
+  }, [activeCompanyId, company, employee, ready, punches]);
 }
 
 export function useCompanyShiftAutoPunchOut({
@@ -258,27 +270,34 @@ export function useCompanyShiftAutoPunchOut({
   activeCompanyId: string;
 }) {
   const { ready } = useAppRuntime();
-  const employeesRef = useRef<Employee[]>([]);
-  const companyPunchesRef = useRef<Punch[]>([]);
+  const watching = enabled && ready;
+  // Forgotten punch-outs are closed within hours, so the recent window the
+  // dashboard already reads is enough; sharing it keeps both in step.
+  const employeesLive = useEmployeesLive(watching);
+  const punchesLive = useRecentPunchesLive(undefined, watching);
+  const companiesLive = useCompaniesLive(watching);
+  const settled = isSettled(employeesLive, punchesLive);
+  const employees = settled ? employeesLive.data : undefined;
+  const punches = settled ? punchesLive.data : undefined;
+  const companies = listOf(companiesLive);
   const reconcilingRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled || !ready) return;
+    if (!watching || !employees || !punches) return;
 
     let active = true;
-    let employeesReady = false;
+    const punchesByEmployee = indexPunchesByEmployee(activePunchesInOrder(punches));
+    const uniqueEmployees = new Map<string, Employee>();
+    for (const employee of employees) {
+      const identity = employee.authUid || employee.id;
+      const current = uniqueEmployees.get(identity);
+      if (!current || employee.id === identity) uniqueEmployees.set(identity, employee);
+    }
 
     async function reconcileAll() {
-      if (!active || !employeesReady || reconcilingRef.current) return;
+      if (!active || reconcilingRef.current) return;
       reconcilingRef.current = true;
       try {
-        const punchesByEmployee = indexPunchesByEmployee(companyPunchesRef.current);
-        const uniqueEmployees = new Map<string, Employee>();
-        for (const employee of employeesRef.current) {
-          const identity = employee.authUid || employee.id;
-          const current = uniqueEmployees.get(identity);
-          if (!current || employee.id === identity) uniqueEmployees.set(identity, employee);
-        }
         await Promise.allSettled(
           [...uniqueEmployees.values()].map((employee) => {
             const employeePunches = getIndexedEmployeePunches(punchesByEmployee, employee);
@@ -288,6 +307,7 @@ export function useCompanyShiftAutoPunchOut({
               company,
               activeCompanyId,
               false,
+              companies,
             );
           }),
         );
@@ -296,41 +316,12 @@ export function useCompanyShiftAutoPunchOut({
       }
     }
 
-    const unsubscribeEmployees = onSnapshot(
-      collection(db(), "employees"),
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        employeesReady = !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites;
-        if (!employeesReady) return;
-        employeesRef.current = snapshot.docs.map((item) => ({
-          ...(item.data() as Omit<Employee, "id">),
-          id: item.id,
-        }));
-        void reconcileAll();
-      },
-      (error) => console.error("Company auto punch-out employee snapshot failed:", error),
-    );
-    const unsubscribePunches = onSnapshot(
-      // Forgotten punch-outs are closed within hours, so recent days are enough.
-      recentPunchesQuery(3),
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { companyPunchesRef.current = []; return; }
-        companyPunchesRef.current = snapshot.docs
-          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .filter((punch) => punch.timestamp)
-          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-        void reconcileAll();
-      },
-      (error) => console.error("Company auto punch-out punch snapshot failed:", error),
-    );
+    void reconcileAll();
     const interval = window.setInterval(() => void reconcileAll(), RECONCILE_INTERVAL_MS);
 
     return () => {
       active = false;
-      unsubscribeEmployees();
-      unsubscribePunches();
       window.clearInterval(interval);
     };
-  }, [activeCompanyId, company, enabled, ready]);
+  }, [activeCompanyId, company, companies, employees, punches, watching]);
 }

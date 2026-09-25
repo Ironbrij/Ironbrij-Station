@@ -3,16 +3,31 @@ import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  isSettled,
+  listOf,
+  useEmployeeLeavesLive,
+  useEmployeePunchesLive,
+  useLatestNoticesLive,
+} from "@/lib/live-data";
+import { newPunchId, recordEmployeePunch } from "@/lib/punch-writes";
+import {
+  isAttendanceConflict,
+  latestShiftBoundary,
+  overtimeRequestId,
+  readSessionContext,
+  type OvertimeWrite,
+} from "@/lib/punch-session";
 import { useAuth } from "@/lib/auth-context";
 import {
   type CompanyNotice,
@@ -100,18 +115,30 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 
 function PunchPage() {
   const runtime = useAppRuntime();
-  const [punchesReady, setPunchesReady] = useState(false);
-  const [punchError, setPunchError] = useState("");
   const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } =
     useAuth();
+  // The same live punches the header, reminders and automatic punch-out read.
+  const punchesLive = useEmployeePunchesLive(employee);
+  const punchesData = punchesLive.data;
+  const allPunches = useMemo(
+    () => [...(punchesData ?? [])].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
+    [punchesData],
+  );
+  const punchesReady = isSettled(punchesLive);
+  const punchError =
+    punchesLive.status === "error"
+      ? "Attendance could not be loaded. Reconnecting automatically…"
+      : "";
+  const leaves = listOf(useEmployeeLeavesLive(employee));
   const [depts, setDepts] = useState<Department[]>([]);
-  const [notices, setNotices] = useState<CompanyNotice[]>([]);
-  const [allPunches, setAllPunches] = useState<Punch[]>([]);
+  // Only the newest notices: the banner shows the last 24 hours.
+  const notices = listOf(useLatestNoticesLive());
   const [now, setNow] = useState(() => attendanceNow().getTime());
   useEffect(() => { if (runtime.ready) setNow(attendanceNow().getTime()); }, [runtime.ready]);
   const [busy, setBusy] = useState(false);
+  // A second click lands before React re-renders with busy set; this cannot.
+  const busyRef = useRef(false);
   const [quote, setQuote] = useState(randomQuote());
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [showEarlyModal, setShowEarlyModal] = useState(false);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [showOvertimeModal, setShowOvertimeModal] = useState(false);
@@ -171,9 +198,6 @@ function PunchPage() {
             .filter((department) => (department.companyId || "default") === activeCompanyId),
         ),
     );
-    const u2 = onSnapshot(collection(db(), "notices"), (s) =>
-      setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
-    );
     const u3 = onSnapshot(
       query(collection(db(), "employees"), where("companyIds", "array-contains", activeCompanyId)),
       (s) =>
@@ -185,65 +209,10 @@ function PunchPage() {
     );
     return () => {
       u1();
-      u2();
       u3();
     };
   }, [activeCompanyId]);
 
-  // Fetch all punches for this employee (Index-free, real-time sync)
-  useEffect(() => {
-    setPunchesReady(false);
-    setPunchError("");
-    setAllPunches([]);
-    if (!employee) return;
-    const employeeIds = Array.from(
-      new Set([employee.id, employee.authUid].filter((v): v is string => Boolean(v))),
-    );
-    const q =
-      employeeIds.length > 1
-        ? query(collection(db(), "punches"), where("employeeId", "in", employeeIds))
-        : query(collection(db(), "punches"), where("employeeId", "==", employee.id));
-    return onSnapshot(
-      q,
-      { includeMetadataChanges: true },
-      (snap) => {
-        const list = snap.docs.map((d) => ({
-          ...(d.data({ serverTimestamps: "estimate" }) as Omit<Punch, "id">),
-          id: d.id,
-        }));
-        const sorted = list.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-        setAllPunches(sorted);
-        setPunchesReady(!snap.metadata.fromCache && !snap.metadata.hasPendingWrites);
-        setPunchError("");
-      },
-      (err) => {
-        console.error("Punch snapshot error:", err);
-        setPunchesReady(false);
-        setPunchError("Attendance could not be loaded. Refresh the page to reconnect.");
-      },
-    );
-  }, [employee?.id, employee?.authUid]);
-
-  // Keep leave and scheduled break requests in sync.
-  useEffect(() => {
-    if (!employee) return;
-    const employeeIds = Array.from(
-      new Set([employee.id, employee.authUid].filter((v): v is string => Boolean(v))),
-    );
-    const q =
-      employeeIds.length > 1
-        ? query(collection(db(), "leaveRequests"), where("employeeId", "in", employeeIds))
-        : query(collection(db(), "leaveRequests"), where("employeeId", "==", employee.id));
-    return onSnapshot(
-      q,
-      (snap) => {
-        setLeaves(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, "id">) })));
-      },
-      (err) => {
-        console.error("Leave snapshot error:", err);
-      },
-    );
-  }, [employee?.id, employee?.authUid]);
 
   const activeLeave = useMemo(
     () => (employee ? getActiveEmployeeLeave(employee, companyLeaves, new Date(now)) : null),
@@ -488,7 +457,7 @@ function PunchPage() {
   }, [company, companyPunches, employee, now]);
 
   async function doPunch(targetType: "in" | "out" | "extra_in", customReason?: string) {
-    if (!employee || !user || busy) return;
+    if (!employee || !user || busyRef.current) return;
     if (!activeCompanyId || activeCompanyId === "all" || !company || !getEmployeeCompanyIds(employee).includes(activeCompanyId)) {
       toast.error("Select your assigned company before recording attendance.");
       return;
@@ -527,39 +496,57 @@ function PunchPage() {
       return;
     }
 
+    busyRef.current = true;
     setBusy(true);
     try {
-      // Auto-close any previous active session across other companies to strictly enforce single active company
-      if ((targetType === "in" || targetType === "extra_in") && activeOtherCompany) {
-        const prevCompanyId = activeOtherCompany.companyId;
-        const prevPunches = getEmployeePunchesForCompany(allPunches, employee, prevCompanyId, company?.name);
-        const latestPrev = prevPunches[prevPunches.length - 1];
-        if (
-          latestPrev &&
-          (latestPrev.type === "in" ||
-            latestPrev.type === "extra_in" ||
-            latestPrev.type === "lunch_start" ||
-            latestPrev.type === "lunch_end")
-        ) {
-          await addDoc(
-            collection(db(), "punches"),
-            cleanFirestoreData({
-              employeeId: employee.id,
-              companyId: prevCompanyId,
-              type: "out",
-              timestamp: attendanceNow().toISOString(),
-              source: "web",
-              notes: `Auto punched out on switching to ${company?.name || "another company"}`,
-            }),
-          );
-          toast.info(`Clocked out from ${activeOtherCompany.companyName}`);
-        }
-      }
-
       const isExtraOut = latestType === "extra_in" && targetType === "out";
       const punchType =
         targetType === "extra_in" ? "extra_in" : isExtraOut ? "extra_out" : targetType;
+      const starting = punchType === "in" || punchType === "extra_in";
       const punchTime = attendanceNow();
+      const stamp = punchTime.toISOString();
+      const punchId = newPunchId();
+
+      // The saved shift this punch ends, or the one a new shift follows. The
+      // transaction checks these against the database, not against this screen.
+      const shifts = readSessionContext(allPunches, (punch) =>
+        getPunchCompanyId(punch, employee, companies),
+      );
+      const sessionInId =
+        !starting && (sessionStart?.type === "in" || sessionStart?.type === "extra_in")
+          ? sessionStart.id
+          : undefined;
+      // Only one company at a time: starting here ends a shift running elsewhere.
+      const switchIn =
+        starting && activeOtherCompany
+          ? shifts.open.get(normalizeCompanyId(activeOtherCompany.companyId))?.in
+          : undefined;
+      const followed = starting && !switchIn ? latestShiftBoundary(shifts) : null;
+      const switchFrom =
+        switchIn && activeOtherCompany
+          ? {
+              inId: switchIn.id,
+              close: cleanFirestoreData({
+                employeeId: switchIn.employeeId || employee.id,
+                employeeName: employee.name,
+                companyId: normalizeCompanyId(activeOtherCompany.companyId),
+                companyName: activeOtherCompany.companyName,
+                date: switchIn.attendanceDate || switchIn.date,
+                attendanceDate: switchIn.attendanceDate || switchIn.date,
+                type: switchIn.type === "extra_in" ? "extra_out" : "out",
+                timestamp: Timestamp.fromDate(punchTime),
+                createdAt: stamp,
+                source: "auto",
+                isAuto: true,
+                autoReason: "switch_company",
+                notes: `Auto punched out on switching to ${company?.name || "another company"}`,
+                scheduledShiftStart: switchIn.scheduledShiftStart,
+                scheduledShiftEnd: switchIn.scheduledShiftEnd,
+                shiftTimezone: switchIn.shiftTimezone,
+                attendanceStatus: "complete",
+              }),
+            }
+          : undefined;
       const punchDate = zonedDateKey(punchTime, getShiftTimezone(employee));
       const inPunchDate =
         latestPunch?.attendanceDate ||
@@ -609,9 +596,108 @@ function PunchPage() {
 
       const recordedOvertimeMinutes = calculation?.overtimeMinutes ?? extraOvertimeMinutes ?? 0;
 
-      const punchRef = await addDoc(
-        collection(db(), "punches"),
-        cleanFirestoreData({
+      // Overtime is filed in the same transaction as the punch, under an id
+      // named after it, so a failed or repeated punch can never leave a stray
+      // or duplicate request behind.
+      const overtime: OvertimeWrite[] = [];
+      let overtimeRequestIdForPunch: string | undefined;
+      if (targetType === "out" && recordedOvertimeMinutes > 0) {
+        const reason = isExtraOut
+          ? customReason ||
+            `Completed ${formatWorkMinutes(recordedOvertimeMinutes)} post-shift overtime work`
+          : isOffShiftDay
+            ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
+            : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
+        const data = cleanFirestoreData({
+          employeeId: employee.id,
+          employeeName: employee.name,
+          companyId: activeCompanyId,
+          date: targetAttendanceDate,
+          requestType: isOffShiftDay ? "off_shift_work" : "overtime",
+          punchOutId: punchId,
+          punchInId: sessionInId || "",
+          overtimeMinutes: recordedOvertimeMinutes,
+          normalWorkMinutes: calculation?.normalWorkMinutes || 0,
+          isOffShiftDay,
+          reason,
+          status: "pending",
+          createdAt: stamp,
+        });
+        // An overtime session was filed when it started; it now gets its minutes.
+        overtimeRequestIdForPunch =
+          isExtraOut && sessionInId
+            ? overtimeRequestId("extra", sessionInId)
+            : overtimeRequestId("out", punchId);
+        overtime.push(
+          isExtraOut && sessionInId
+            ? {
+                id: overtimeRequestIdForPunch,
+                data,
+                mode: "pending",
+                fallbackId: overtimeRequestId("out", punchId),
+              }
+            : { id: overtimeRequestIdForPunch, data },
+        );
+      }
+
+      let isEarlyPunchIn = false;
+      let earlyPunchMinutes = 0;
+      if (targetType === "in" && shiftWindow.start && !isOffShiftDayToday) {
+        earlyPunchMinutes = Math.floor(
+          (shiftWindow.start.getTime() - punchTime.getTime()) / 60_000,
+        );
+        if (earlyPunchMinutes >= 1) {
+          isEarlyPunchIn = true;
+          overtimeRequestIdForPunch = overtimeRequestId("early", punchId);
+          overtime.push({
+            id: overtimeRequestIdForPunch,
+            data: cleanFirestoreData({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              companyId: activeCompanyId,
+              date: punchDate,
+              requestType: "early_clock_in",
+              punchInId: punchId,
+              overtimeMinutes: earlyPunchMinutes,
+              normalWorkMinutes: 0,
+              isOffShiftDay: false,
+              reason: `Early clock-in: started work ${formatWorkMinutes(earlyPunchMinutes)} before scheduled shift at ${format(shiftWindow.start, "h:mm a")}`,
+              status: "pending",
+              createdAt: stamp,
+            }),
+          });
+        }
+      }
+
+      if (targetType === "extra_in") {
+        overtimeRequestIdForPunch = overtimeRequestId("extra", punchId);
+        overtime.push({
+          id: overtimeRequestIdForPunch,
+          data: cleanFirestoreData({
+            employeeId: employee.id,
+            employeeName: employee.name,
+            companyId: activeCompanyId,
+            date: punchDate,
+            requestType: "overtime",
+            punchInId: punchId,
+            overtimeMinutes: 0,
+            normalWorkMinutes: 0,
+            isOffShiftDay,
+            reason: customReason || "Post-shift overtime session",
+            status: "pending",
+            createdAt: stamp,
+          }),
+        });
+      }
+
+      await recordEmployeePunch({
+        punchId,
+        sessionInId,
+        followsPunchId: followed?.id,
+        switchFrom,
+        overtime,
+        stamp,
+        punch: cleanFirestoreData({
           employeeId: employee.id,
           employeeName: employee.name,
           companyId: activeCompanyId,
@@ -642,122 +728,12 @@ function PunchPage() {
                   attendanceStatus: "complete",
                 }
               : { attendanceStatus: "in_progress" }),
+          ...(overtimeRequestIdForPunch ? { overtimeRequestId: overtimeRequestIdForPunch } : {}),
+          ...(isEarlyPunchIn ? { earlyPunchMinutes } : {}),
         }),
-      );
-
-      // 1. If overtime was worked on regular punch-out or extra_out, save OvertimeRequest for Admin
-      if (targetType === "out" && recordedOvertimeMinutes > 0) {
-        try {
-          const reason = isExtraOut
-            ? customReason ||
-              `Completed ${formatWorkMinutes(recordedOvertimeMinutes)} post-shift overtime work`
-            : isOffShiftDay
-              ? `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} on ${holiday ? holiday.name : "off-shift day"}`
-              : `Worked ${formatWorkMinutes(recordedOvertimeMinutes)} past shift hours`;
-
-          const otDoc = await addDoc(
-            collection(db(), "overtimeRequests"),
-            cleanFirestoreData({
-              employeeId: employee.id,
-              employeeName: employee.name,
-              companyId: activeCompanyId,
-              date: targetAttendanceDate,
-              requestType:
-                isExtraOut || isOffShiftDay
-                  ? isOffShiftDay
-                    ? "off_shift_work"
-                    : "overtime"
-                  : "overtime",
-              punchOutId: punchRef.id,
-              punchInId: latestPunch?.id || "",
-              overtimeMinutes: recordedOvertimeMinutes,
-              normalWorkMinutes: calculation?.normalWorkMinutes || 0,
-              isOffShiftDay,
-              reason,
-              status: "pending",
-              createdAt: attendanceNow().toISOString(),
-            }),
-          );
-
-          await setDoc(
-            doc(db(), "punches", punchRef.id),
-            cleanFirestoreData({ overtimeRequestId: otDoc.id }),
-            { merge: true },
-          );
-        } catch (otErr) {
-          console.warn("Could not save overtime request:", otErr);
-        }
-      }
-
-      // 2. If punching in early before scheduled shift start on a work day:
-      let isEarlyPunchIn = false;
-      let earlyPunchMinutes = 0;
-      if (targetType === "in" && shiftWindow.start && !isOffShiftDayToday) {
-        earlyPunchMinutes = Math.floor(
-          (shiftWindow.start.getTime() - punchTime.getTime()) / 60_000,
-        );
-        if (earlyPunchMinutes >= 1) {
-          isEarlyPunchIn = true;
-          try {
-            const earlyReason = `Early clock-in: started work ${formatWorkMinutes(earlyPunchMinutes)} before scheduled shift at ${format(shiftWindow.start, "h:mm a")}`;
-            const earlyOtDoc = await addDoc(
-              collection(db(), "overtimeRequests"),
-              cleanFirestoreData({
-                employeeId: employee.id,
-                employeeName: employee.name,
-                companyId: activeCompanyId,
-                date: punchDate,
-                requestType: "early_clock_in",
-                punchInId: punchRef.id,
-                overtimeMinutes: earlyPunchMinutes,
-                normalWorkMinutes: 0,
-                isOffShiftDay: false,
-                reason: earlyReason,
-                status: "pending",
-                createdAt: attendanceNow().toISOString(),
-              }),
-            );
-
-            await setDoc(
-              doc(db(), "punches", punchRef.id),
-              cleanFirestoreData({ overtimeRequestId: earlyOtDoc.id, earlyPunchMinutes }),
-              { merge: true },
-            );
-          } catch (earlyErr) {
-            console.warn("Could not save early clock-in request:", earlyErr);
-          }
-        }
-      }
-
-      // 3. If starting post-shift overtime session directly:
-      if (targetType === "extra_in") {
-        try {
-          const postShiftReason = customReason || "Post-shift overtime session";
-          const otDoc = await addDoc(
-            collection(db(), "overtimeRequests"),
-            cleanFirestoreData({
-              employeeId: employee.id,
-              employeeName: employee.name,
-              companyId: activeCompanyId,
-              date: punchDate,
-              requestType: "overtime",
-              punchInId: punchRef.id,
-              overtimeMinutes: 0,
-              normalWorkMinutes: 0,
-              isOffShiftDay,
-              reason: postShiftReason,
-              status: "pending",
-              createdAt: attendanceNow().toISOString(),
-            }),
-          );
-          await setDoc(
-            doc(db(), "punches", punchRef.id),
-            cleanFirestoreData({ overtimeRequestId: otDoc.id }),
-            { merge: true },
-          );
-        } catch (otErr) {
-          console.warn("Could not save post-shift overtime request:", otErr);
-        }
+      });
+      if (switchFrom && activeOtherCompany) {
+        toast.info(`Clocked out from ${activeOtherCompany.companyName}`);
       }
 
       if (user?.uid) {
@@ -765,7 +741,7 @@ function PunchPage() {
           await publishPersonalAttendanceEvent({
             ownerUid: user.uid,
             employee,
-            punchId: punchRef.id,
+            punchId,
             punchType,
             date: punchDate,
             occurredAt: punchTime,
@@ -816,14 +792,20 @@ function PunchPage() {
       setShowPunchOutModal(false);
       setShowOvertimeModal(false);
     } catch (e) {
-      toast.error("Punch Action Failed: " + (e as Error).message);
+      // A conflict means the saved shift moved on (another device, automatic
+      // punch-out, an admin fix). Nothing was written; the live data shows why.
+      toast.error(isAttendanceConflict(e) ? e.message : "Punch Action Failed: " + (e as Error).message);
+      setShowEarlyModal(false);
+      setShowPunchOutModal(false);
+      setShowOvertimeModal(false);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function doLunchPunch(targetType: "lunch_start" | "lunch_end") {
-    if (!employee || !user || busy) return;
+    if (!employee || !user || busyRef.current) return;
     if (!activeCompanyId || activeCompanyId === "all" || !company || !getEmployeeCompanyIds(employee).includes(activeCompanyId)) {
       toast.error("Select your assigned company before recording attendance.");
       return;
@@ -848,6 +830,16 @@ function PunchPage() {
       return;
     }
 
+    // The break belongs to the shift it pauses; that shift's clock-in is checked.
+    const sessionIn = [...companyPunches]
+      .reverse()
+      .find((punch) => punch.type === "in" || punch.type === "extra_in");
+    if (!sessionIn) {
+      toast.error("You must be actively working to start a lunch break.");
+      return;
+    }
+
+    busyRef.current = true;
     setBusy(true);
     try {
       const punchTime = attendanceNow();
@@ -866,9 +858,11 @@ function PunchPage() {
         getEmployeeHolidayDates(company, effectiveEmployee || employee),
       );
 
-      await addDoc(
-        collection(db(), "punches"),
-        cleanFirestoreData({
+      await recordEmployeePunch({
+        punchId: newPunchId(),
+        sessionInId: sessionIn.id,
+        stamp: punchTime.toISOString(),
+        punch: cleanFirestoreData({
           employeeId: employee.id,
           employeeName: employee.name,
           companyId: activeCompanyId,
@@ -883,9 +877,9 @@ function PunchPage() {
           shiftTimezone: schedule.shift.timezone,
           requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
           attendanceStatus: "in_progress",
-          createdAt: attendanceNow().toISOString(),
+          createdAt: punchTime.toISOString(),
         }),
-      );
+      });
 
       if (targetType === "lunch_start") {
         toast.success("Break started. Shift timer paused.");
@@ -894,8 +888,13 @@ function PunchPage() {
       }
     } catch (err) {
       console.error("Lunch punch failed:", err);
-      toast.error("Failed to update lunch status: " + (err as Error).message);
+      toast.error(
+        isAttendanceConflict(err)
+          ? err.message
+          : "Failed to update lunch status: " + (err as Error).message,
+      );
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

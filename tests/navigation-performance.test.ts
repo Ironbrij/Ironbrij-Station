@@ -7,24 +7,32 @@ const compiled = ts.transpileModule(readFileSync(new URL("../src/lib/use-navigat
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function subscriptions(isAdmin: boolean, employee: unknown) {
+// Reads go through the shared live-data layer, which owns listener lifetimes
+// (tests/live-store.test.ts). Here we check what the navigation asks it for.
+function subscriptions(isAdmin: boolean, employee: { id: string; authUid?: string } | null) {
   const queries: any[] = [];
-  const cleanups: (() => void)[] = [];
-  let stopped = 0;
   let lateEnabled = false;
+  const idle = { data: undefined, status: "loading" };
   const dependencies: Record<string, unknown> = {
     react: {
       useState: (initial: any) => [typeof initial === "function" ? initial() : initial, () => {}],
       useMemo: (fn: () => unknown) => fn(),
-      useEffect: (fn: () => (() => void)) => { cleanups.push(fn()); },
+      useEffect: (fn: () => (() => void)) => { fn()?.(); },
     },
-    "firebase/firestore": {
-      collection: (_db: unknown, name: string) => name,
-      where: (field: string, op: string, value: unknown) => ({ field, op, value }),
-      query: (collection: string, ...constraints: unknown[]) => ({ collection, constraints }),
-      onSnapshot: (query: unknown) => { queries.push(query); return () => stopped++; },
+    "./live-data": {
+      listOf: (state: { data?: unknown[] }) => state.data ?? [],
+      useWhereEqualLive: (collection: string, field: string, value: string | null) => {
+        if (value !== null) queries.push({ collection, constraints: [{ field, op: "==", value }] });
+        return idle;
+      },
+      useEmployeeLeavesLive: (who: { id: string; authUid?: string } | null) => {
+        const ids = who ? [...new Set([who.id, who.authUid].filter(Boolean))] : [];
+        if (ids.length) {
+          queries.push({ collection: "leaveRequests", constraints: [{ field: "employeeId", ids }] });
+        }
+        return idle;
+      },
     },
-    "./firebase": { db: () => ({}) },
     "./types": { COMPANY_ID: "default" },
     "./use-admin-late-notification-count": { useAdminLateNotificationCount: ({ enabled }: { enabled: boolean }) => { lateEnabled = enabled; return 0; } },
   };
@@ -35,15 +43,15 @@ function subscriptions(isAdmin: boolean, employee: unknown) {
     return dependencies[name];
   }, exports, window);
   exports.useNavigationBadgeCounts({ isAdmin, employee, company: null, activeCompanyId: "default" });
-  for (const cleanup of cleanups) cleanup();
-  assert.equal(stopped, queries.length);
   return { queries, lateEnabled };
 }
 
 test("employee navigation subscribes only to their leave requests, including legacy login ID", () => {
   const result = subscriptions(false, { id: "rose-profile", authUid: "rose-login" });
   assert.equal(result.lateEnabled, false);
-  assert.deepEqual(result.queries, [{ collection: "leaveRequests", constraints: [{ field: "employeeId", op: "in", value: ["rose-profile", "rose-login"] }] }]);
+  assert.equal(result.queries.length, 1);
+  assert.equal(result.queries[0].collection, "leaveRequests");
+  assert.deepEqual([...result.queries[0].constraints[0].ids].sort(), ["rose-login", "rose-profile"]);
 });
 
 test("admin navigation loads pending approvals instead of complete request history", () => {

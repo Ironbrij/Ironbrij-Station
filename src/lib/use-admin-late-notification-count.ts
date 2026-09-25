@@ -1,10 +1,14 @@
 import { attendanceNow } from "./attendance-clock";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase";
-import type { Company, Employee, LeaveRequest, Punch } from "./types";
+import type { Company } from "./types";
 import { buildAdminLateAlerts, LATE_ALERT_READ_EVENT, readLateAlertIds } from "./late-alerts";
-import { recentPunchesQuery } from "./punch-queries";
+import {
+  listOf,
+  recentWindowStart,
+  useEmployeesLive,
+  useLeavesEndingSinceLive,
+  useRecentPunchesLive,
+} from "./live-data";
 
 export function useAdminLateNotificationCount({
   enabled,
@@ -13,46 +17,23 @@ export function useAdminLateNotificationCount({
   enabled: boolean;
   company: Company | null;
 }): number {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  // The same live records the dashboard and late log read, so the badge counts
+  // exactly what those pages list.
+  const employees = listOf(useEmployeesLive(enabled));
+  const punches = listOf(useRecentPunchesLive(undefined, enabled));
+  // Only approved leave excuses an absence; the dashboard reads the same query.
+  const leaveData = useLeavesEndingSinceLive(enabled ? recentWindowStart() : null).data;
+  const leaves = useMemo(
+    () => (leaveData ?? []).filter((leave) => leave.status === "approved"),
+    [leaveData],
+  );
   const [readIds, setReadIds] = useState<Set<string>>(() => readLateAlertIds());
   const [now, setNow] = useState(() => attendanceNow());
 
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(() => setNow(attendanceNow()), 30000);
-    const unsubscribeEmployees = onSnapshot(collection(db(), "employees"), (snapshot) =>
-      setEmployees(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<Employee, "id">),
-        })),
-      ),
-    );
-    const unsubscribePunches = onSnapshot(recentPunchesQuery(2), (snapshot) =>
-      setPunches(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<Punch, "id">),
-        })),
-      ),
-    );
-    const unsubscribeLeaves = onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
-      setLeaves(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<LeaveRequest, "id">),
-        })),
-      ),
-    );
-
-    return () => {
-      window.clearInterval(timer);
-      unsubscribeEmployees();
-      unsubscribePunches();
-      unsubscribeLeaves();
-    };
+    return () => window.clearInterval(timer);
   }, [enabled]);
 
   useEffect(() => {
@@ -68,7 +49,7 @@ export function useAdminLateNotificationCount({
   }, [enabled]);
 
   const alerts = useMemo(
-    () => enabled ? buildAdminLateAlerts({ employees, punches, leaves, company, now }) : [],
+    () => (enabled ? buildAdminLateAlerts({ employees, punches, leaves, company, now }) : []),
     [enabled, employees, punches, leaves, company, now],
   );
 

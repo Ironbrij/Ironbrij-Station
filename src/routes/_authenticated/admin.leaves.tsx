@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { collection, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { decideRequest, isStaleWrite, updateIfUnchanged } from "@/lib/guarded-writes";
+import { listOf, useCompaniesLive, useEmployeesLive, useLeaveRequestsLive } from "@/lib/live-data";
 import type { Company, CompanyNotice, Employee, LeaveDayItem, LeaveRequest } from "@/lib/types";
 import { COMPANY_ID } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
@@ -42,9 +44,15 @@ type UserProfile = {
 const PAGE_SIZE = 8;
 
 function LeaveRequestsPage() {
-  const [leaves, setLeaves] = useState<LeaveRequest[] | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
+  // Shared live reads: a decision made here, on the dashboard or by the
+  // employee shows on every open screen at once.
+  const leavesLive = useLeaveRequestsLive();
+  const leaves = useMemo(
+    () => (leavesLive.status === "ready" ? listOf(leavesLive) : null),
+    [leavesLive],
+  );
+  const employees = listOf(useEmployeesLive());
+  const companies = listOf(useCompaniesLive());
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
   const { user, activeCompanyId } = useAuth();
@@ -63,27 +71,6 @@ function LeaveRequestsPage() {
   }, [activeCompanyId]);
 
   useEffect(() => {
-    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snapshot) =>
-      setCompanies(
-        snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-      ),
-    );
-    const unsubscribeLeaves = onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
-      setLeaves(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<LeaveRequest, "id">),
-        })),
-      ),
-    );
-    const unsubscribeEmployees = onSnapshot(collection(db(), "employees"), (snapshot) =>
-      setEmployees(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<Employee, "id">),
-        })),
-      ),
-    );
     const unsubscribeUsers = onSnapshot(collection(db(), "users"), (snapshot) =>
       setUserProfiles(
         snapshot.docs.map((item) => ({
@@ -94,9 +81,6 @@ function LeaveRequestsPage() {
     );
 
     return () => {
-      unsubCompanies();
-      unsubscribeLeaves();
-      unsubscribeEmployees();
       unsubscribeUsers();
     };
   }, []);
@@ -188,14 +172,7 @@ function LeaveRequestsPage() {
 
     try {
       const employee = employeeById.get(leave.employeeId);
-      const batch = writeBatch(db());
-      batch.update(doc(db(), "leaveRequests", id), {
-        status,
-        decidedAt: new Date().toISOString(),
-        decidedBy: user?.email || "Admin",
-        decisionSource: "admin",
-        ...(status === "approved" && paymentStatus ? { paymentStatus } : {}),
-      });
+      let notice: Omit<CompanyNotice, "id"> | null = null;
 
       if (employee) {
         const approved = status === "approved";
@@ -203,7 +180,7 @@ function LeaveRequestsPage() {
           leave.dateFrom === leave.dateTo ? leave.dateFrom : `${leave.dateFrom} to ${leave.dateTo}`;
         const leaveLabel = getLeaveLabel(leave);
         const reason = leave.reason?.trim() || "No reason was provided.";
-        const notice: Omit<CompanyNotice, "id"> = {
+        notice = {
           title: approved ? "Leave request approved" : "Leave request rejected",
           message: approved
             ? `Your ${leaveLabel.toLowerCase()} request for ${dateRange} has been approved.`
@@ -215,10 +192,26 @@ function LeaveRequestsPage() {
           createdAt: new Date().toISOString(),
           authorName: user?.displayName || user?.email || "Leave administration",
         };
-        batch.set(doc(collection(db(), "notices")), notice);
       }
 
-      await batch.commit();
+      // Decided only if it is still pending: another admin, the employee
+      // cancelling or the automatic rule may have got there first. The notice
+      // is written with the decision or not at all.
+      await decideRequest({
+        collectionName: "leaveRequests",
+        id,
+        expected: ["pending"],
+        update: {
+          status,
+          decidedAt: new Date().toISOString(),
+          decidedBy: user?.email || "Admin",
+          decisionSource: "admin",
+          ...(status === "approved" && paymentStatus ? { paymentStatus } : {}),
+        },
+        alsoWrite: (transaction) => {
+          if (notice) transaction.set(doc(db(), "notices", `leave-${status}-${id}`), notice);
+        },
+      });
       toast.success(
         status === "approved"
           ? "Leave approved and employee notified"
@@ -270,7 +263,11 @@ function LeaveRequestsPage() {
         );
       }
     } catch (error) {
-      toast.error((error as Error).message);
+      toast.error(
+        isStaleWrite(error)
+          ? `Nothing changed: ${(error as Error).message}`
+          : (error as Error).message,
+      );
     } finally {
       setBusyId(null);
     }
@@ -318,18 +315,12 @@ function LeaveRequestsPage() {
     setBusyId(id);
     try {
       const employee = employeeById.get(leave.employeeId);
-      const batch = writeBatch(db());
-      batch.update(doc(db(), "leaveRequests", id), {
-        status: "rejected",
-        decidedAt: new Date().toISOString(),
-        decidedBy: user?.email || "Admin",
-        decisionReason: "Revoked by admin",
-      });
+      let notice: Omit<CompanyNotice, "id"> | null = null;
 
       if (employee) {
         const dateRange =
           leave.dateFrom === leave.dateTo ? leave.dateFrom : `${leave.dateFrom} to ${leave.dateTo}`;
-        const notice: Omit<CompanyNotice, "id"> = {
+        notice = {
           title: "Approved leave revoked",
           message: `Your approved leave for ${dateRange} has been revoked by admin. You may now punch in as usual.`,
           priority: "warning",
@@ -339,10 +330,23 @@ function LeaveRequestsPage() {
           createdAt: new Date().toISOString(),
           authorName: user?.displayName || user?.email || "Leave administration",
         };
-        batch.set(doc(collection(db(), "notices")), notice);
       }
 
-      await batch.commit();
+      // Revoked only if it is still in the state this screen showed.
+      await decideRequest({
+        collectionName: "leaveRequests",
+        id,
+        expected: [leave.status],
+        update: {
+          status: "rejected",
+          decidedAt: new Date().toISOString(),
+          decidedBy: user?.email || "Admin",
+          decisionReason: "Revoked by admin",
+        },
+        alsoWrite: (transaction) => {
+          if (notice) transaction.set(doc(db(), "notices", `leave-revoked-${id}`), notice);
+        },
+      });
       toast.success("Approved leave revoked successfully! Employee can now punch in.");
       if (leave.status === "approved" && employee) {
         await notifyTeam(
@@ -908,7 +912,26 @@ function EditLeaveModal({
         payload.halfDayPeriod = sorted[0].halfDayPeriod;
       }
 
-      await updateDoc(doc(db(), "leaveRequests", leave.id), payload);
+      // Saved only if the request is as it was when this form opened, so an
+      // employee's cancellation or another admin's edit is not overwritten.
+      await updateIfUnchanged({
+        path: `leaveRequests/${leave.id}`,
+        baseline: leave as unknown as Record<string, unknown>,
+        watched: [
+          "status",
+          "dates",
+          "dateFrom",
+          "dateTo",
+          "leaveType",
+          "paymentStatus",
+          "leaveCategory",
+          "halfDayPeriod",
+          "remarks",
+          "reason",
+        ],
+        update: payload,
+        what: "This leave request",
+      });
 
       toast.success("Leave dates and breakdown successfully updated!");
       onClose();

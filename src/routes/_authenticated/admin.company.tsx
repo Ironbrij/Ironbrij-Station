@@ -1,6 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  runTransaction,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { DEFAULT_SHIFT_TIMEZONE, zonedDateKey } from "@/lib/attendance";
 import {
   Archive,
   ArchiveRestore,
@@ -24,7 +33,6 @@ import {
   type Employee,
   type HolidayTargetType,
 } from "@/lib/types";
-import { ymd } from "@/lib/time";
 import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 
@@ -81,7 +89,15 @@ function CompanyPage() {
   const [showTodayHolidayConfirmModal, setShowTodayHolidayConfirmModal] = useState(false);
   const [todayHolidayCompanyId, setTodayHolidayCompanyId] = useState("all");
 
-  const todayStr = ymd(new Date());
+  // "Today" is the company's day, not whatever day the admin's browser is in.
+  const todayStr = zonedDateKey(new Date(), company.timezone || DEFAULT_SHIFT_TIMEZONE);
+  // Typing in the settings form must not be undone by a snapshot of an
+  // unrelated change; holidays on screen still follow the saved company.
+  const settingsDirtyRef = useRef(false);
+  function editSettings(next: Company) {
+    settingsDirtyRef.current = true;
+    setCompany(next);
+  }
   const isTodayHoliday = company.holidays.includes(todayStr);
 
   useEffect(() => {
@@ -114,7 +130,7 @@ function CompanyPage() {
 
       const mainComp = list.find((c) => c.id === COMPANY_ID || c.isMain);
       if (mainComp) {
-        setCompany({
+        const saved: Company = {
           ...mainComp,
           name: mainComp.name || "Ironbrij",
           defaultShiftHours: mainComp.defaultShiftHours ?? 8,
@@ -126,7 +142,17 @@ function CompanyPage() {
           punchOutReminderMinutes: Math.max(0, mainComp.punchOutReminderMinutes ?? 20),
           logoUrl: mainComp.logoUrl || DEFAULT_LOGO,
           isMain: true,
-        });
+        };
+        setCompany((current) =>
+          settingsDirtyRef.current
+            ? {
+                ...current,
+                holidays: saved.holidays,
+                holidayAssignments: saved.holidayAssignments,
+                timezone: saved.timezone,
+              }
+            : saved,
+        );
       }
     });
 
@@ -158,11 +184,11 @@ function CompanyPage() {
   async function save(updatedCompany: Company = company) {
     setBusy(true);
     try {
-      const payload: Company = {
+      // Only the settings this form shows. Holidays are saved on their own, so
+      // saving settings can never put back a holiday someone else removed.
+      const payload: Omit<Company, "holidays"> = {
         name: updatedCompany.name.trim() || "Ironbrij",
         defaultShiftHours: updatedCompany.defaultShiftHours || 8,
-        holidays: updatedCompany.holidays,
-        holidayAssignments: updatedCompany.holidayAssignments ?? [],
         workingDays: updatedCompany.workingDays,
         lateGraceMinutes: Math.max(5, updatedCompany.lateGraceMinutes ?? 5),
         punchOutGraceMinutes: Math.max(0, updatedCompany.punchOutGraceMinutes ?? 20),
@@ -170,11 +196,45 @@ function CompanyPage() {
         logoUrl: updatedCompany.logoUrl?.trim() || DEFAULT_LOGO,
       };
       await setDoc(doc(db(), "companies", COMPANY_ID), payload, { merge: true });
+      settingsDirtyRef.current = false;
       toast.success("Company settings and holidays updated successfully!");
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Changes the holiday lists against what is saved now, in a transaction, so
+   * two admins adding or removing holidays at once both keep their change. The
+   * list on screen follows the saved company; a failed save changes nothing.
+   */
+  async function updateHolidays(
+    change: (holidays: string[], assignments: CompanyHoliday[]) => {
+      holidays: string[];
+      assignments: CompanyHoliday[];
+    },
+  ): Promise<boolean> {
+    try {
+      await runTransaction(db(), async (transaction) => {
+        const ref = doc(db(), "companies", COMPANY_ID);
+        const snapshot = await transaction.get(ref);
+        const saved = (snapshot.data() ?? {}) as Partial<Company>;
+        const next = change(saved.holidays ?? [], saved.holidayAssignments ?? []);
+        transaction.set(
+          ref,
+          {
+            holidays: [...new Set(next.holidays)].sort(),
+            holidayAssignments: next.assignments.sort((a, b) => a.date.localeCompare(b.date)),
+          },
+          { merge: true },
+        );
+      });
+      return true;
+    } catch (error) {
+      toast.error("Holidays could not be saved: " + (error as Error).message);
+      return false;
     }
   }
 
@@ -202,35 +262,31 @@ function CompanyPage() {
   }
 
   async function confirmTodayHoliday(targetCompId: string) {
-    let updatedHolidays: string[];
-    let updatedAssignments = [...(company.holidayAssignments ?? [])];
-
-    if (isTodayHoliday) {
-      updatedHolidays = company.holidays.filter((d) => d !== todayStr);
-      updatedAssignments = updatedAssignments.filter((a) => a.date !== todayStr);
-    } else if (targetCompId === "all") {
-      updatedHolidays = company.holidays.includes(todayStr)
-        ? company.holidays
-        : [...company.holidays, todayStr].sort();
-    } else {
-      updatedHolidays = company.holidays;
-      updatedAssignments.push({
-        id: `today-${todayStr}-${Date.now()}`,
-        date: todayStr,
-        name: "Instant Company Off",
-        targetType: "companies",
-        companyIds: [targetCompId],
-      });
-    }
-
-    const updated = {
-      ...company,
-      holidays: updatedHolidays,
-      holidayAssignments: updatedAssignments,
-    };
-    setCompany(updated);
-    await save(updated);
+    const cancelling = isTodayHoliday;
+    const saved = await updateHolidays((holidays, assignments) =>
+      cancelling
+        ? {
+            holidays: holidays.filter((d) => d !== todayStr),
+            assignments: assignments.filter((a) => a.date !== todayStr),
+          }
+        : targetCompId === "all"
+          ? { holidays: [...holidays, todayStr], assignments }
+          : {
+              holidays,
+              assignments: [
+                ...assignments,
+                {
+                  id: `today-${todayStr}-${Date.now()}`,
+                  date: todayStr,
+                  name: "Instant Company Off",
+                  targetType: "companies",
+                  companyIds: [targetCompId],
+                },
+              ],
+            },
+    );
     setShowTodayHolidayConfirmModal(false);
+    if (!saved) return;
     toast.success(
       isTodayHoliday
         ? "Today's holiday cancelled!"
@@ -273,11 +329,11 @@ function CompanyPage() {
       return;
     }
 
-    let updated: Company;
+    let assignment: CompanyHoliday | null = null;
     if (holidayTargetType === "all" && !useCompanyScope) {
-      updated = { ...company, holidays: [...company.holidays, newHoliday].sort() };
+      assignment = null;
     } else {
-      const assignment: CompanyHoliday = {
+      assignment = {
         id: `${newHoliday}-${Date.now()}`,
         date: newHoliday,
         name: holidayName.trim() || "Company Holiday",
@@ -301,21 +357,21 @@ function CompanyPage() {
                 }
               : {}),
       };
-      updated = {
-        ...company,
-        holidayAssignments: [...(company.holidayAssignments ?? []), assignment].sort((a, b) =>
-          a.date.localeCompare(b.date),
-        ),
-      };
     }
 
-    setCompany(updated);
+    const added = assignment;
+    const saved = await updateHolidays((holidays, assignments) =>
+      added
+        ? { holidays, assignments: [...assignments, added] }
+        : { holidays: [...holidays, newHoliday], assignments },
+    );
+    if (!saved) return;
+    toast.success("Holiday saved.");
     setNewHoliday("");
     setHolidayName("");
     setSelectedDepartmentIds([]);
     setSelectedStateCodes([]);
     setSelectedEmployeeIds([]);
-    await save(updated);
     if (sendHolidayNotice) {
       try {
         const target =
@@ -365,21 +421,25 @@ function CompanyPage() {
   }
 
   async function removeGlobalHoliday(date: string) {
-    const updated = {
-      ...company,
-      holidays: company.holidays.filter((holiday) => holiday !== date),
-    };
-    setCompany(updated);
-    await save(updated);
+    if (
+      await updateHolidays((holidays, assignments) => ({
+        holidays: holidays.filter((holiday) => holiday !== date),
+        assignments,
+      }))
+    ) {
+      toast.success("Holiday removed.");
+    }
   }
 
   async function removeHolidayAssignment(id: string) {
-    const updated = {
-      ...company,
-      holidayAssignments: (company.holidayAssignments ?? []).filter((holiday) => holiday.id !== id),
-    };
-    setCompany(updated);
-    await save(updated);
+    if (
+      await updateHolidays((holidays, assignments) => ({
+        holidays,
+        assignments: assignments.filter((holiday) => holiday.id !== id),
+      }))
+    ) {
+      toast.success("Holiday removed.");
+    }
   }
 
   function toggleSelection(id: string, selected: string[], update: (ids: string[]) => void) {
@@ -1059,7 +1119,7 @@ function CompanyPage() {
           <label className="text-sm font-semibold">Company Name</label>
           <input
             value={company.name}
-            onChange={(event) => setCompany({ ...company, name: event.target.value })}
+            onChange={(event) => editSettings({ ...company, name: event.target.value })}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           />
         </div>
@@ -1067,7 +1127,7 @@ function CompanyPage() {
           <label className="text-sm font-semibold">Logo Image URL</label>
           <input
             value={company.logoUrl ?? ""}
-            onChange={(event) => setCompany({ ...company, logoUrl: event.target.value })}
+            onChange={(event) => editSettings({ ...company, logoUrl: event.target.value })}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           />
         </div>
@@ -1077,7 +1137,7 @@ function CompanyPage() {
             type="number"
             value={company.defaultShiftHours}
             onChange={(event) =>
-              setCompany({
+              editSettings({
                 ...company,
                 defaultShiftHours: Number(event.target.value) || 8,
               })
@@ -1089,7 +1149,7 @@ function CompanyPage() {
           <WorkingDaysPicker
             label="Company Default Working Days"
             value={company.workingDays}
-            onChange={(days) => setCompany({ ...company, workingDays: days })}
+            onChange={(days) => editSettings({ ...company, workingDays: days })}
           />
         </div>
         <button

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -25,6 +26,7 @@ import { COMPANY_ID, type Company, type Employee } from "./types";
 import { resolveProfilePhoto } from "./profile-photo";
 import { toast } from "sonner";
 import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePortalCompanies, resolveEmployeeCompanyId } from "./company-context";
+import { liveStore } from "./live-data";
 
 interface AuthState {
   user: User | null;
@@ -55,8 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ? resolveEmployeeCompanyId(employee, companies, employeeCompanyId)
     : adminCompanyId;
   const [loading, setLoading] = useState(true);
+  // Each sign-in (or re-check) gets a number. A slow check from an earlier
+  // account must never overwrite the profile of the account signed in now.
+  const hydrationRef = useRef(0);
 
-  async function hydrate(u: User) {
+  function startHydration(u: User) {
+    const generation = ++hydrationRef.current;
+    return hydrate(u, () => generation === hydrationRef.current);
+  }
+
+  async function hydrate(u: User, isCurrent: () => boolean) {
     const userEmail = u.email ? u.email.toLowerCase().trim() : "";
     const authPhotoUrl = resolveProfilePhoto(u);
     const ADMIN_EMAILS = [
@@ -80,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ).catch(() => {});
 
     const rejectLogin = async () => {
+      if (!isCurrent()) return;
       setEmployee(null);
       setIsAdmin(false);
       toast.error("This account has no active invitation or its profile needs administrator review. Sign in with your invited email.");
@@ -93,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getDoc(doc(db(), "employees", u.uid)),
       ]);
 
+      if (!isCurrent()) return;
       const adminSnap = adminResult.status === "fulfilled" ? adminResult.value : null;
       const adminStatus = (adminSnap && adminSnap.exists()) || isEmailAdmin;
       setIsAdmin(adminStatus);
@@ -128,10 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           Object.assign(empData, employeeUpdates);
           await updateDoc(empSnap.ref, employeeUpdates);
         }
+        if (!isCurrent()) return;
         setEmployee({ ...empData, id: empSnap.id });
       } else if (userEmail) {
         const q = query(collection(db(), "employees"), where("email", "==", userEmail));
         const querySnap = await getDocs(q);
+        if (!isCurrent()) return;
         if (!querySnap.empty) {
           const matches = querySnap.docs.filter((item) =>
             !item.data().authUid || item.data().authUid === u.uid,
@@ -156,9 +170,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             inviteStatus: "accepted",
             photoUrl: authPhotoUrl || resolveProfilePhoto(empData as Omit<Employee, "id">) || "",
           };
+          // Save what is shown, so the live profile below agrees with it.
           await updateDoc(matchDoc.ref, {
-            authUid: u.uid, email: userEmail, inviteStatus: "accepted",
+            authUid: u.uid,
+            email: userEmail,
+            inviteStatus: "accepted",
+            ...(authPhotoUrl ? { photoUrl: authPhotoUrl } : {}),
           });
+          if (!isCurrent()) return;
           setEmployee(updatedEmp as Employee);
         } else {
           setEmployee(null);
@@ -170,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       await saveAdmittedUser();
     } catch (err) {
+      if (!isCurrent()) return;
       setEmployee(null);
       console.error("Hydration error:", err);
       setIsAdmin(isEmailAdmin);
@@ -188,13 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void signOut(auth());
           return;
         }
-        setEmployee((prev) =>
-          prev ? { ...prev, ...data, id: snap.id } : { ...data, id: snap.id },
-        );
+        // The saved profile replaces the one on screen. Merging kept fields an
+        // admin had removed (a company, a shift) alive until the next sign-in.
+        setEmployee({ ...data, id: snap.id });
       } else {
         // Removing a duplicate must invalidate open sessions using that document.
         setEmployee(null);
-        void hydrate(user);
+        void startHydration(user);
       }
     });
     return unsub;
@@ -205,7 +225,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    let signedInUid: string | null | undefined;
     const unsub = onAuthStateChanged(auth(), (u) => {
+      // Shared live data belongs to the account that read it.
+      if (signedInUid !== undefined && signedInUid !== (u?.uid ?? null)) liveStore.reset();
+      signedInUid = u?.uid ?? null;
       setUser(u);
       if (u) {
         const userEmail = u.email ? u.email.toLowerCase().trim() : "";
@@ -217,8 +241,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const isEmailAdmin = Boolean(userEmail && ADMIN_EMAILS.includes(userEmail));
         setIsAdmin(isEmailAdmin);
         setLoading(true);
-        hydrate(u).finally(() => setLoading(false));
+        const generation = hydrationRef.current + 1;
+        startHydration(u).finally(() => {
+          if (generation === hydrationRef.current) setLoading(false);
+        });
       } else {
+        hydrationRef.current += 1;
         setIsAdmin(false);
         setEmployee(null);
         setLoading(false);
@@ -227,8 +255,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
+  // Re-subscribe only when the set of companies changes, not on every save of
+  // the employee's profile.
+  const employeeCompanyKey = employee ? getEmployeeCompanyIds(employee).join(",") : "";
   useEffect(() => {
-    if (!firebaseConfigured || (!employee && !isAdmin)) {
+    if (!firebaseConfigured || (!employeeCompanyKey && !isAdmin)) {
       setCompanies([]);
       return;
     }
@@ -244,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    const companyIds = getEmployeeCompanyIds(employee);
+    const companyIds = employeeCompanyKey.split(",").filter(Boolean);
     const current = new Map<string, Company>();
     const unsubscribers = companyIds.map((companyId) => onSnapshot(doc(db(), "companies", companyId), (snapshot) => {
       if (snapshot.exists()) current.set(companyId, { ...(snapshot.data() as Omit<Company, "id">), id: snapshot.id });
@@ -252,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCompanies(companyIds.flatMap((id) => current.has(id) ? [current.get(id)!] : []));
     }, (error) => console.error("Company settings could not sync:", error)));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [employee, isAdmin]);
+  }, [employeeCompanyKey, isAdmin]);
 
   const availableCompanyIds = useMemo(() => {
     if (employeePortal) return portalCompanies.map((item) => item.id || COMPANY_ID);
@@ -338,7 +369,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseConfigured) await signOut(auth());
     },
     refresh: async () => {
-      if (user) await hydrate(user);
+      if (user) await startHydration(user);
     },
   };
 

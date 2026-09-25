@@ -1,16 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { Search, ChevronLeft, ChevronRight, SlidersHorizontal, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
-import { db } from "@/lib/firebase";
-import { zonedDateKey } from "@/lib/attendance";
+import { addCalendarDays, zonedDateKey } from "@/lib/attendance";
 import { buildAttendanceLog, type AttendanceLogStatus } from "@/lib/dashboard-attendance";
 import { AttendanceLogTable, attendanceStatusLabels } from "@/components/AttendanceLogTable";
-import type { Employee, LeaveRequest, Punch } from "@/lib/types";
-import { recentPunchesQuery } from "@/lib/punch-queries";
+import {
+  isSettled,
+  listOf,
+  liveError,
+  recentWindowStart,
+  useEmployeesLive,
+  usePunchesBetweenLive,
+  useLeavesEndingSinceLive,
+  useRecentPunchesLive,
+} from "@/lib/live-data";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
@@ -28,11 +34,6 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 function AdminHome() {
   const { companies, company, activeCompanyId } = useAuth();
   const runtime = useAppRuntime();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [synced, setSynced] = useState({ employees: false, punches: false, leaves: false });
-  const [error, setError] = useState("");
   const [now, setNow] = useState(() => attendanceNow());
   const [date, setDate] = useState("");
   const [search, setSearch] = useState("");
@@ -41,7 +42,35 @@ function AdminHome() {
   const [page, setPage] = useState(0);
   const pageSize = 50;
   const today = zonedDateKey(now, Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const ready = runtime.ready && synced.employees && synced.punches && synced.leaves;
+
+  // The same live records the late log and automatic punch-out read, so a fix
+  // made anywhere shows here without a reload.
+  const employeesLive = useEmployeesLive();
+  // Only leave reaching the days on screen; the whole history grows monthly.
+  const leavesLive = useLeavesEndingSinceLive(
+    date && date < recentWindowStart() ? date : recentWindowStart(),
+  );
+  const recentLive = useRecentPunchesLive();
+  // An older day needs that day's punches: the recent window alone showed
+  // everyone as missing for any date before it. Two days either side cover
+  // overnight shifts and every timezone.
+  const olderDay = Boolean(date) && addCalendarDays(date, -2) < recentWindowStart();
+  const olderLive = usePunchesBetweenLive(
+    olderDay ? addCalendarDays(date, -2) : null,
+    olderDay ? addCalendarDays(date, 3) : null,
+  );
+  const punchesLive = olderDay ? olderLive : recentLive;
+  const employees = listOf(employeesLive);
+  const punches = listOf(punchesLive);
+  const leavesData = leavesLive.data;
+  const leaves = useMemo(
+    () => (leavesData ?? []).filter((leave) => leave.status === "approved"),
+    [leavesData],
+  );
+  const error = liveError(employeesLive, punchesLive, leavesLive)
+    ? "Attendance lost its connection and is reconnecting automatically."
+    : "";
+  const ready = runtime.ready && isSettled(employeesLive, punchesLive, leavesLive);
 
   useEffect(() => {
     const tick = () => {
@@ -56,58 +85,12 @@ function AdminHome() {
     };
   }, [runtime.ready]);
 
+  // A new punch moves "now" too, so a session that just started or ended is
+  // judged against the moment it arrived rather than the last 30-second tick.
+  const punchesData = punchesLive.data;
   useEffect(() => {
-    const failed = (kind: keyof typeof synced) => {
-      setSynced((previous) => ({ ...previous, [kind]: false }));
-      setError("Attendance could not reconnect. Refresh this page to try again.");
-    };
-    const unsubEmployees = onSnapshot(
-      collection(db(), "employees"),
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        setEmployees(snapshot.docs.map((item) => ({ ...item.data(), id: item.id }) as Employee));
-        setSynced((previous) => ({
-          ...previous,
-          employees: !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites,
-        }));
-      },
-      () => failed("employees"),
-    );
-    const unsubPunches = onSnapshot(
-      recentPunchesQuery(7),
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        setNow(attendanceNow());
-        setPunches(
-          snapshot.docs.map(
-            (item) => ({ ...item.data({ serverTimestamps: "estimate" }), id: item.id }) as Punch,
-          ),
-        );
-        setSynced((previous) => ({
-          ...previous,
-          punches: !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites,
-        }));
-      },
-      () => failed("punches"),
-    );
-    const unsubLeaves = onSnapshot(
-      query(collection(db(), "leaveRequests"), where("status", "==", "approved")),
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        setLeaves(snapshot.docs.map((item) => ({ ...item.data(), id: item.id }) as LeaveRequest));
-        setSynced((previous) => ({
-          ...previous,
-          leaves: !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites,
-        }));
-      },
-      () => failed("leaves"),
-    );
-    return () => {
-      unsubEmployees();
-      unsubPunches();
-      unsubLeaves();
-    };
-  }, []);
+    setNow(attendanceNow());
+  }, [punchesData]);
 
   const rows = useMemo(
     () =>

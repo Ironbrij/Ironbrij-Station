@@ -27,6 +27,7 @@ import {
 import type { PersonalAutomationProfile } from "@/lib/personal-automation";
 import type { Department, Employee, MentionItem, Punch } from "@/lib/types";
 import { toDate, toMillis } from "@/lib/time";
+import { getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 
 export const Route = createFileRoute("/_authenticated/app/automation")({
   head: () => ({
@@ -275,7 +276,7 @@ function HelpFeedbackAutomationPage() {
       company: companyEmailBranding(company, employee.companyId),
       reportId: `help_feedback_${Date.now()}`,
       reportType: "sod",
-      reportDate: new Date().toLocaleDateString(),
+      reportDate: zonedDateKey(new Date(), getEmployeeTimezone(employee)),
       authorName: employee.name,
       authorEmail: employee.email,
       authorDeptName: departments.find((d) => d.id === employee.deptId)?.name,
@@ -401,11 +402,14 @@ function HelpFeedbackAutomationPage() {
     try {
       let punches: Punch[] = [];
       try {
+        // Both ids, as every other screen reads a person's punches.
+        const recordIds = [...new Set([employee.id, employee.authUid].filter(Boolean))] as string[];
         const punchesSnapshot = await getDocs(
-          query(collection(db(), "punches"), where("employeeId", "==", employee.id)),
+          query(collection(db(), "punches"), where("employeeId", "in", recordIds)),
         );
         punches = punchesSnapshot.docs
           .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
+          .filter((punch) => !punch.voidedAt)
           .sort((a, b) => toMillis(a.timestamp || 0) - toMillis(b.timestamp || 0));
       } catch (err) {
         console.warn("Could not fetch punches for personal API:", err);

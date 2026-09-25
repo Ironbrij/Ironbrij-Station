@@ -3,6 +3,8 @@ import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { deliverReportEmail } from "@/lib/report-email";
+import { fromFirestoreFields, type FirestoreValue } from "@/lib/firestore-rest";
+import { applyReportEdits, readReportEdits, reportEditsDocId } from "@/lib/report-edits";
 import { COMPANY_ID } from "@/lib/types";
 import type {
   Company,
@@ -22,8 +24,6 @@ import type {
  * the caller never has to work out dates, and `weeksAgo` replays a missed send.
  */
 
-type FirestoreValue = Record<string, unknown>;
-
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "ironbrij-timestation";
   const apiKey =
@@ -32,32 +32,6 @@ function getFirestoreConfig() {
     apiKey,
     baseUrl: `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`,
   };
-}
-
-function fromFirestoreFields(fields: Record<string, FirestoreValue> | undefined): any {
-  if (!fields) return {};
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    out[key] = fromFirestoreValue(value);
-  }
-  return out;
-}
-
-function fromFirestoreValue(value: FirestoreValue): unknown {
-  if ("stringValue" in value) return value.stringValue;
-  if ("integerValue" in value) return Number(value.integerValue);
-  if ("doubleValue" in value) return value.doubleValue;
-  if ("booleanValue" in value) return value.booleanValue;
-  if ("timestampValue" in value) return value.timestampValue;
-  if ("nullValue" in value) return null;
-  if ("arrayValue" in value) {
-    const values = (value.arrayValue as { values?: FirestoreValue[] })?.values || [];
-    return values.map(fromFirestoreValue);
-  }
-  if ("mapValue" in value) {
-    return fromFirestoreFields((value.mapValue as { fields?: Record<string, FirestoreValue> })?.fields);
-  }
-  return null;
 }
 
 /** Reads a whole collection, following Firestore's paging. */
@@ -90,29 +64,38 @@ async function listCollection<T>(collection: string, pageLimit = 40): Promise<T[
   return out;
 }
 
-/** Punches are the one collection big enough to need the date window pushed down. */
-async function listPunchesForWeek(from: string, to: string): Promise<Punch[]> {
+/**
+ * Documents whose date field falls within a period. Punches and overtime grow
+ * every day, so the period is pushed down to Firestore rather than reading the
+ * whole collection on every run.
+ */
+async function listWithinDates<T>(
+  collectionId: string,
+  field: string,
+  from: string,
+  to: string,
+): Promise<T[]> {
   const { baseUrl, apiKey } = getFirestoreConfig();
   const response = await fetch(`${baseUrl}:runQuery?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       structuredQuery: {
-        from: [{ collectionId: "punches" }],
+        from: [{ collectionId }],
         where: {
           compositeFilter: {
             op: "AND",
             filters: [
               {
                 fieldFilter: {
-                  field: { fieldPath: "attendanceDate" },
+                  field: { fieldPath: field },
                   op: "GREATER_THAN_OR_EQUAL",
                   value: { stringValue: from },
                 },
               },
               {
                 fieldFilter: {
-                  field: { fieldPath: "attendanceDate" },
+                  field: { fieldPath: field },
                   op: "LESS_THAN_OR_EQUAL",
                   value: { stringValue: to },
                 },
@@ -125,7 +108,7 @@ async function listPunchesForWeek(from: string, to: string): Promise<Punch[]> {
     }),
   });
   if (!response.ok) {
-    throw new Error(`Could not read punches: ${response.status}`);
+    throw new Error(`Could not read ${collectionId}: ${response.status}`);
   }
   const rows = (await response.json()) as {
     document?: { name: string; fields?: Record<string, FirestoreValue> };
@@ -137,8 +120,24 @@ async function listPunchesForWeek(from: string, to: string): Promise<Punch[]> {
         ({
           ...fromFirestoreFields(row.document!.fields),
           id: row.document!.name.split("/").pop(),
-        }) as Punch,
+        }) as T,
     );
+}
+
+/**
+ * The edits an admin saved on the Reports page for this company and period, if
+ * any. The emailed report lays them over the calculated rows exactly as the
+ * screen does, so a client never receives numbers that differ from it.
+ */
+async function readSavedReportEdits(companyFilter: string, from: string, to: string) {
+  const { baseUrl, apiKey } = getFirestoreConfig();
+  const response = await fetch(
+    `${baseUrl}/reportEdits/${encodeURIComponent(reportEditsDocId(companyFilter, from, to))}?key=${encodeURIComponent(apiKey)}`,
+  );
+  if (response.status === 404) return { edits: null, readable: true };
+  if (!response.ok) return { edits: null, readable: false };
+  const data = (await response.json()) as { fields?: Record<string, FirestoreValue> };
+  return { edits: readReportEdits(fromFirestoreFields(data.fields)), readable: true };
 }
 
 function validEmail(value: string): boolean {
@@ -185,6 +184,9 @@ export interface WeeklyReportResult {
   totalOvertime: number;
   recipients: string[];
   sent: boolean;
+  /** Whether an admin's saved edits to this week's report were laid over it. */
+  editsApplied?: boolean;
+  warning?: string;
   skippedReason?: string;
 }
 
@@ -233,12 +235,11 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const dryRun = String(read("dryRun")) === "true";
   const overrideRecipients = parseRecipients(body.recipients ?? url.searchParams.get("recipients"));
 
-  const [companies, employees, departments, leaves, overtimeRequests] = await Promise.all([
+  const [companies, employees, departments, leaves] = await Promise.all([
     listCollection<Company>("companies"),
     listCollection<Employee>("employees"),
     listCollection<Department>("departments"),
     listCollection<LeaveRequest>("leaveRequests"),
-    listCollection<OvertimeRequest>("overtimeRequests"),
   ]);
 
   // A scheduler asks which clients to send for, so adding a client never means
@@ -284,10 +285,13 @@ async function runWeeklyReport(request: Request): Promise<Response> {
 
   const timezone = company?.timezone || "Australia/Sydney";
   const week = resolveReportWeek(new Date(), timezone, weeksAgo);
-  const punches = await listPunchesForWeek(week.from, week.to);
+  const [punches, overtimeRequests] = await Promise.all([
+    listWithinDates<Punch>("punches", "attendanceDate", week.from, week.to),
+    listWithinDates<OvertimeRequest>("overtimeRequests", "date", week.from, week.to),
+  ]);
 
   const companyFilter = isAll ? "all" : normalizeCompanyId(requestedCompany);
-  const rows = buildReportRows({
+  const calculatedRows = buildReportRows({
     employees,
     punches,
     leaves,
@@ -299,6 +303,8 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     from: week.from,
     to: week.to,
   });
+  const saved = await readSavedReportEdits(companyFilter, week.from, week.to);
+  const rows = saved.edits ? applyReportEdits(calculatedRows, saved.edits) : calculatedRows;
 
   const companyName = isAll ? "All Companies" : company?.name || requestedCompany;
   const configured = parseRecipients(
@@ -321,11 +327,18 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     totalOvertime: Math.round(summary.totalOvertime * 10) / 10,
     recipients,
     sent: false,
+    editsApplied: Boolean(saved.edits),
+    // Firestore rules keep report edits to signed-in admins, and this route
+    // reads without a user. Say so rather than silently sending other figures.
+    ...(saved.readable
+      ? {}
+      : { warning: "Saved report edits could not be read; calculated figures were used." }),
   };
 
   if (dryRun) {
     return Response.json({ ...result, skippedReason: "dryRun", rows });
   }
+
   if (recipients.length === 0) {
     return Response.json({ ...result, skippedReason: "no recipients configured" });
   }

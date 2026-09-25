@@ -1,16 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { doc, onSnapshot, runTransaction } from "firebase/firestore";
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  setDoc,
-  Timestamp,
-  updateDoc,
-} from "firebase/firestore";
-import { punchesSinceQuery } from "@/lib/punch-queries";
+  listOf,
+  liveError,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeesLive,
+  useLeaveRequestsLive,
+  useOvertimeBetweenLive,
+  usePunchesSinceLive,
+} from "@/lib/live-data";
+import { scopeEmployeeToPunchSchedule } from "@/lib/shift-lateness";
 import {
   Download,
   FileText,
@@ -55,6 +56,8 @@ import { computeDay, toDate, toMillis } from "@/lib/time";
 import { breakDurationMs } from "@/lib/work-breaks";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import {
+  addCalendarDays,
+  DEFAULT_SHIFT_TIMEZONE,
   computeEmployeeLateness,
   formatInTimezone,
   getEffectiveEmployeeWorkingDays,
@@ -100,6 +103,7 @@ import {
   editDay,
   editRowFields,
   hasReportEdits,
+  mergeReportEdits,
   NO_REPORT_EDITS,
   readReportEdits,
   removeReportRow,
@@ -140,21 +144,29 @@ function monthBounds(month: string) {
 
 function ReportsPage() {
   const { company: authCompany, user } = useAuth();
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  // The company's month, not UTC's: on the 1st, a Sydney morning is still the
+  // previous month in UTC and the report opened on the wrong period.
+  const currentMonth = zonedDateKey(new Date(), DEFAULT_SHIFT_TIMEZONE).slice(0, 7);
   const initialBounds = monthBounds(currentMonth);
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
+  // The same live records every other admin screen reads.
+  const employeesLive = useEmployeesLive();
+  const departmentsLive = useDepartmentsLive();
+  const companiesLive = useCompaniesLive();
+  const leavesLive = useLeaveRequestsLive();
+  const employees = listOf(employeesLive);
+  const departments = listOf(departmentsLive);
+  const companies = listOf(companiesLive);
+  const leaves = listOf(leavesLive);
   // Reports open across every client; the Target Company picker below narrows them.
   const [companyFilter, setCompanyFilter] = useState("all");
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
-  const [syncError, setSyncError] = useState("");
+  const [editsError, setSyncError] = useState("");
   const [month, setMonth] = useState(currentMonth);
   const [from, setFrom] = useState(initialBounds.from);
   const [to, setTo] = useState(initialBounds.to);
+  // Only the period's overtime: the whole history grows by the day.
+  const overtimeLive = useOvertimeBetweenLive(from, to);
+  const overtimeRequests = listOf(overtimeLive);
   const [departmentId, setDepartmentId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [search, setSearch] = useState("");
@@ -221,83 +233,23 @@ function ReportsPage() {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
 
-  useEffect(() => {
-    // A dropped listener used to leave an empty report that looked like "no data".
-    const failed = (source: string) => (error: Error) =>
-      setSyncError(`${source} could not sync (${error.message}). Refresh to reconnect.`);
-    const unsubscribers = [
-      onSnapshot(
-        collection(db(), "companies"),
-        (snapshot) =>
-          setCompanies(
-            snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-          ),
-        failed("Companies"),
-      ),
-      onSnapshot(
-        collection(db(), "employees"),
-        (snapshot) =>
-          setEmployees(
-            snapshot.docs.map((item) => ({
-              id: item.id,
-              ...(item.data() as Omit<Employee, "id">),
-            })),
-          ),
-        failed("Employees"),
-      ),
-      onSnapshot(
-        collection(db(), "departments"),
-        (snapshot) =>
-          setDepartments(
-            snapshot.docs.map((item) => ({
-              id: item.id,
-              ...(item.data() as Omit<Department, "id">),
-            })),
-          ),
-        failed("Departments"),
-      ),
-      onSnapshot(
-        collection(db(), "leaveRequests"),
-        (snapshot) =>
-          setLeaves(
-            snapshot.docs.map((item) => ({
-              id: item.id,
-              ...(item.data() as Omit<LeaveRequest, "id">),
-            })),
-          ),
-        failed("Leave requests"),
-      ),
-      onSnapshot(
-        collection(db(), "overtimeRequests"),
-        (snapshot) =>
-          setOvertimeRequests(
-            snapshot.docs.map((item) => ({
-              id: item.id,
-              ...(item.data() as Omit<OvertimeRequest, "id">),
-            })),
-          ),
-        failed("Overtime requests"),
-      ),
-    ];
-    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, []);
-
   // Punches from the report's start date on, with two days' slack for timezones.
-  const punchesSince = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : "";
-  useEffect(() => {
-    const start = punchesSince
-      ? new Date(Date.parse(`${punchesSince}T00:00:00Z`) - 2 * 24 * 60 * 60 * 1000)
-      : new Date(Date.now() - 32 * 24 * 60 * 60 * 1000);
-    return onSnapshot(
-      punchesSinceQuery(start),
-      (snapshot) =>
-        setPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
-      (error) =>
-        setSyncError(`Attendance could not sync (${error.message}). Refresh to reconnect.`),
-    );
-  }, [punchesSince]);
+  const punchesSince = /^\d{4}-\d{2}-\d{2}$/.test(from) ? addCalendarDays(from, -2) : null;
+  const punchesLive = usePunchesSinceLive(punchesSince);
+  const punches = listOf(punchesLive);
+  // A dropped listener used to leave an empty report that looked like "no data".
+  // Listeners now reconnect on their own; say so while they do.
+  const liveSyncError = liveError(
+    companiesLive,
+    employeesLive,
+    departmentsLive,
+    leavesLive,
+    overtimeLive,
+    punchesLive,
+  );
+  const syncError =
+    editsError ||
+    (liveSyncError ? `Report data could not sync (${liveSyncError}). Reconnecting automatically.` : "");
 
   const selectedCompany = useMemo(() => {
     if (companyFilter === "all") return authCompany;
@@ -361,135 +313,6 @@ function ReportsPage() {
     workedEmployeeIds,
   ]);
 
-  // Compute Raw Day-by-Day Attendance Rows
-  const dailyRows = useMemo(() => {
-    const output: AttendanceRow[] = [];
-    for (const rawEmployee of filteredEmployees) {
-      const employee =
-        companyFilter === "all" ? rawEmployee : getEmployeeForCompany(rawEmployee, companyFilter);
-      const reportCompany =
-        companyFilter === "all"
-          ? authCompany
-          : companies.find(
-              (item) => normalizeCompanyId(item.id) === normalizeCompanyId(companyFilter),
-            ) || authCompany;
-      const employeeLeaves = getEmployeeLeavesForCompany(leaves, rawEmployee, companyFilter);
-      const shiftTimezone = getShiftTimezone(employee);
-      const groups = new Map<string, Punch[]>();
-      // Shared scoping drops voided corrections and matches company aliases.
-      for (const punch of getEmployeePunchesForCompany(
-        punches,
-        rawEmployee,
-        companyFilter,
-        reportCompany?.name,
-      )) {
-        if (!punch.timestamp) continue;
-        const punchedAt = toDate(punch.timestamp);
-        if (!punchedAt) continue;
-        const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
-        if (date < from || date > to) continue;
-        if (!groups.has(date)) groups.set(date, []);
-        groups.get(date)!.push(punch);
-      }
-      for (const date of getEmployeeHolidayDates(reportCompany, employee)) {
-        if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
-      }
-      for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
-        if (date >= from && date <= to && !groups.has(date)) groups.set(date, []);
-      }
-      for (const [date, dayPunches] of groups) {
-        const sorted = [...dayPunches].sort(
-          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
-        );
-        const firstIn = sorted.find((punch) => punch.type === "in");
-        const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
-        const calculation = computeDay(sorted, { employee, company: reportCompany });
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
-        const holiday = getEmployeeHoliday(reportCompany, employee, date);
-        const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
-        const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
-        const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
-          employee,
-          reportCompany?.workingDays,
-        );
-        const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
-        const isOffShiftDay = !isScheduledDay;
-
-        const isExcused = Boolean(firstIn?.isExcused);
-        const late =
-          firstIn && isScheduledDay
-            ? computeEmployeeLateness(
-                toDate(firstIn.timestamp) ?? new Date(),
-                employee,
-                getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
-                isExcused,
-              )
-            : null;
-        const isAutoPunchOut = Boolean(lastOut?.isAuto);
-
-        const dayOtRequests = overtimeRequests.filter(
-          (r) =>
-            (r.employeeId === employee.id ||
-              (employee.authUid && r.employeeId === employee.authUid)) &&
-            r.date === date,
-        );
-        const approvedDayOtMinutes = dayOtRequests
-          .filter((r) => r.status === "approved")
-          .reduce((sum, r) => sum + (r.overtimeMinutes || 0), 0);
-        const isOvertimeApproved = approvedDayOtMinutes > 0;
-        const effectiveHours =
-          calculation.regularHours + (approvedDayOtMinutes > 0 ? approvedDayOtMinutes / 60 : 0);
-
-        output.push({
-          key: `${employee.id}-${date}`,
-          employee,
-          department: departments.find((item) => item.id === employee.deptId)?.name || "General",
-          date,
-          firstIn,
-          lastOut,
-          hours: Math.round(effectiveHours * 10) / 10,
-          status: holiday
-            ? "Holiday"
-            : approvedLeave
-              ? getLeaveLabel(approvedLeave)
-              : isOffShiftDay && firstIn
-                ? "Off-day Shift"
-                : !firstIn
-                  ? isOffShiftDay
-                    ? "Off day"
-                    : "No punch in"
-                  : !lastOut
-                    ? "Still punched in"
-                    : isAutoPunchOut
-                      ? late?.isLate
-                        ? "Auto punched out · Late"
-                        : "Auto punched out"
-                      : isExcused
-                        ? "Excused (Not Late)"
-                        : late?.isLate
-                          ? "Late"
-                          : "On time",
-          minutesLate: !holiday && !approvedLeave && late?.isLate ? late.minutes : 0,
-          isAutoPunchOut,
-        });
-      }
-    }
-    return output.sort(
-      (a, b) => b.date.localeCompare(a.date) || a.employee.name.localeCompare(b.employee.name),
-    );
-  }, [
-    filteredEmployees,
-    punches,
-    leaves,
-    overtimeRequests,
-    departments,
-    from,
-    to,
-    authCompany,
-    companies,
-    companyFilter,
-  ]);
-
   // Compute Auto-Aggregated Report Rows & Daily Intervals per Employee/VA
   const computedSummaryRows = useMemo(
     () =>
@@ -518,6 +341,40 @@ function ReportsPage() {
       companyFilter,
     ],
   );
+  // The raw daily log is the summary's own days, so the two views on this page
+  // (and the dashboard, which reads the same sessions) never disagree.
+  const dailyRows = useMemo(() => {
+    const punchById = new Map(punches.map((punch) => [punch.id, punch]));
+    const output: AttendanceRow[] = [];
+    for (const row of computedSummaryRows) {
+      const rawEmployee = filteredEmployees.find(
+        (item) => item.id === row.id || item.authUid === row.id,
+      );
+      if (!rawEmployee) continue;
+      const employee =
+        companyFilter === "all" ? rawEmployee : getEmployeeForCompany(rawEmployee, companyFilter);
+      for (const day of row.dailyIntervals) {
+        const approvedOvertime = day.isOvertimeApproved ? day.rawOvertimeHours : 0;
+        output.push({
+          key: `${row.id}-${day.date}`,
+          employee,
+          department: row.department,
+          date: day.date,
+          firstIn: day.firstInPunchId ? punchById.get(day.firstInPunchId) : undefined,
+          lastOut: day.lastOutPunchId ? punchById.get(day.lastOutPunchId) : undefined,
+          hours: Math.round((day.regularHours + approvedOvertime) * 10) / 10,
+          // The minutes late are shown beside the status already.
+          status: day.status.replace(/ \(\d+m\)$/, ""),
+          minutesLate: day.minutesLate,
+          isAutoPunchOut: day.isAutoPunchOut,
+        });
+      }
+    }
+    return output.sort(
+      (a, b) => b.date.localeCompare(a.date) || a.employee.name.localeCompare(b.employee.name),
+    );
+  }, [computedSummaryRows, companyFilter, filteredEmployees, punches]);
+
   // Live figures and the admin's edits both matter: recompute from Firestore
   // every time and lay the saved edits on top, field by field, so anything
   // nobody typed over keeps following the punches.
@@ -540,25 +397,37 @@ function ReportsPage() {
   // person filters only narrow the view, so they share the same saved edits.
   const editsDocId = reportEditsDocId(companyFilter, from, to);
   const reportEditsRef = useRef<ReportEdits>(NO_REPORT_EDITS);
+  // The saved copy the edits on screen are based on. A save sends only what
+  // changed since, so another admin's edits in the meantime are kept.
+  const baseEditsRef = useRef<ReportEdits>(NO_REPORT_EDITS);
   const editsDocIdRef = useRef(editsDocId);
   const unsavedEditsRef = useRef(false);
+  const savingEditsRef = useRef(false);
   const lastSaveErrorRef = useRef("");
 
   useEffect(() => {
     editsDocIdRef.current = editsDocId;
     reportEditsRef.current = NO_REPORT_EDITS;
+    baseEditsRef.current = NO_REPORT_EDITS;
     unsavedEditsRef.current = false;
     setReportEdits(NO_REPORT_EDITS);
     setEditsSaveState("saved");
     return onSnapshot(
       doc(db(), "reportEdits", editsDocId),
       (snapshot) => {
-        // Our own write echoes back first, and a box still being typed in must
-        // not be overwritten by the copy saved a moment ago.
-        if (snapshot.metadata.hasPendingWrites || unsavedEditsRef.current) return;
+        // Our own write echoes back first; the save itself settles that.
+        if (snapshot.metadata.hasPendingWrites) return;
         const saved = readReportEdits(snapshot.data());
-        reportEditsRef.current = saved;
-        setReportEdits(saved);
+        const base = baseEditsRef.current;
+        baseEditsRef.current = saved;
+        // Someone else saved. Show their edits now, keeping anything typed here
+        // that is not saved yet on top, so a box being typed in is not reset.
+        const next =
+          unsavedEditsRef.current || savingEditsRef.current
+            ? mergeReportEdits(base, reportEditsRef.current, saved)
+            : saved;
+        reportEditsRef.current = next;
+        setReportEdits(next);
       },
       (error) =>
         setSyncError(`Saved report edits could not load (${error.message}). Refresh to reconnect.`),
@@ -581,36 +450,62 @@ function ReportsPage() {
   // There is no Save button: a box saves when it loses focus, and one-click
   // changes save straight away.
   async function saveReportEdits() {
-    if (!unsavedEditsRef.current) return;
-    const edits = reportEditsRef.current;
-    const target = doc(db(), "reportEdits", editsDocIdRef.current);
+    if (!unsavedEditsRef.current || savingEditsRef.current) return;
+    const docId = editsDocIdRef.current;
+    const base = baseEditsRef.current;
+    const local = reportEditsRef.current;
+    const meta = { companyId: companyFilter, from, to };
+    const target = doc(db(), "reportEdits", docId);
     unsavedEditsRef.current = false;
+    savingEditsRef.current = true;
     setEditsSaveState("saving");
+    let savedOk = false;
     try {
-      if (hasReportEdits(edits)) {
-        await setDoc(
-          target,
-          cleanFirestoreData({
-            ...edits,
-            companyId: companyFilter,
-            from,
-            to,
-            updatedAt: new Date().toISOString(),
-            updatedBy: user?.email || "admin",
-          }),
-        );
-      } else {
-        await deleteDoc(target);
-      }
+      // Read what is saved now and lay only this admin's changes over it, in one
+      // transaction, so two admins saving together cannot erase each other.
+      const saved = await runTransaction(db(), async (transaction) => {
+        const current = await transaction.get(target);
+        const merged = mergeReportEdits(base, local, readReportEdits(current.data()));
+        if (hasReportEdits(merged)) {
+          transaction.set(
+            target,
+            cleanFirestoreData({
+              ...merged,
+              ...meta,
+              updatedAt: new Date().toISOString(),
+              updatedBy: user?.email || "admin",
+            }),
+          );
+        } else if (current.exists()) {
+          transaction.delete(target);
+        }
+        return merged;
+      });
+      savedOk = true;
+      if (editsDocIdRef.current !== docId) return;
+      baseEditsRef.current = saved;
+      // Anything typed while this was saving stays on top of what was saved.
+      const now = reportEditsRef.current;
+      const next = now === local ? saved : mergeReportEdits(local, now, saved);
+      reportEditsRef.current = next;
+      setReportEdits(next);
       lastSaveErrorRef.current = "";
       if (!unsavedEditsRef.current) setEditsSaveState("saved");
     } catch (error) {
+      if (editsDocIdRef.current !== docId) return;
       unsavedEditsRef.current = true;
       setEditsSaveState("error");
       const message = (error as Error).message;
       if (message !== lastSaveErrorRef.current) {
         lastSaveErrorRef.current = message;
         toast.error(`Your change is on screen but could not be saved: ${message}`);
+      }
+    } finally {
+      savingEditsRef.current = false;
+      // A change made while saving goes out now instead of waiting for a blur.
+      // After a failure it waits for the next edit or blur rather than looping.
+      if (savedOk && unsavedEditsRef.current && editsDocIdRef.current === docId) {
+        void saveReportEdits();
       }
     }
   }
@@ -829,11 +724,12 @@ function ReportsPage() {
     const emp = filteredEmployees.find(
       (e) => e.id === employeeRowId || e.authUid === employeeRowId,
     );
+    if (!emp) {
+      toast.error("Could not find this employee to record the punch.");
+      return;
+    }
     const writeCompanyId = resolveWriteCompanyId(emp);
-    const scopedEmp = emp ? getEmployeeForCompany(emp, writeCompanyId) : null;
-    const defaultEndTime = scopedEmp?.shiftEndTime || "17:00";
-    const empTz = scopedEmp ? getShiftTimezone(scopedEmp) : "Australia/Sydney";
-    const fixedOutDate = zonedDateTimeToDate(date, defaultEndTime, empTz);
+    const scopedEmp = getEmployeeForCompany(emp, writeCompanyId);
     // Pair the clock-out with the day's clock-in so hours and overtime recompute
     // against the schedule that shift was actually opened on.
     const dayIn = punches.find(
@@ -841,33 +737,32 @@ function ReportsPage() {
         !punch.voidedAt &&
         punch.type === "in" &&
         (punch.attendanceDate || punch.date) === date &&
-        (punch.employeeId === emp?.id || punch.employeeId === emp?.authUid),
+        (punch.employeeId === emp.id || punch.employeeId === emp.authUid),
     );
+    const punchIn = toDate(dayIn?.timestamp);
+    if (!dayIn || !punchIn) {
+      toast.error(`There is no clock-in on ${date} to close. Set the clock-in time first.`);
+      return;
+    }
+    const shiftEmployee = scopeEmployeeToPunchSchedule(scopedEmp, dayIn);
+    const timezone = dayIn.shiftTimezone || getShiftTimezone(shiftEmployee);
+    const defaultEndTime = shiftEmployee.shiftEndTime || "17:00";
 
     try {
-      await addDoc(collection(db(), "punches"), {
-        employeeId: dayIn?.employeeId || emp?.id || employeeRowId,
-        employeeName: emp?.name || selectedIntervalEmployee?.employeeName || "Employee",
-        companyId: writeCompanyId,
-        companyName: selectedCompany?.name || "Company",
-        date,
-        attendanceDate: date,
-        type: "out",
-        timestamp: Timestamp.fromDate(fixedOutDate),
-        source: "app",
-        isAuto: false,
-        isAdminFix: true,
-        adminFixedBy: user?.email || "admin",
-        adminFixedAt: new Date().toISOString(),
-        shiftTimezone: dayIn?.shiftTimezone || empTz,
-        ...(dayIn ? { punchInId: dayIn.id } : {}),
-        ...(dayIn?.scheduledShiftStart
-          ? {
-              scheduledShiftStart: dayIn.scheduledShiftStart,
-              scheduledShiftEnd: dayIn.scheduledShiftEnd,
-            }
-          : {}),
-        attendanceStatus: "complete",
+      // The same writer as every other punch fix: it corrects the shift's own
+      // clock-out if one exists and brings its pending overtime in line.
+      await applyPunchCorrection({
+        employee: shiftEmployee,
+        profile: emp,
+        companyId: normalizeCompanyId(dayIn.companyId || writeCompanyId),
+        companyName: dayIn.companyName || selectedCompany?.name,
+        company: selectedCompany,
+        punches,
+        punchIn,
+        punchOut: resolveManualClockOut(date, defaultEndTime, timezone, punchIn),
+        actor: user?.email || "admin",
+        note: `Missed clock-out set to the shift end from the ${date} report`,
+        timezoneUsed: timezone,
       });
 
       releaseDayEdit(employeeRowId, date);
@@ -897,49 +792,35 @@ function ReportsPage() {
       let inPunchId: string | undefined;
       let outPunchId: string | undefined;
 
-      // If syncToPunches is true, create official Punch records in Firestore
+      // Written as real punches through the one correction writer, so a day
+      // that already has punches is corrected rather than given a second set.
       if (syncToPunches) {
-        if (customDayPunchIn) {
-          const inDate = zonedDateTimeToDate(customDayDate, customDayPunchIn, empTz);
-          const inRef = await addDoc(collection(db(), "punches"), {
-            employeeId: emp?.id || selectedIntervalEmployee.id,
-            employeeName: emp?.name || selectedIntervalEmployee.employeeName,
-            companyId: effectiveCompId,
-            companyName: selectedCompany?.name || "Company",
-            date: customDayDate,
-            attendanceDate: customDayDate,
-            type: "in",
-            timestamp: Timestamp.fromDate(inDate),
-            source: "app",
-            manualNote: customDayNote.trim() || `Manual entry by admin`,
-            addedByAdmin: user?.email || "admin",
-            createdAt: new Date().toISOString(),
-            shiftTimezone: empTz,
-            attendanceStatus: "complete",
-          });
-          inPunchId = inRef.id;
+        if (!emp || !scopedEmp) {
+          toast.error("Only someone with an employee profile can have punches recorded.");
+          return;
         }
-
-        if (customDayPunchOut) {
-          const outDate = zonedDateTimeToDate(customDayDate, customDayPunchOut, empTz);
-          const outRef = await addDoc(collection(db(), "punches"), {
-            employeeId: emp?.id || selectedIntervalEmployee.id,
-            employeeName: emp?.name || selectedIntervalEmployee.employeeName,
-            companyId: effectiveCompId,
-            companyName: selectedCompany?.name || "Company",
-            date: customDayDate,
-            attendanceDate: customDayDate,
-            type: "out",
-            timestamp: Timestamp.fromDate(outDate),
-            source: "app",
-            manualNote: customDayNote.trim() || `Manual entry by admin`,
-            addedByAdmin: user?.email || "admin",
-            createdAt: new Date().toISOString(),
-            shiftTimezone: empTz,
-            attendanceStatus: "complete",
-          });
-          outPunchId = outRef.id;
+        if (!customDayPunchIn) {
+          toast.error("Set a clock-in time to record punches for this day.");
+          return;
         }
+        const inDate = zonedDateTimeToDate(customDayDate, customDayPunchIn, empTz);
+        const result = await applyPunchCorrection({
+          employee: scopedEmp,
+          profile: emp,
+          companyId: effectiveCompId,
+          companyName: selectedCompany?.name,
+          company: selectedCompany,
+          punches,
+          punchIn: inDate,
+          punchOut: customDayPunchOut
+            ? resolveManualClockOut(customDayDate, customDayPunchOut, empTz, inDate)
+            : null,
+          actor: user?.email || "admin",
+          note: customDayNote.trim() || "Manual entry by admin",
+          timezoneUsed: empTz,
+        });
+        inPunchId = result.punchInId;
+        outPunchId = result.punchOutId;
       }
 
       // A day written to punches is recalculated from them. One kept off the
@@ -981,7 +862,10 @@ function ReportsPage() {
 
       changeReportEdits(
         (edits) => {
-          let next = syncToPunches ? edits : editDay(edits, row.id, customDayDate, dayRecord);
+          // Real punches make the recalculated day the truth.
+          let next = syncToPunches
+            ? clearDayEdit(edits, row.id, customDayDate)
+            : editDay(edits, row.id, customDayDate, dayRecord);
           if (note) next = editRowFields(next, row.id, { remarks: nextRemarks });
           return next;
         },

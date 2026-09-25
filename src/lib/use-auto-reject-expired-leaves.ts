@@ -1,29 +1,35 @@
 import { useEffect, useRef } from "react";
-import { collection, doc, onSnapshot, query, where, runTransaction } from "firebase/firestore";
+import { doc, runTransaction } from "firebase/firestore";
 import { getEmployeeTimezone, zonedDateKey } from "./attendance";
 import { db } from "./firebase";
+import { isSettled, useEmployeesLive, useWhereEqualLive } from "./live-data";
 import type { CompanyNotice, Employee, LeaveRequest } from "./types";
 import { ymd } from "./time";
 
 const AUTO_REJECTION_REASON = "The request was not reviewed before its leave start date.";
 
 export function useAutoRejectExpiredLeaves(enabled: boolean) {
-  const employeesRef = useRef<Employee[]>([]);
-  const employeesLoadedRef = useRef(false);
-  const leavesRef = useRef<LeaveRequest[]>([]);
+  // Shared live reads; only a server-confirmed list is acted on, and the
+  // transaction below re-checks each request before rejecting it.
+  const employeesLive = useEmployeesLive(enabled);
+  // The same pending-only query the navigation badge reads.
+  const leavesLive = useWhereEqualLive<LeaveRequest>("leaveRequests", "status", enabled ? "pending" : null);
+  const settled = isSettled(employeesLive, leavesLive);
+  const employees = settled ? employeesLive.data : undefined;
+  const leaves = settled ? leavesLive.data : undefined;
   const processingRef = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !employees || !leaves) return;
     const processing = processingRef.current;
+    const currentEmployees = employees;
+    const pending = leaves.filter((leave) => leave.status === "pending");
 
     function processExpiredRequests() {
-      if (!employeesLoadedRef.current) return;
-      const employees = employeesRef.current;
       const now = new Date();
-      const expiredRequests = leavesRef.current.filter((leave) => {
-        if (leave.status !== "pending" || processing.has(leave.id)) return false;
-        const employee = employees.find(
+      const expiredRequests = pending.filter((leave) => {
+        if (processing.has(leave.id)) return false;
+        const employee = currentEmployees.find(
           (item) => item.id === leave.employeeId || item.authUid === leave.employeeId,
         );
         const today = employee ? zonedDateKey(now, getEmployeeTimezone(employee)) : ymd(now);
@@ -32,7 +38,7 @@ export function useAutoRejectExpiredLeaves(enabled: boolean) {
 
       for (const leave of expiredRequests) {
         processing.add(leave.id);
-        void autoRejectLeave(leave, employees)
+        void autoRejectLeave(leave, currentEmployees)
           .catch((error) => {
             console.error("Could not automatically reject expired leave request", error);
           })
@@ -42,33 +48,10 @@ export function useAutoRejectExpiredLeaves(enabled: boolean) {
       }
     }
 
-    const unsubscribeEmployees = onSnapshot(collection(db(), "employees"), (snapshot) => {
-      employeesRef.current = snapshot.docs.map((item) => ({
-        id: item.id,
-        ...(item.data() as Omit<Employee, "id">),
-      }));
-      employeesLoadedRef.current = true;
-      processExpiredRequests();
-    });
-
-    const unsubscribeLeaves = onSnapshot(query(collection(db(), "leaveRequests"), where("status", "==", "pending")), (snapshot) => {
-      leavesRef.current = snapshot.docs.map((item) => ({
-        id: item.id,
-        ...(item.data() as Omit<LeaveRequest, "id">),
-      }));
-      processExpiredRequests();
-    });
+    processExpiredRequests();
     const timer = window.setInterval(processExpiredRequests, 60000);
-
-    return () => {
-      window.clearInterval(timer);
-      unsubscribeEmployees();
-      unsubscribeLeaves();
-      employeesLoadedRef.current = false;
-      leavesRef.current = [];
-      processing.clear();
-    };
-  }, [enabled]);
+    return () => window.clearInterval(timer);
+  }, [enabled, employees, leaves]);
 }
 
 async function autoRejectLeave(leave: LeaveRequest, employees: Employee[]) {

@@ -1,16 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import { useMemo, useRef, useState } from "react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { decideRequest } from "@/lib/guarded-writes";
+import { useEmployeeLeavesLive } from "@/lib/live-data";
 import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding } from "@/lib/email-branding";
 import type { LeaveDayItem, LeaveRequest } from "@/lib/types";
@@ -58,30 +51,22 @@ function LeavePage() {
     useState<NonNullable<LeaveDayItem["leaveCategory"]>>("annual");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<LeaveRequest[]>([]);
-
-  useEffect(() => {
-    if (!employee) return;
-    const employeeIds = [...new Set([employee.id, employee.authUid].filter(Boolean))] as string[];
-    const q = query(
-      collection(db(), "leaveRequests"),
-      employeeIds.length > 1
-        ? where("employeeId", "in", employeeIds)
-        : where("employeeId", "==", employee.id),
-    );
-    return onSnapshot(q, (snap) => {
-      setHistory(
-        snap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, "id">) }))
-          .filter(
-            (leave) =>
-              (leave.companyId || employee.companyIds?.[0] || employee.companyId) ===
-              activeCompanyId,
-          )
-          .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)),
-      );
-    });
-  }, [activeCompanyId, employee]);
+  // A second click lands before React re-renders with busy set; this cannot,
+  // so one application is never filed twice.
+  const busyRef = useRef(false);
+  // The same live leave the punch page and the navigation badge read.
+  const leavesData = useEmployeeLeavesLive(employee).data;
+  const history = useMemo(
+    () =>
+      (leavesData ?? [])
+        .filter(
+          (leave) =>
+            (leave.companyId || employee?.companyIds?.[0] || employee?.companyId) ===
+            activeCompanyId,
+        )
+        .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)),
+    [activeCompanyId, employee, leavesData],
+  );
 
   const handleAddCustomDate = () => {
     if (!newDateInput) {
@@ -126,7 +111,8 @@ function LeavePage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employee) return;
+    if (!employee || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const companyId = activeCompanyId || employee.companyId || employee.companyIds?.[0] || "";
@@ -281,6 +267,7 @@ function LeavePage() {
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -290,11 +277,18 @@ function LeavePage() {
   async function cancelLeaveRequest(id: string) {
     if (!window.confirm("Are you sure you want to cancel this leave request?")) return;
     try {
-      await updateDoc(doc(db(), "leaveRequests", id), {
-        status: "rejected",
-        decidedAt: new Date().toISOString(),
-        decidedBy: employee?.name || user?.email || "Employee",
-        decisionReason: "Cancelled by employee",
+      // Only a request still pending or approved can be cancelled; one an admin
+      // rejected in the meantime stays as they decided it.
+      await decideRequest({
+        collectionName: "leaveRequests",
+        id,
+        expected: ["pending", "approved"],
+        update: {
+          status: "rejected",
+          decidedAt: new Date().toISOString(),
+          decidedBy: employee?.name || user?.email || "Employee",
+          decisionReason: "Cancelled by employee",
+        },
       });
       toast.success("Leave request cancelled.");
     } catch (err) {

@@ -1,71 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { fromFirestoreFields, patchIfUnchanged, toFirestoreFields } from "@/lib/firestore-rest";
 
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
   const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
   const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
   return { projectId, apiKey, baseUrl };
-}
-
-function toFirestoreFields(obj: Record<string, unknown>) {
-  const fields: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value === undefined) continue;
-    if (value === null) {
-      fields[key] = { nullValue: null };
-    } else if (typeof value === "boolean") {
-      fields[key] = { booleanValue: value };
-    } else if (typeof value === "number") {
-      if (Number.isInteger(value)) {
-        fields[key] = { integerValue: String(value) };
-      } else {
-        fields[key] = { doubleValue: value };
-      }
-    } else if (typeof value === "string") {
-      fields[key] = { stringValue: value };
-    } else if (Array.isArray(value)) {
-      fields[key] = {
-        arrayValue: {
-          values: value.map((item) => {
-            if (typeof item === "string") return { stringValue: item };
-            if (typeof item === "number") return { doubleValue: item };
-            if (typeof item === "boolean") return { booleanValue: item };
-            if (typeof item === "object")
-              return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
-            return { stringValue: String(item) };
-          }),
-        },
-      };
-    } else if (typeof value === "object") {
-      fields[key] = { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
-    }
-  }
-  return fields;
-}
-
-function fromFirestoreFields(fields: Record<string, any>) {
-  if (!fields) return {};
-  const obj: Record<string, any> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if ("stringValue" in value) obj[key] = value.stringValue;
-    else if ("integerValue" in value) obj[key] = parseInt(value.integerValue, 10);
-    else if ("doubleValue" in value) obj[key] = value.doubleValue;
-    else if ("booleanValue" in value) obj[key] = value.booleanValue;
-    else if ("nullValue" in value) obj[key] = null;
-    else if ("arrayValue" in value) {
-      obj[key] = (value.arrayValue.values || []).map((v: any) => {
-        if ("stringValue" in v) return v.stringValue;
-        if ("integerValue" in v) return parseInt(v.integerValue, 10);
-        if ("doubleValue" in v) return v.doubleValue;
-        if ("booleanValue" in v) return v.booleanValue;
-        if ("mapValue" in v) return fromFirestoreFields(v.mapValue.fields);
-        return v;
-      });
-    } else if ("mapValue" in value) {
-      obj[key] = fromFirestoreFields(value.mapValue.fields);
-    }
-  }
-  return obj;
 }
 
 const MCP_TOOLS = [
@@ -996,24 +936,41 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 4. DECIDE LEAVE
             if (toolName === "decide_leave") {
-              const fieldsToUpdate = {
-                status: args.decision,
-                paymentStatus: args.paymentStatus || "paid",
-                decidedBy: "Admin via Remote Claude MCP",
-                decidedAt: new Date().toISOString(),
-              };
-              const updateMask = Object.keys(fieldsToUpdate)
-                .map((k) => `updateMask.fieldPaths=${k}`)
-                .join("&");
-              const res = await fetch(
-                `${baseUrl}/leaveRequests/${args.leaveId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
-                {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+              // Only a pending request, and only if nobody decides it first: a
+              // bare PATCH overwrote other decisions and created a request for a
+              // mistyped id.
+              if (args.decision !== "approved" && args.decision !== "rejected") {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    content: [{ type: "text", text: 'decision must be "approved" or "rejected".' }],
+                    isError: true,
+                  },
+                });
+              }
+              const decided = await patchIfUnchanged({
+                baseUrl,
+                apiKey,
+                path: `leaveRequests/${encodeURIComponent(String(args.leaveId || ""))}`,
+                update: {
+                  status: args.decision,
+                  paymentStatus: args.paymentStatus || "paid",
+                  decidedBy: "Admin via Remote Claude MCP",
+                  decidedAt: new Date().toISOString(),
                 },
-              );
-              if (!res.ok) throw new Error("Failed to decide leave");
+                check: (current) =>
+                current.status === "pending"
+                  ? null
+                  : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
+              });
+              if (!decided.ok) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: { content: [{ type: "text", text: decided.message }], isError: true },
+                });
+              }
               return Response.json({
                 jsonrpc: "2.0",
                 id,
@@ -1141,23 +1098,37 @@ export const Route = createFileRoute("/api/mcp")({
 
             // 7. DECIDE OVERTIME
             if (toolName === "decide_overtime") {
-              const fieldsToUpdate = {
-                status: args.decision,
-                decidedBy: "Admin via Remote Claude MCP",
-                decidedAt: new Date().toISOString(),
-              };
-              const updateMask = Object.keys(fieldsToUpdate)
-                .map((k) => `updateMask.fieldPaths=${k}`)
-                .join("&");
-              const res = await fetch(
-                `${baseUrl}/overtimeRequests/${args.requestId}?${updateMask}&key=${encodeURIComponent(apiKey)}`,
-                {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+              if (args.decision !== "approved" && args.decision !== "rejected") {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: {
+                    content: [{ type: "text", text: 'decision must be "approved" or "rejected".' }],
+                    isError: true,
+                  },
+                });
+              }
+              const decided = await patchIfUnchanged({
+                baseUrl,
+                apiKey,
+                path: `overtimeRequests/${encodeURIComponent(String(args.requestId || ""))}`,
+                update: {
+                  status: args.decision,
+                  decidedBy: "Admin via Remote Claude MCP",
+                  decidedAt: new Date().toISOString(),
                 },
-              );
-              if (!res.ok) throw new Error("Failed to decide overtime");
+                check: (current) =>
+                current.status === "pending"
+                  ? null
+                  : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
+              });
+              if (!decided.ok) {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id,
+                  result: { content: [{ type: "text", text: decided.message }], isError: true },
+                });
+              }
               return Response.json({
                 jsonrpc: "2.0",
                 id,

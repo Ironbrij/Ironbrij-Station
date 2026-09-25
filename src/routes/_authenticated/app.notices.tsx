@@ -2,6 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  activePunchesInOrder,
+  listOf,
+  useEmployeeLeavesLive,
+  useEmployeePunchesLive,
+  useLatestNoticesLive,
+} from "@/lib/live-data";
 import { useAuth } from "@/lib/auth-context";
 import type { CompanyNotice, LeaveRequest, Punch } from "@/lib/types";
 import {
@@ -35,10 +42,13 @@ export const Route = createFileRoute("/_authenticated/app/notices")({
 
 function UserNoticesPage() {
   const { employee, company, activeCompanyId } = useAuth();
-  const [notices, setNotices] = useState<CompanyNotice[]>([]);
+  // The newest notices, shared with the punch page's banner.
+  const notices = listOf(useLatestNoticesLive());
   const [showAllHistory, setShowAllHistory] = useState(false);
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  // The same live punches and leave the punch page reads, under either id.
+  const punchesData = useEmployeePunchesLive(employee).data;
+  const punches = useMemo(() => activePunchesInOrder(punchesData ?? []), [punchesData]);
+  const leaves = listOf(useEmployeeLeavesLive(employee));
   const [now, setNow] = useState(() => new Date());
   const [readIds, setReadIds] = useState<string[]>(() => {
     try {
@@ -50,15 +60,6 @@ function UserNoticesPage() {
   });
 
   const todayStr = employee ? zonedDateKey(now, getShiftTimezone(employee)) : "";
-
-  useEffect(() => {
-    const unsubNotices = onSnapshot(collection(db(), "notices"), (s) =>
-      setNotices(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CompanyNotice, "id">) }))),
-    );
-    return () => {
-      unsubNotices();
-    };
-  }, []);
 
   const companyPunches = useMemo(
     () => punches.filter((punch) => getPunchCompanyId(punch, employee) === activeCompanyId),
@@ -75,28 +76,8 @@ function UserNoticesPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
-    if (!employee?.id) return () => window.clearInterval(timer);
-    const unsubscribePunches = onSnapshot(
-      query(collection(db(), "punches"), where("employeeId", "==", employee.id)),
-      (snapshot) =>
-        setPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
-    );
-    const unsubscribeLeaves = onSnapshot(
-      query(collection(db(), "leaveRequests"), where("employeeId", "==", employee.id)),
-      (snapshot) =>
-        setLeaves(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<LeaveRequest, "id">),
-          })),
-        ),
-    );
     return () => {
       window.clearInterval(timer);
-      unsubscribePunches();
-      unsubscribeLeaves();
     };
   }, [employee?.id]);
 

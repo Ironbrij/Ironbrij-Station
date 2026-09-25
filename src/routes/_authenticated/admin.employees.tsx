@@ -11,8 +11,17 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { updateIfUnchanged } from "@/lib/guarded-writes";
+import {
+  listOf,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeesLive,
+  useRecentPunchesLive,
+} from "@/lib/live-data";
 import {
   COMPANY_ID,
   type Company,
@@ -77,7 +86,6 @@ import {
   formatWorkingDaysSummary,
   WorkingDaysPicker,
 } from "@/components/WorkingDaysPicker";
-import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export { DAY_OPTIONS, formatWorkingDaysSummary, WorkingDaysPicker };
 
@@ -142,10 +150,17 @@ function EmployeesPage() {
 }
 
 function EmployeesListPage() {
-  const [employees, setEmployees] = useState<Employee[] | null>(null);
-  const [depts, setDepts] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [punches, setPunches] = useState<Punch[]>([]);
+  // Shared live reads: an edit saved in a modal, a profile or another tab shows
+  // in this list at once, and live status follows the same punches as the
+  // dashboard.
+  const employeesLive = useEmployeesLive();
+  const employees = useMemo(
+    () => (employeesLive.status === "ready" ? listOf(employeesLive) : null),
+    [employeesLive],
+  );
+  const depts = listOf(useDepartmentsLive());
+  const companies = listOf(useCompaniesLive());
+  const punches = listOf(useRecentPunchesLive());
   const [showForm, setShowForm] = useState(false);
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [empToPromote, setEmpToPromote] = useState<Employee | null>(null);
@@ -160,38 +175,13 @@ function EmployeesListPage() {
     setFilterDept("");
   }, [activeCompanyId]);
 
-  useEffect(() => {
-    const unsubCompanies = onSnapshot(collection(db(), "companies"), (snap) =>
-      setCompanies(
-        snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Company, "id">),
-        })),
-      ),
-    );
-    const unsubDepts = onSnapshot(collection(db(), "departments"), (snap) =>
-      setDepts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Department, "id">) }))),
-    );
-    const unsubEmps = onSnapshot(collection(db(), "employees"), (snap) =>
-      setEmployees(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Employee, "id">) }))),
-    );
-    const unsubPunches = onSnapshot(recentPunchesQuery(7), (snap) =>
-      setPunches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Punch, "id">) }))),
-    );
-    return () => {
-      unsubCompanies();
-      unsubDepts();
-      unsubEmps();
-      unsubPunches();
-    };
-  }, []);
-
   function getPunchStatus(
     empId: string,
     authUid?: string,
   ): { status: "in" | "out" | "break"; elapsedMinutes: number } {
     const userPunches = punches.filter(
       (p) =>
+        !p.voidedAt &&
         (p.employeeId === empId ||
           (authUid && p.employeeId === authUid) ||
           (p as any).userId === empId ||
@@ -1334,6 +1324,27 @@ function CompanyMembershipSettings({
   );
 }
 
+/** Every profile field the edit form shows and saves. */
+const EDITABLE_EMPLOYEE_FIELDS = [
+  "name",
+  "email",
+  "jobTitle",
+  "deptId",
+  "companyId",
+  "companyIds",
+  "companyMemberships",
+  "country",
+  "state",
+  "requiredWorkMinutes",
+  "isMultipleShift",
+  "shifts",
+  "shiftTimezone",
+  "shiftStartTime",
+  "shiftEndTime",
+  "workingDays",
+  "annualLeaveCredits",
+] as const;
+
 export function PromoteModal({
   emp,
   depts,
@@ -1367,6 +1378,9 @@ export function PromoteModal({
   );
   const [busy, setBusy] = useState(false);
   const { user, company } = useAuth();
+  // The profile as the form opened with it, to tell whether someone else saved
+  // a change while this form was open.
+  const [baseline] = useState(emp);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -1398,9 +1412,14 @@ export function PromoteModal({
         }),
       );
       const primaryMembership = normalizedMemberships[finalCompanyIds[0]];
-      await updateDoc(
-        doc(db(), "employees", emp.id),
-        cleanFirestoreData({
+      // The form writes every field it shows, so it may only do so if they are
+      // still what it opened with; otherwise it would put back older values.
+      await updateIfUnchanged({
+        path: `employees/${emp.id}`,
+        baseline: baseline as unknown as Record<string, unknown>,
+        watched: EDITABLE_EMPLOYEE_FIELDS,
+        what: `${emp.name || "This employee"}'s profile`,
+        update: cleanFirestoreData({
           name: cleanName,
           email: cleanEmail || emp.email,
           jobTitle: jobTitle.trim() || emp.jobTitle,
@@ -1420,8 +1439,9 @@ export function PromoteModal({
           workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
           // null clears credits, so a blank field stops tracking them.
           annualLeaveCredits: credits,
+          updatedAt: new Date().toISOString(),
         }),
-      );
+      });
 
       if (emailChanged) {
         if (emp.inviteStatus === "pending") {
@@ -1716,40 +1736,42 @@ function NewEmployeeForm({
         return;
       }
 
-      await Promise.all([
-        setDoc(
-          empRef,
-          cleanFirestoreData({
-            companyId: finalCompanyIds[0],
-            companyIds: finalCompanyIds,
-            companyMemberships: normalizedMemberships,
-            deptId: primaryMembership?.departmentId ?? deptId ?? "",
-            name: cleanName,
-            email: cleanEmail,
-            jobTitle: jobTitle.trim() || "Virtual Assistant",
-            requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
-            isMultipleShift: primaryMembership.isMultipleShift ?? false,
-            shifts: primaryMembership.shifts || [],
-            shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
-            shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
-            shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
-            workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
-            country: country || "NP",
-            state: state || "N/A",
-            timezone: COUNTRY_TIMEZONES[country]?.timezone || "Asia/Kathmandu",
-            status: "active",
-            inviteStatus: "pending",
-            reportingRequirement: "sod_eod",
-            createdAt: new Date().toISOString(),
-          }),
-        ),
-        setDoc(doc(db(), "invites", token), {
-          employeeId: empId,
+      // The profile and its invite are saved together or not at all, so there
+      // is never an employee nobody can be invited as.
+      const creation = writeBatch(db());
+      creation.set(
+        empRef,
+        cleanFirestoreData({
+          companyId: finalCompanyIds[0],
+          companyIds: finalCompanyIds,
+          companyMemberships: normalizedMemberships,
+          deptId: primaryMembership?.departmentId ?? deptId ?? "",
+          name: cleanName,
           email: cleanEmail,
+          jobTitle: jobTitle.trim() || "Virtual Assistant",
+          requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
+          isMultipleShift: primaryMembership.isMultipleShift ?? false,
+          shifts: primaryMembership.shifts || [],
+          shiftStartTime: primaryMembership.shiftStartTime || shiftStartTime || "09:00",
+          shiftEndTime: primaryMembership.shiftEndTime || shiftEndTime || "17:00",
+          shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
+          workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
+          country: country || "NP",
+          state: state || "N/A",
+          timezone: COUNTRY_TIMEZONES[country]?.timezone || "Asia/Kathmandu",
+          status: "active",
+          inviteStatus: "pending",
+          reportingRequirement: "sod_eod",
           createdAt: new Date().toISOString(),
-          used: false,
         }),
-      ]);
+      );
+      creation.set(doc(db(), "invites", token), {
+        employeeId: empId,
+        email: cleanEmail,
+        createdAt: new Date().toISOString(),
+        used: false,
+      });
+      await creation.commit();
       setCreatedInviteUrl(inviteUrl);
       setCreatedEmpId(empId);
 

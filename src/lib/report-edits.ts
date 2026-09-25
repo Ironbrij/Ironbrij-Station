@@ -197,6 +197,79 @@ export function clearDayEdit(edits: ReportEdits, rowId: string, date: string): R
   return { ...edits, dayEdits };
 }
 
+function sameValue(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Lays one side's changes (base → local) over another's saved state, key by
+ * key down to `depth` levels. A key this side did not touch keeps whatever the
+ * other side saved; a key it did touch takes its value, or goes if it removed it.
+ */
+function mergeLevel(
+  base: Record<string, unknown> | undefined,
+  local: Record<string, unknown> | undefined,
+  remote: Record<string, unknown> | undefined,
+  depth: number,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...(remote ?? {}) };
+  const keys = new Set([...Object.keys(base ?? {}), ...Object.keys(local ?? {})]);
+  for (const key of keys) {
+    const before = base?.[key];
+    const after = local?.[key];
+    if (sameValue(before, after)) continue;
+    if (depth <= 1 || !isRecord(after ?? {}) || !isRecord(before ?? {})) {
+      if (after === undefined) delete result[key];
+      else result[key] = after;
+      continue;
+    }
+    const merged = mergeLevel(
+      before as Record<string, unknown> | undefined,
+      after as Record<string, unknown> | undefined,
+      isRecord(result[key]) ? (result[key] as Record<string, unknown>) : undefined,
+      depth - 1,
+    );
+    if (Object.keys(merged).length > 0) result[key] = merged;
+    else delete result[key];
+  }
+  return result;
+}
+
+/**
+ * Two admins can have the same report open. Each saves only what they changed
+ * since they last saw the saved copy (`base` → `local`), laid over what is saved
+ * now (`remote`), field by field. Edits to different rows, days or fields both
+ * survive; the same field changed on both sides takes this side's value, as the
+ * later of the two.
+ */
+export function mergeReportEdits(
+  base: ReportEdits,
+  local: ReportEdits,
+  remote: ReportEdits,
+): ReportEdits {
+  const localRowIds = new Set(local.customRows.map((row) => row.id));
+  const baseRowIds = new Set(base.customRows.map((row) => row.id));
+  const added = local.customRows.filter((row) => !baseRowIds.has(row.id));
+  const dropped = new Set([...baseRowIds].filter((id) => !localRowIds.has(id)));
+  const remoteRowIds = new Set(remote.customRows.map((row) => row.id));
+
+  const removedBefore = new Set(base.removedRowIds);
+  const removedNow = new Set(local.removedRowIds);
+  const removedRowIds = new Set(remote.removedRowIds);
+  for (const id of removedNow) if (!removedBefore.has(id)) removedRowIds.add(id);
+  for (const id of removedBefore) if (!removedNow.has(id)) removedRowIds.delete(id);
+
+  return {
+    rowEdits: mergeLevel(base.rowEdits, local.rowEdits, remote.rowEdits, 2) as ReportEdits["rowEdits"],
+    dayEdits: mergeLevel(base.dayEdits, local.dayEdits, remote.dayEdits, 3) as ReportEdits["dayEdits"],
+    customRows: [
+      ...added.filter((row) => !remoteRowIds.has(row.id)),
+      ...remote.customRows.filter((row) => !dropped.has(row.id)),
+    ],
+    removedRowIds: [...removedRowIds],
+  };
+}
+
 export function removeReportRow(edits: ReportEdits, rowId: string): ReportEdits {
   const rowEdits = { ...edits.rowEdits };
   const dayEdits = { ...edits.dayEdits };

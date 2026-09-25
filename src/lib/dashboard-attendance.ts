@@ -2,13 +2,11 @@ import type { Company, Employee, LeaveRequest, Punch } from "./types.ts";
 import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
-  getPunchCompanyId,
   normalizeCompanyId,
   indexPunchesByEmployee,
   getIndexedEmployeePunches,
 } from "./company-context.ts";
 import {
-  getActiveWorkingSession,
   getEmployeeShiftWindow,
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
@@ -18,14 +16,8 @@ import {
   formatInTimezone,
   zonedDateKey,
   zonedDateTimeToDate,
-  computeEmployeeLateness,
 } from "./attendance.ts";
-import { calculateAttendanceSession } from "./attendance-calculation.ts";
-import {
-  opensRegularShift,
-  scopeEmployeeToPunchSchedule,
-  shiftLatenessKey,
-} from "./shift-lateness.ts";
+import { buildAttendanceSessions } from "./attendance-sessions.ts";
 import {
   describePunchShiftSlot,
   getPunchShiftSlot,
@@ -60,12 +52,6 @@ export interface AttendanceLogRow {
   excuseReason: string;
   status: AttendanceLogStatus;
   automatic: boolean;
-}
-interface Session {
-  start: Punch;
-  end?: Punch;
-  switchedAt?: Date;
-  punches: Punch[];
 }
 
 /** Read-only table model. Never invent a punch-out or change stored attendance. */
@@ -106,130 +92,29 @@ export function buildAttendanceLog({
           toMillis(p.timestamp) <= now.getTime() + 5 * 60000,
       )
       .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-    const live = getActiveWorkingSession(own, employee, now, companies);
-    const sessions: Session[] = [];
-    const open = new Map<string, Session>();
-    const byStart = new Map<string, Session>();
-    const lastByCompany = new Map<string, Session>();
-    for (const punch of own) {
-      const cid = getPunchCompanyId(punch, employee, companies);
-      if (punch.type === "in" || punch.type === "extra_in") {
-        const previous = open.get(cid);
-        // Repeated clicks during the same session must not duplicate work hours.
-        if (previous) {
-          const scoped = getEmployeeForCompany(employee, cid);
-          const previousShift =
-            previous.start.scheduledShiftStart ||
-            getEmployeeShiftWindow(scoped, toDate(previous.start.timestamp)!).start.toISOString();
-          const nextShift =
-            punch.scheduledShiftStart ||
-            getEmployeeShiftWindow(scoped, toDate(punch.timestamp)!).start.toISOString();
-          if (previousShift === nextShift && previous.start.type === punch.type) continue;
-        }
-        for (const [otherId, other] of open) {
-          if (otherId !== cid) {
-            other.switchedAt = toDate(punch.timestamp) || undefined;
-            open.delete(otherId);
-          }
-        }
-        const session = { start: punch, punches: [punch] };
-        sessions.push(session);
-        open.set(cid, session);
-        byStart.set(punch.id, session);
-        lastByCompany.set(cid, session);
-      } else {
-        const closing = punch.type === "out" || punch.type === "extra_out";
-        const session =
-          closing && punch.punchInId
-            ? byStart.get(punch.punchInId)
-            : open.get(cid) || (closing ? lastByCompany.get(cid) : undefined);
-        if (
-          !session ||
-          session.end ||
-          getPunchCompanyId(session.start, employee, companies) !== cid ||
-          toMillis(punch.timestamp) < toMillis(session.start.timestamp)
-        )
-          continue;
-        session.punches.push(punch);
-        if (closing) {
-          session.end = punch;
-          if (open.get(cid) === session) open.delete(cid);
-        }
-      }
-    }
-    // Lateness belongs to the shift, not to each clock-in inside it. The late
-    // log judges the first regular clock-in of a shift, so the table reads the
-    // same punch: excusing or correcting it there lands here.
-    const shiftLateness = new Map<
-      string,
-      { punchId: string; minutes: number; excused: boolean; reason: string }
-    >();
-    for (const session of sessions) {
-      if (!opensRegularShift(session.start)) continue;
-      const cid = getPunchCompanyId(session.start, employee, companies);
-      const scoped = scopeEmployeeToPunchSchedule(
-        getEmployeeForCompany(employee, cid),
-        session.start,
-      );
-      const start = toDate(session.start.timestamp)!;
-      const key = shiftLatenessKey(cid, getEmployeeShiftWindow(scoped, start).start);
-      if (shiftLateness.has(key)) continue;
-      const lateness = computeEmployeeLateness(
-        start,
-        scoped,
-        companies.find((c) => normalizeCompanyId(c.id) === cid)?.lateGraceMinutes,
-        session.start.isExcused,
-      );
-      shiftLateness.set(key, {
-        punchId: session.start.id,
-        minutes: lateness.isLate ? lateness.minutes : 0,
-        excused: Boolean(session.start.isExcused),
-        reason: session.start.excuseReason || "",
-      });
-    }
+    // The same sessions the report reads, so both show the same hours.
+    const sessions = buildAttendanceSessions({ employee, punches: own, companies, now });
     const represented = new Set<string>();
     const activeCompanies = new Set<string>();
     const recordedCompanies = new Set<string>();
     for (const session of sessions) {
-      const cid = getPunchCompanyId(session.start, employee, companies);
+      const cid = session.companyId;
       if (companyId !== "all" && normalizeCompanyId(companyId) !== cid) continue;
-      const base = getEmployeeForCompany(employee, cid);
-      const timezone = session.start.shiftTimezone || getShiftTimezone(base);
-      const scoped = scopeEmployeeToPunchSchedule(base, session.start);
-      const start = toDate(session.start.timestamp)!;
-      const shift = getEmployeeShiftWindow(scoped, start);
-      const attendanceDate = session.start.attendanceDate || shift.dateKey;
-      const active =
-        !session.end &&
-        !session.switchedAt &&
-        open.get(cid) === session &&
-        live.activeCompanyId === cid;
+      const { active, shift, attendanceDate, timezone, calc } = session;
       const rowDate = date || zonedDateKey(now, timezone);
       if (attendanceDate !== rowDate && !(date === "" && active)) continue;
       represented.add(`${cid}:${shift.start.getTime()}`);
       recordedCompanies.add(cid);
       if (active) activeCompanies.add(cid);
-      const company = companies.find((c) => normalizeCompanyId(c.id) === cid);
-      const end = session.end ? toDate(session.end.timestamp) : null;
-      const unresolved = !end && !active;
-      const calc = calculateAttendanceSession({
-        employee: scoped,
-        company,
-        punchIn: start,
-        punchOut: end || session.switchedAt,
-        now,
-        punches: session.punches,
-        isOffShiftDay: session.start.type === "extra_in" || session.start.isOffShiftDay,
-      });
-      const judged = shiftLateness.get(shiftLatenessKey(cid, shift.start));
-      const carriesLateness = judged?.punchId === session.start.id;
+      const company = session.company;
+      const end = session.endedAt;
       // A shift slot may name the client it is worked for, and say which of the
       // day's slots this is. One company can cover several clients, and the
       // table is where an admin tells them apart.
-      const slot = getPunchShiftSlot(base, session.start);
+      const slot = getPunchShiftSlot(session.base, session.start);
       const parentCompanyName = company?.name || session.start.companyName || cid;
       rows.push({
-        id: session.start.id,
+        id: session.id,
         employeeId: employee.id,
         employeeName: employee.name || employee.email || "Unnamed employee",
         companyId: cid,
@@ -241,15 +126,18 @@ export function buildAttendanceLog({
         timezone,
         scheduleStart: toDate(session.start.scheduledShiftStart) || shift.start,
         scheduleEnd: toDate(session.start.scheduledShiftEnd) || shift.end,
-        timeIn: start,
+        timeIn: session.startedAt,
         timeOut: end,
-        hours: unresolved ? null : calc.actualWorkMinutes / 60,
-        overtime: unresolved ? null : calc.overtimeMinutes / 60,
-        lateMinutes: carriesLateness ? judged!.minutes : 0,
-        excused: carriesLateness ? judged!.excused : false,
-        excuseReason: carriesLateness ? judged!.reason : "",
+        hours: session.unresolved ? null : calc.actualWorkMinutes / 60,
+        overtime: session.unresolved ? null : calc.overtimeMinutes / 60,
+        // Lateness belongs to the shift, not to each clock-in inside it. The late
+        // log judges the first regular clock-in of a shift, so the table reads the
+        // same punch: excusing or correcting it there lands here.
+        lateMinutes: session.lateness?.minutes ?? 0,
+        excused: session.lateness?.excused ?? false,
+        excuseReason: session.lateness?.reason ?? "",
         status: active
-          ? live.sessionType === "break"
+          ? session.onBreak
             ? "break"
             : "working"
           : end

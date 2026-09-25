@@ -1,7 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, setDoc, Timestamp } from "firebase/firestore";
-import { employeePunchesQuery } from "@/lib/punch-queries";
+import { collection, onSnapshot } from "firebase/firestore";
+import {
+  listOf,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeeLeavesLive,
+  useEmployeeOvertimeLive,
+  useEmployeePunchesLive,
+  useEmployeesLive,
+} from "@/lib/live-data";
+import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { resolveManualClockOut } from "@/lib/manual-clock-in";
+import { scopeEmployeeToPunchSchedule } from "@/lib/shift-lateness";
 import {
   ArrowLeft,
   BriefcaseBusiness,
@@ -109,14 +120,12 @@ type DayRow = {
 
 function EmployeeDetail() {
   const { id } = Route.useParams();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeesLoaded, setEmployeesLoaded] = useState(false);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [allPunches, setAllPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [leavesLoaded, setLeavesLoaded] = useState(false);
-  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
+  // Shared with every other admin screen, so an edit anywhere shows here at once.
+  const employeesLive = useEmployeesLive();
+  const employees = listOf(employeesLive);
+  const employeesLoaded = employeesLive.status === "ready";
+  const departments = listOf(useDepartmentsLive());
+  const companies = listOf(useCompaniesLive());
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [historyScope, setHistoryScope] = useState<HistoryScope>("all");
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -132,45 +141,6 @@ function EmployeeDetail() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
     const unsubscribers = [
-      onSnapshot(collection(db(), "companies"), (snapshot) =>
-        setCompanies(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "employees"), (snapshot) => {
-        setEmployees(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Employee, "id">),
-          })),
-        );
-        setEmployeesLoaded(true);
-      }),
-      onSnapshot(collection(db(), "departments"), (snapshot) =>
-        setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
-        ),
-      ),
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) => {
-        setLeaves(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<LeaveRequest, "id">),
-          })),
-        );
-        setLeavesLoaded(true);
-      }),
-      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) =>
-        setOvertimeRequests(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<OvertimeRequest, "id">),
-          })),
-        ),
-      ),
       onSnapshot(collection(db(), "users"), (snapshot) =>
         setUsers(
           snapshot.docs.map((item) => ({
@@ -191,20 +161,14 @@ function EmployeeDetail() {
     [employees, id],
   );
 
-  // Only this person's punches, not the whole company's history.
-  const punchOwnerIds = [...new Set([id, rawEmployee?.id, rawEmployee?.authUid].filter(Boolean))]
-    .sort()
-    .join(",");
-  useEffect(() => {
-    return onSnapshot(employeePunchesQuery(punchOwnerIds.split(",")), (snapshot) =>
-      setAllPunches(
-        snapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<Punch, "id">),
-        })),
-      ),
-    );
-  }, [punchOwnerIds]);
+  // Only this person's records, not the whole company's: their whole punch
+  // history, their leave and their overtime.
+  const person = rawEmployee ?? (employeesLoaded ? { id } : null);
+  const allPunches = listOf(useEmployeePunchesLive(person, null));
+  const leavesLive = useEmployeeLeavesLive(person);
+  const leaves = listOf(leavesLive);
+  const leavesLoaded = leavesLive.status === "ready";
+  const overtimeRequests = listOf(useEmployeeOvertimeLive(person));
   // The client chosen in the header is the admin's, not this employee's. Opening
   // a profile from another client's list used to scope the page to a company the
   // employee is not in, which showed an empty history against a schedule they
@@ -627,91 +591,47 @@ function EmployeeDetail() {
 
   async function handleFixMissingPunch() {
     if (!fixingRow || !fixTime || !employee) return;
+    const punchInPunch = fixingRow.firstIn;
+    const punchInAt = toDate(punchInPunch?.timestamp);
+    if (!punchInPunch || !punchInAt || !rawEmployee) {
+      toast.error("This day has no clock-in to close. Fix the clock-in from the Late Logs page.");
+      return;
+    }
     setFixBusy(true);
     try {
-      // Parse the time input and combine with the row date
-      const [hours, minutes] = fixTime.split(":").map(Number);
-      const punchOutDate = new Date(`${fixingRow.date}T${fixTime}:00`);
+      const empCompanyId = normalizeCompanyId(
+        punchInPunch.companyId ||
+          (profileCompanyId !== "all"
+            ? profileCompanyId
+            : getEmployeeCompanyIds(rawEmployee)[0] || COMPANY_ID),
+      );
+      const shiftEmployee = scopeEmployeeToPunchSchedule(
+        getEmployeeForCompany(rawEmployee, empCompanyId),
+        punchInPunch,
+      );
+      // The time typed is on the shift's clock, never the admin's browser, and
+      // a time before the clock-in means the shift ran past midnight.
+      const shiftZone = punchInPunch.shiftTimezone || getShiftTimezone(shiftEmployee);
+      const punchOutDate = resolveManualClockOut(fixingRow.date, fixTime, shiftZone, punchInAt);
       if (Number.isNaN(punchOutDate.getTime())) {
         toast.error("Invalid time entered.");
         return;
       }
 
-      const punchInPunch = fixingRow.firstIn;
-      const empCompanyId = normalizeCompanyId(
-        punchInPunch?.companyId ||
-          (profileCompanyId !== "all"
-            ? profileCompanyId
-            : getEmployeeCompanyIds(rawEmployee)[0] || COMPANY_ID),
-      );
-      const requiredWorkMinutes = getRequiredWorkMinutes(
-        employee,
-        companies.find((c) => normalizeCompanyId(c.id) === empCompanyId),
-      );
-
-      // Calculate session stats
-      const calculation = punchInPunch?.timestamp
-        ? calculateAttendanceSession({
-            employee,
-            company: companies.find((c) => normalizeCompanyId(c.id) === empCompanyId),
-            punchIn: toDate(punchInPunch.timestamp) ?? new Date(),
-            punchOut: punchOutDate,
-            requiredWorkMinutes,
-            isOffShiftDay: Boolean(punchInPunch.isOffShiftDay),
-          })
-        : null;
-
-      const punchRef = await addDoc(collection(db(), "punches"), {
-        employeeId: employee.id,
-        employeeName: employee.name,
+      // The one writer every punch fix uses: it corrects an existing clock-out
+      // instead of adding another, and files or updates the pending overtime.
+      const { calculation } = await applyPunchCorrection({
+        employee: shiftEmployee,
+        profile: rawEmployee,
         companyId: empCompanyId,
-        companyName: punchInPunch?.companyName || company?.name || "Company",
-        date: fixingRow.date,
-        attendanceDate: fixingRow.date,
-        type: "out" as const,
-        timestamp: Timestamp.fromDate(punchOutDate),
-        source: "app" as const,
-        isAuto: false,
-        isAdminFix: true,
-        adminFixedBy: user?.email || "admin",
-        adminFixedAt: new Date().toISOString(),
-        scheduledShiftStart: punchInPunch?.scheduledShiftStart || "",
-        scheduledShiftEnd: punchInPunch?.scheduledShiftEnd || "",
-        shiftTimezone: punchInPunch?.shiftTimezone || timezone,
-        requiredWorkMinutes,
-        isOffShiftDay: Boolean(punchInPunch?.isOffShiftDay),
-        ...(calculation
-          ? {
-              normalWorkMinutes: calculation.normalWorkMinutes,
-              overtimeMinutes: calculation.overtimeMinutes,
-              totalEligibleMinutes: calculation.totalEligibleMinutes,
-              attendanceStatus: calculation.status,
-            }
-          : { attendanceStatus: "complete" }),
+        companyName: punchInPunch.companyName || company?.name,
+        company: companies.find((c) => normalizeCompanyId(c.id) === empCompanyId),
+        punchIn: punchInAt,
+        punchOut: punchOutDate,
+        actor: user?.email || "admin",
+        note: `Missing clock-out fixed from ${rawEmployee.name}'s profile`,
+        timezoneUsed: shiftZone,
       });
-
-      // If there was overtime, create a pending overtime request
-      if (calculation && calculation.overtimeMinutes > 0) {
-        const isOffShift = Boolean(punchInPunch?.isOffShiftDay);
-        const reason = isOffShift
-          ? `Worked ${formatWorkMinutes(calculation.overtimeMinutes)} on off-shift day (admin fix)`
-          : `Worked ${formatWorkMinutes(calculation.overtimeMinutes)} past shift (admin fix)`;
-        await addDoc(collection(db(), "overtimeRequests"), {
-          employeeId: employee.id,
-          employeeName: employee.name,
-          companyId: empCompanyId,
-          date: fixingRow.date,
-          requestType: isOffShift ? "off_shift_work" : "overtime",
-          punchOutId: punchRef.id,
-          punchInId: punchInPunch?.id || "",
-          overtimeMinutes: calculation.overtimeMinutes,
-          normalWorkMinutes: calculation.normalWorkMinutes,
-          isOffShiftDay: isOffShift,
-          reason,
-          status: "pending",
-          createdAt: new Date().toISOString(),
-        });
-      }
 
       toast.success(
         `Missing punch-out fixed for ${fixingRow.date} at ${fixTime}. ${
