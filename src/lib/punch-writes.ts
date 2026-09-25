@@ -1,8 +1,9 @@
-import { collection, doc, runTransaction, type Transaction } from "firebase/firestore";
+import { collection, doc, runTransaction, writeBatch, type Transaction } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   applyAutoClose,
   applyEmployeePunch,
+  applyEmployeePunchUnchecked,
   type AutoClosePlan,
   type DocTx,
   type EmployeePunchPlan,
@@ -30,15 +31,39 @@ export function newPunchId(): string {
   return doc(collection(db(), "punches")).id;
 }
 
+/** The free plan's daily reads (or writes) are spent until midnight Pacific time. */
+export function isQuotaExceeded(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "resource-exhausted";
+}
+
 /**
  * Records a punch the employee made, together with everything it implies, in
  * one transaction checked against the saved shift. Nothing is written when the
  * shift changed underneath the screen (AttendanceConflictError).
+ *
+ * When the day's reads are spent the check cannot run, but writes may still go
+ * through, so the punch is then saved without it rather than not at all.
+ * Resolves to whether the check ran.
  */
-export function recordEmployeePunch(plan: EmployeePunchPlan): Promise<void> {
-  return runTransaction(db(), (transaction) =>
-    applyEmployeePunch(firestoreDocTx(transaction), plan),
-  );
+export async function recordEmployeePunch(plan: EmployeePunchPlan): Promise<{ checked: boolean }> {
+  try {
+    await runTransaction(db(), (transaction) =>
+      applyEmployeePunch(firestoreDocTx(transaction), plan),
+    );
+    return { checked: true };
+  } catch (error) {
+    if (!isQuotaExceeded(error)) throw error;
+    const batch = writeBatch(db());
+    applyEmployeePunchUnchecked(
+      {
+        set: (path, data) => batch.set(doc(db(), path), data),
+        update: (path, data) => batch.update(doc(db(), path), data),
+      },
+      plan,
+    );
+    await batch.commit();
+    return { checked: false };
+  }
 }
 
 /** Closes a shift nobody closed. False when someone else already did. */

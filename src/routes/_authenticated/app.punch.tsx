@@ -20,12 +20,13 @@ import {
   useEmployeePunchesLive,
   useLatestNoticesLive,
 } from "@/lib/live-data";
-import { newPunchId, recordEmployeePunch } from "@/lib/punch-writes";
+import { isQuotaExceeded, newPunchId, recordEmployeePunch } from "@/lib/punch-writes";
 import {
   isAttendanceConflict,
   latestShiftBoundary,
   overtimeRequestId,
   readSessionContext,
+  sessionCloseId,
   type OvertimeWrite,
 } from "@/lib/punch-session";
 import { useAuth } from "@/lib/auth-context";
@@ -120,13 +121,25 @@ function PunchPage() {
   // The same live punches the header, reminders and automatic punch-out read.
   const punchesLive = useEmployeePunchesLive(employee);
   const punchesData = punchesLive.data;
-  const allPunches = useMemo(
-    () => [...(punchesData ?? [])].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
-    [punchesData],
-  );
-  const punchesReady = isSettled(punchesLive);
-  const punchError =
-    punchesLive.status === "error"
+  // Punches this device saved while the free plan's daily reads were used up,
+  // so the live list could not bring them back. Each is a confirmed write, and
+  // drops out as soon as the live list shows it.
+  const [savedWhileLimited, setSavedWhileLimited] = useState<Punch[]>([]);
+  useEffect(() => setSavedWhileLimited([]), [employee?.id]);
+  const allPunches = useMemo(() => {
+    const live = punchesData ?? [];
+    const known = new Set(live.map((punch) => punch.id));
+    return [...live, ...savedWhileLimited.filter((punch) => !known.has(punch.id))].sort(
+      (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
+    );
+  }, [punchesData, savedWhileLimited]);
+  const quotaReached = punchesLive.status === "error" && isQuotaExceeded(punchesLive.error);
+  // With the daily limit reached, the last loaded punches still show where the
+  // shift stands, and punches can still be saved: do not lock the employee out.
+  const punchesReady = isSettled(punchesLive) || (quotaReached && punchesData !== undefined);
+  const punchError = quotaReached
+    ? "Firebase's free daily limit is used up, so this screen cannot refresh until it resets (midnight US Pacific time). Your punches are still saved."
+    : punchesLive.status === "error"
       ? "Attendance could not be loaded. Reconnecting automatically…"
       : "";
   const leaves = listOf(useEmployeeLeavesLive(employee));
@@ -138,6 +151,13 @@ function PunchPage() {
   const [busy, setBusy] = useState(false);
   // A second click lands before React re-renders with busy set; this cannot.
   const busyRef = useRef(false);
+
+  function rememberSavedWhileLimited(punches: Punch[]) {
+    setSavedWhileLimited((previous) => [...previous, ...punches]);
+    toast.info(
+      "Saved. Firebase's free daily limit is used up, so this was saved without the usual double-punch check. An admin can correct it if needed.",
+    );
+  }
   const [quote, setQuote] = useState(randomQuote());
   const [showEarlyModal, setShowEarlyModal] = useState(false);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
@@ -690,48 +710,57 @@ function PunchPage() {
         });
       }
 
-      await recordEmployeePunch({
+      const punchRecord = cleanFirestoreData({
+        employeeId: employee.id,
+        employeeName: employee.name,
+        companyId: activeCompanyId,
+        companyName: company?.name || "Company",
+        date: targetAttendanceDate,
+        attendanceDate: targetAttendanceDate,
+        type: punchType as Punch["type"],
+        timestamp: serverTimestamp(),
+        createdAt: punchTime.toISOString(),
+        source: "app",
+        scheduledShiftStart: shiftWindow.start.toISOString(),
+        scheduledShiftEnd: shiftWindow.end.toISOString(),
+        shiftTimezone: shiftWindow.timezone,
+        requiredWorkMinutes,
+        isOffShiftDay,
+        ...(calculation
+          ? {
+              normalWorkMinutes: calculation.normalWorkMinutes,
+              overtimeMinutes: calculation.overtimeMinutes,
+              totalEligibleMinutes: calculation.totalEligibleMinutes,
+              attendanceStatus: calculation.status,
+            }
+          : extraOvertimeMinutes !== null
+            ? {
+                normalWorkMinutes: 0,
+                overtimeMinutes: extraOvertimeMinutes,
+                totalEligibleMinutes: extraOvertimeMinutes,
+                attendanceStatus: "complete",
+              }
+            : { attendanceStatus: "in_progress" }),
+        ...(overtimeRequestIdForPunch ? { overtimeRequestId: overtimeRequestIdForPunch } : {}),
+        ...(isEarlyPunchIn ? { earlyPunchMinutes } : {}),
+      });
+      const saved = await recordEmployeePunch({
         punchId,
         sessionInId,
         followsPunchId: followed?.id,
         switchFrom,
         overtime,
         stamp,
-        punch: cleanFirestoreData({
-          employeeId: employee.id,
-          employeeName: employee.name,
-          companyId: activeCompanyId,
-          companyName: company?.name || "Company",
-          date: targetAttendanceDate,
-          attendanceDate: targetAttendanceDate,
-          type: punchType,
-          timestamp: serverTimestamp(),
-          createdAt: punchTime.toISOString(),
-          source: "app",
-          scheduledShiftStart: shiftWindow.start.toISOString(),
-          scheduledShiftEnd: shiftWindow.end.toISOString(),
-          shiftTimezone: shiftWindow.timezone,
-          requiredWorkMinutes,
-          isOffShiftDay,
-          ...(calculation
-            ? {
-                normalWorkMinutes: calculation.normalWorkMinutes,
-                overtimeMinutes: calculation.overtimeMinutes,
-                totalEligibleMinutes: calculation.totalEligibleMinutes,
-                attendanceStatus: calculation.status,
-              }
-            : extraOvertimeMinutes !== null
-              ? {
-                  normalWorkMinutes: 0,
-                  overtimeMinutes: extraOvertimeMinutes,
-                  totalEligibleMinutes: extraOvertimeMinutes,
-                  attendanceStatus: "complete",
-                }
-              : { attendanceStatus: "in_progress" }),
-          ...(overtimeRequestIdForPunch ? { overtimeRequestId: overtimeRequestIdForPunch } : {}),
-          ...(isEarlyPunchIn ? { earlyPunchMinutes } : {}),
-        }),
+        punch: punchRecord,
       });
+      if (!saved.checked) {
+        rememberSavedWhileLimited([
+          { ...punchRecord, id: punchId, timestamp: Timestamp.fromDate(punchTime) } as Punch,
+          ...(switchFrom
+            ? [{ ...switchFrom.close, id: sessionCloseId(switchFrom.inId) } as unknown as Punch]
+            : []),
+        ]);
+      }
       if (switchFrom && activeOtherCompany) {
         toast.info(`Clocked out from ${activeOtherCompany.companyName}`);
       }
@@ -858,28 +887,35 @@ function PunchPage() {
         getEmployeeHolidayDates(company, effectiveEmployee || employee),
       );
 
-      await recordEmployeePunch({
-        punchId: newPunchId(),
+      const breakPunchId = newPunchId();
+      const breakRecord = cleanFirestoreData({
+        employeeId: employee.id,
+        employeeName: employee.name,
+        companyId: activeCompanyId,
+        companyName: company?.name || "Company",
+        date: targetAttendanceDate,
+        attendanceDate: targetAttendanceDate,
+        type: targetType as Punch["type"],
+        timestamp: serverTimestamp(),
+        source: "app",
+        scheduledShiftStart: schedule.shift.start.toISOString(),
+        scheduledShiftEnd: schedule.shift.end.toISOString(),
+        shiftTimezone: schedule.shift.timezone,
+        requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
+        attendanceStatus: "in_progress",
+        createdAt: punchTime.toISOString(),
+      });
+      const saved = await recordEmployeePunch({
+        punchId: breakPunchId,
         sessionInId: sessionIn.id,
         stamp: punchTime.toISOString(),
-        punch: cleanFirestoreData({
-          employeeId: employee.id,
-          employeeName: employee.name,
-          companyId: activeCompanyId,
-          companyName: company?.name || "Company",
-          date: targetAttendanceDate,
-          attendanceDate: targetAttendanceDate,
-          type: targetType,
-          timestamp: serverTimestamp(),
-          source: "app",
-          scheduledShiftStart: schedule.shift.start.toISOString(),
-          scheduledShiftEnd: schedule.shift.end.toISOString(),
-          shiftTimezone: schedule.shift.timezone,
-          requiredWorkMinutes: getRequiredWorkMinutes(employee, company),
-          attendanceStatus: "in_progress",
-          createdAt: punchTime.toISOString(),
-        }),
+        punch: breakRecord,
       });
+      if (!saved.checked) {
+        rememberSavedWhileLimited([
+          { ...breakRecord, id: breakPunchId, timestamp: Timestamp.fromDate(punchTime) } as Punch,
+        ]);
+      }
 
       if (targetType === "lunch_start") {
         toast.success("Break started. Shift timer paused.");
