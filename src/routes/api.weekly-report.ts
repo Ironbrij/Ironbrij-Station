@@ -3,6 +3,7 @@ import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { deliverReportEmail } from "@/lib/report-email";
+import { buildReportCoverMessage } from "@/lib/report-cover-message";
 import { fromFirestoreFields, type FirestoreValue } from "@/lib/firestore-rest";
 import { applyReportEdits, readReportEdits, reportEditsDocId } from "@/lib/report-edits";
 import { COMPANY_ID } from "@/lib/types";
@@ -352,7 +353,13 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     {
       recipientEmails: recipients,
       subject: `${companyName} weekly report (${week.label})`,
-      customMessage: `Automated weekly report covering ${week.label}.`,
+      // The same letter an admin gets pre-written on the report screen.
+      customMessage: buildReportCoverMessage({
+        clientName: isAll ? "" : companyName,
+        from: week.from,
+        to: week.to,
+        rows,
+      }),
       companyName,
       clientName: isAll ? "" : companyName,
       periodLabel: week.label,

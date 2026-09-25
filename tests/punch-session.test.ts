@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyAutoClose,
   applyEmployeePunch,
+  applyEmployeePunchUnchecked,
   isAttendanceConflict,
   latestShiftBoundary,
   overtimeRequestId,
@@ -409,4 +410,69 @@ test("a new shift follows a forgotten clock-in without closing it", async () => 
     db.run((tx) => applyEmployeePunch(tx, start("again", { followsPunchId: "forgot" }))),
     isAttendanceConflict,
   );
+});
+
+/** Records writes; any attempt to read fails, like a spent daily read quota. */
+function writeOnly() {
+  const writes: { op: "set" | "update"; path: string; data: Data }[] = [];
+  return {
+    writes,
+    writer: {
+      set: (path: string, data: Data) => writes.push({ op: "set", path, data }),
+      update: (path: string, data: Data) => writes.push({ op: "update", path, data }),
+    },
+  };
+}
+
+test("with the daily reads used up, ending a break is still saved, without reading anything", () => {
+  const { writes, writer } = writeOnly();
+  applyEmployeePunchUnchecked(writer, {
+    punchId: "break-end",
+    punch: { employeeId: "emp", type: "lunch_end", timestamp: stamp },
+    sessionInId: "shift",
+    stamp,
+  });
+  assert.deepEqual(
+    writes.map((write) => `${write.op} ${write.path}`),
+    ["set punches/break-end", "update punches/shift"],
+  );
+  assert.equal(writes[0].data.savedWithoutChecks, true, "marked so an admin can review it");
+  assert.equal(writes[1].data.breakPunchId, null);
+});
+
+test("an unchecked clock-out closes its shift and files only overtime named after itself", () => {
+  const { writes, writer } = writeOnly();
+  applyEmployeePunchUnchecked(writer, {
+    punchId: "ot-out",
+    punch: { employeeId: "emp", type: "extra_out", timestamp: stamp },
+    sessionInId: "ot-shift",
+    stamp,
+    overtime: [
+      {
+        id: overtimeRequestId("extra", "ot-shift"),
+        data: { status: "pending", overtimeMinutes: 40 },
+        mode: "pending",
+        fallbackId: overtimeRequestId("out", "ot-out"),
+      },
+    ],
+  });
+  const paths = writes.map((write) => write.path);
+  assert.ok(!paths.includes(`overtimeRequests/${overtimeRequestId("extra", "ot-shift")}`),
+    "a request that may already be decided is never written blind");
+  assert.ok(paths.includes(`overtimeRequests/${overtimeRequestId("out", "ot-out")}`));
+  assert.equal(writes.find((w) => w.path === "punches/ot-shift")?.data.closedByPunchId, "ot-out");
+  assert.equal(writes[0].data.punchInId, "ot-shift");
+});
+
+test("an unchecked switch of client still closes the old shift", () => {
+  const { writes, writer } = writeOnly();
+  applyEmployeePunchUnchecked(writer, {
+    ...start("beta-in"),
+    switchFrom: { inId: "alpha-shift", close: { type: "out", autoReason: "switch_company" } },
+  });
+  const closeId = sessionCloseId("alpha-shift");
+  assert.equal(writes.find((w) => w.path === `punches/${closeId}`)?.data.punchInId, "alpha-shift");
+  const marks = writes.find((w) => w.path === "punches/alpha-shift")?.data;
+  assert.equal(marks?.closedByPunchId, closeId);
+  assert.equal(marks?.nextPunchInId, "beta-in");
 });

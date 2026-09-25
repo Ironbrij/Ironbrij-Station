@@ -263,6 +263,69 @@ export async function applyEmployeePunch(tx: DocTx, plan: EmployeePunchPlan): Pr
   });
 }
 
+/** Writes only: for when nothing can be read. */
+export type DocWriter = Pick<DocTx, "set" | "update">;
+
+/**
+ * The same punch and marks, written without reading anything first.
+ *
+ * On the free Firebase plan the day's reads can run out while writes still go
+ * through. A transaction has to read the shift, so it fails then, and the
+ * employee could not even end a break. Recording the punch matters more than
+ * checking it, so it is written as punches were before the checks existed;
+ * an admin can fix anything odd afterwards. Every document written here is
+ * either the new punch, one named after it, or a mark on a punch the device
+ * already has, so nothing another person decided is overwritten.
+ */
+export function applyEmployeePunchUnchecked(writer: DocWriter, plan: EmployeePunchPlan): void {
+  const type = plan.punch.type;
+  const starting = STARTS.has(type);
+  const closing = CLOSES.has(type);
+
+  writer.set(`punches/${plan.punchId}`, {
+    ...plan.punch,
+    ...(closing && plan.sessionInId ? { punchInId: plan.sessionInId } : {}),
+    // Kept on the record, so an admin can tell which punches skipped the checks.
+    savedWithoutChecks: true,
+  });
+
+  if (plan.sessionInId) {
+    if (closing) {
+      writer.update(`punches/${plan.sessionInId}`, {
+        closedByPunchId: plan.punchId,
+        closedAt: plan.stamp,
+        breakPunchId: null,
+      });
+    } else if (type === "lunch_start") {
+      writer.update(`punches/${plan.sessionInId}`, { breakPunchId: plan.punchId });
+    } else if (type === "lunch_end") {
+      writer.update(`punches/${plan.sessionInId}`, { breakPunchId: null });
+    }
+  }
+
+  if (starting) {
+    if (plan.switchFrom) {
+      const closeId = sessionCloseId(plan.switchFrom.inId);
+      writer.set(`punches/${closeId}`, { ...plan.switchFrom.close, punchInId: plan.switchFrom.inId });
+      writer.update(`punches/${plan.switchFrom.inId}`, {
+        closedByPunchId: closeId,
+        closedAt: plan.stamp,
+        breakPunchId: null,
+        nextPunchInId: plan.punchId,
+      });
+    } else if (plan.followsPunchId) {
+      writer.update(`punches/${plan.followsPunchId}`, { nextPunchInId: plan.punchId });
+    }
+  }
+
+  for (const item of plan.overtime ?? []) {
+    // A request that may already exist (and may be decided) is never written
+    // blind; its own new one, named after this punch, is filed instead.
+    const id = item.mode === "pending" ? item.fallbackId : item.id;
+    if (id) writer.set(`overtimeRequests/${id}`, item.data);
+  }
+}
+
 export interface AutoClosePlan {
   sessionInId: string;
   /** What the reconciler saw, to make sure the shift was not corrected since. */
