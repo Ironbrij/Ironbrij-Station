@@ -32,6 +32,7 @@ const employees = [
   employee("gone", "creative", { status: "inactive" }),
   employee("invited", "creative", { inviteStatus: "pending" }),
   employee("louis", "ops"),
+  employee("mv", "ops"),
 ];
 
 const leave = (extra: Partial<LeaveRequest> = {}): LeaveRequest =>
@@ -58,8 +59,17 @@ test("the person on leave is never emailed about their own leave", () => {
   ]);
 });
 
-test("a department with nothing set tells nobody", () => {
-  assert.deepEqual(resolveLeaveNoticeRecipients(employees[5], departments, employees), []);
+test("a department nobody has set up tells its own team", () => {
+  assert.deepEqual(resolveLeaveNoticeRecipients(employees[5], departments, employees), [
+    "mv@example.com",
+  ]);
+});
+
+test("a department an admin turned every team off for tells nobody", () => {
+  const silenced = departments.map((d) =>
+    d.id === "ops" ? { ...d, leaveNotifyDepartmentIds: [] } : d,
+  );
+  assert.deepEqual(resolveLeaveNoticeRecipients(employees[5], silenced, employees), []);
 });
 
 test("extra emails are added, cleaned and de-duplicated", () => {

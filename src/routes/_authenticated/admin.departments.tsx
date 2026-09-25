@@ -44,7 +44,11 @@ import { format } from "date-fns";
 import Papa from "papaparse";
 import { createPdf } from "@/lib/pdf-export";
 import { getStateOptions, normalizeState } from "@/lib/states";
-import { parseNoticeEmails, resolveLeaveNoticeRecipients } from "@/lib/leave-team-notice";
+import {
+  leaveNotifyTeamIds,
+  parseNoticeEmails,
+  resolveLeaveNoticeRecipients,
+} from "@/lib/leave-team-notice";
 import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/departments")({
@@ -206,7 +210,7 @@ function DepartmentsPage() {
   }
 
   async function toggleLeaveNotifyTeam(dept: Department, teamId: string) {
-    const current = dept.leaveNotifyDepartmentIds || [];
+    const current = leaveNotifyTeamIds(dept);
     const leaveNotifyDepartmentIds = current.includes(teamId)
       ? current.filter((id) => id !== teamId)
       : [...current, teamId];
@@ -907,7 +911,7 @@ function LeaveNotificationSettings({
   onToggleTeam: (teamId: string) => void;
   onSaveEmails: (value: string) => void;
 }) {
-  const selected = new Set(dept.leaveNotifyDepartmentIds || []);
+  const selected = new Set(leaveNotifyTeamIds(dept));
   // Worked out for a stand-in member so the count matches what the server sends.
   const recipientCount = resolveLeaveNoticeRecipients(
     { id: "", name: "", email: "", status: "active", inviteStatus: "accepted", deptId: dept.id },
@@ -924,8 +928,9 @@ function LeaveNotificationSettings({
             Leave notifications
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            When an admin approves leave for someone in {dept.name}, email these teams that they
-            will be away. The reason and pay status are never shared.
+            When leave is approved for someone in {dept.name}, these teams are emailed that they
+            will be away. {dept.name} itself is on until you turn it off. The reason and pay status
+            are never shared.
           </p>
         </div>
       </div>

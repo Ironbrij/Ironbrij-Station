@@ -39,6 +39,15 @@ export function findLeaveEmployee(
 }
 
 /**
+ * The teams a department tells about leave. One nobody has set up tells its own
+ * team, so a department always hears; once an admin picks, that choice holds,
+ * even when it is nobody.
+ */
+export function leaveNotifyTeamIds(department: Department): string[] {
+  return department.leaveNotifyDepartmentIds ?? [department.id];
+}
+
+/**
  * Everyone the employee's department asks to be told, minus the employee.
  * Members of a listed team count only while active and signed up.
  */
@@ -50,7 +59,7 @@ export function resolveLeaveNoticeRecipients(
   const department = departments.find((item) => item.id === employee.deptId);
   if (!department) return [];
 
-  const teamIds = new Set(department.leaveNotifyDepartmentIds || []);
+  const teamIds = new Set(leaveNotifyTeamIds(department));
   const emails = new Set<string>();
   for (const member of employees) {
     if (!member.deptId || !teamIds.has(member.deptId)) continue;

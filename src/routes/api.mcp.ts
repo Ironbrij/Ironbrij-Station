@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { resolveAppUrl } from "@/lib/app-url";
 import { fromFirestoreFields, patchIfUnchanged, toFirestoreFields } from "@/lib/firestore-rest";
+import { describeLeaveTeamNoticeResult, sendLeaveTeamNoticeWithKey } from "@/lib/leave-team-email";
+import type { LeaveRequest } from "@/lib/types";
 
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
@@ -949,20 +952,21 @@ export const Route = createFileRoute("/api/mcp")({
                   },
                 });
               }
+              const leaveUpdate = {
+                status: args.decision,
+                paymentStatus: args.paymentStatus || "paid",
+                decidedBy: "Admin via Remote Claude MCP",
+                decidedAt: new Date().toISOString(),
+              };
               const decided = await patchIfUnchanged({
                 baseUrl,
                 apiKey,
                 path: `leaveRequests/${encodeURIComponent(String(args.leaveId || ""))}`,
-                update: {
-                  status: args.decision,
-                  paymentStatus: args.paymentStatus || "paid",
-                  decidedBy: "Admin via Remote Claude MCP",
-                  decidedAt: new Date().toISOString(),
-                },
+                update: leaveUpdate,
                 check: (current) =>
-                current.status === "pending"
-                  ? null
-                  : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
+                  current.status === "pending"
+                    ? null
+                    : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
               });
               if (!decided.ok) {
                 return Response.json({
@@ -971,6 +975,23 @@ export const Route = createFileRoute("/api/mcp")({
                   result: { content: [{ type: "text", text: decided.message }], isError: true },
                 });
               }
+              // Tell the employee's team they will be away, as the admin screen does.
+              let teamNote = "";
+              if (args.decision === "approved") {
+                const teamResult = await sendLeaveTeamNoticeWithKey({
+                  baseUrl,
+                  apiKey,
+                  event: "approved",
+                  leaveRequestId: String(args.leaveId),
+                  leave: {
+                    ...decided.before,
+                    ...leaveUpdate,
+                    id: String(args.leaveId),
+                  } as unknown as LeaveRequest,
+                  appUrl: resolveAppUrl(request.url),
+                });
+                teamNote = ` ${describeLeaveTeamNoticeResult(teamResult)}`;
+              }
               return Response.json({
                 jsonrpc: "2.0",
                 id,
@@ -978,7 +999,7 @@ export const Route = createFileRoute("/api/mcp")({
                   content: [
                     {
                       type: "text",
-                      text: `Leave request ${args.leaveId} marked as ${args.decision}.`,
+                      text: `Leave request ${args.leaveId} marked as ${args.decision}.${teamNote}`,
                     },
                   ],
                 },
