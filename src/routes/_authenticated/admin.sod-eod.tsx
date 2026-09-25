@@ -928,6 +928,15 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
             <dt className="text-xs text-muted-foreground">Timing</dt>
             <dd className="font-medium">{report.submittedLate ? "Submitted late" : "On time"}</dd>
           </div>
+          {report.editedAt && (
+            <div>
+              <dt className="text-xs text-muted-foreground">Last edited by the VA</dt>
+              <dd className="font-medium">
+                {formatTimestamp(report.editedAt)}
+                {report.editCount && report.editCount > 1 ? ` (${report.editCount} edits)` : ""}
+              </dd>
+            </div>
+          )}
         </dl>
         <div className="mt-5 space-y-4">
           {report.answers.map((answer, index) => (
@@ -941,6 +950,35 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
             </div>
           ))}
         </div>
+        {report.previousVersions && report.previousVersions.length > 0 && (
+          <details className="mt-5 rounded-lg border p-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Earlier versions ({report.previousVersions.length})
+            </summary>
+            <div className="mt-3 space-y-4">
+              {[...report.previousVersions].reverse().map((version, versionIndex) => (
+                <div key={`${version.replacedAt}-${versionIndex}`} className="space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    Replaced {formatTimestamp(version.replacedAt)}
+                  </div>
+                  {version.answers.map((answer, index) => (
+                    <div
+                      key={`${answer.questionId}-${index}`}
+                      className="rounded-lg border bg-muted/30 p-3"
+                    >
+                      <div className="text-xs font-semibold">{answer.question}</div>
+                      <FormattedAnswerText
+                        text={answer.answer}
+                        mentions={answer.mentions}
+                        className="mt-1 text-sm text-muted-foreground"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
         <div className="mt-5 flex justify-end">
           <button
             type="button"
@@ -955,7 +993,7 @@ function ReportModal({ report, onClose }: { report: DailyReport; onClose: () => 
   );
 }
 
-function formatTimestamp(value: DailyReport["submittedAt"]) {
+function formatTimestamp(value: DailyReport["submittedAt"] | string) {
   const date = toDate(value);
   if (!date) return "Processing...";
   return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -1033,6 +1071,11 @@ function ReportHistoryModal({
                         <span className="text-rose-600 font-semibold">Late</span>
                       ) : (
                         <span className="text-emerald-600 font-semibold">On time</span>
+                      )}
+                      {report.editedAt && (
+                        <span className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Edited
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">

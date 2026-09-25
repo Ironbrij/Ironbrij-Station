@@ -1,23 +1,31 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  arrayUnion,
   collection,
+  deleteField,
   doc,
+  increment,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } from "firebase/firestore";
-import { CheckCircle2, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Eye, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import {
   DEFAULT_REPORTING_SETTINGS,
   DEFAULT_REPORT_QUESTIONS,
+  REPORT_EDIT_WINDOW_DAYS,
+  canEditReport,
   findDailyReport,
   isReportDeadlinePassed,
+  lastReportEditDate,
+  mentionsAddedByEdit,
   reportDateForEmployee,
   reportDocumentId,
   reportTypeLabel,
@@ -70,6 +78,7 @@ function EmployeeSodEodPage() {
   const [submitting, setSubmitting] = useState<DailyReportType | null>(null);
   const [recentlySubmitted, setRecentlySubmitted] = useState<DailyReportType | null>(null);
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
+  const [editingReport, setEditingReport] = useState<DailyReport | null>(null);
   const [clock, setClock] = useState(() => Date.now());
 
   const defaultQuestions = useMemo<ReportQuestion[]>(() => {
@@ -255,7 +264,7 @@ function EmployeeSodEodPage() {
 
     if (
       !window.confirm(
-        "Are you sure you want to submit this report? You will not be able to edit it afterward.",
+        `Are you sure you want to submit this report? You can still edit it for ${REPORT_EDIT_WINDOW_DAYS} days after today.`,
       )
     ) {
       return;
@@ -336,6 +345,67 @@ function EmployeeSodEodPage() {
     }
   }
 
+  /**
+   * Saves a VA's correction to a submitted report. The first submission time and
+   * late flag stay as they were; the answers it replaces are kept for admins.
+   */
+  async function saveReportEdit(report: DailyReport, editedAnswers: DailyReportAnswer[]) {
+    if (!user || !activeEmp) return false;
+    if (!canEditReport(report, reportDate)) {
+      toast.error(
+        `Reports can only be edited for ${REPORT_EDIT_WINDOW_DAYS} days after their date.`,
+      );
+      return false;
+    }
+    const editedMentions = editedAnswers.flatMap((answer) => answer.mentions || []);
+    try {
+      await updateDoc(doc(db(), "dailyReports", report.id), {
+        answers: sanitizeFirestoreObject(editedAnswers),
+        mentions:
+          editedMentions.length > 0 ? sanitizeFirestoreObject(editedMentions) : deleteField(),
+        editedAt: serverTimestamp(),
+        editCount: increment(1),
+        previousVersions: arrayUnion(
+          sanitizeFirestoreObject({
+            answers: report.answers,
+            replacedAt: new Date().toISOString(),
+          }),
+        ),
+      });
+    } catch (error) {
+      toast.error("Could not save your changes: " + (error as Error).message);
+      return false;
+    }
+
+    // Only people tagged for the first time in this edit are emailed.
+    const addedMentions = mentionsAddedByEdit(report.mentions || [], editedMentions);
+    if (addedMentions.length > 0) {
+      try {
+        await sendMentionNotification(user, {
+          company: companyEmailBranding(company, activeEmp.companyId),
+          reportId: report.id,
+          reportType: report.reportType,
+          reportDate: report.reportDate,
+          authorName: activeEmp.name,
+          authorEmail: activeEmp.email,
+          authorDeptName: departments.find((d) => d.id === activeEmp.deptId)?.name,
+          answers: editedAnswers,
+          recipients: resolveMentionRecipients(addedMentions, employees, activeEmp.email),
+        });
+      } catch (notificationError) {
+        console.error("Mention notification error:", notificationError);
+        toast.warning("Your changes were saved, but mention emails could not be sent.");
+        return true;
+      }
+    }
+    toast.success(`Your ${reportTypeLabel(report.reportType)} report was updated.`);
+    return true;
+  }
+
+  function isQuestionRequired(type: DailyReportType, questionId: string) {
+    return questionsFor(type).find((question) => question.id === questionId)?.required ?? false;
+  }
+
   const history = useMemo(
     () =>
       [...(reports || [])].sort((a, b) => {
@@ -398,7 +468,18 @@ function EmployeeSodEodPage() {
                 )}
 
                 {report ? (
-                  <SubmittedReport report={report} />
+                  <>
+                    <SubmittedReport report={report} />
+                    {canEditReport(report, reportDate) && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingReport(report)}
+                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold hover:bg-muted"
+                      >
+                        <Pencil className="h-4 w-4" /> Edit report
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <div className="mt-5">
                     <button
@@ -457,7 +538,8 @@ function EmployeeSodEodPage() {
                           {submitting === type ? "Submitting..." : "Submit final report"}
                         </button>
                         <p className="text-center text-xs text-muted-foreground">
-                          Submitted reports cannot be edited or deleted.
+                          You can edit a submitted report for {REPORT_EDIT_WINDOW_DAYS} days after
+                          its date.
                         </p>
                       </div>
                     )}
@@ -471,7 +553,10 @@ function EmployeeSodEodPage() {
 
       <section className="rounded-xl border bg-card p-5 sm:p-6">
         <h2 className="text-lg font-semibold">Report history</h2>
-        <p className="mb-4 text-sm text-muted-foreground">Your submitted reports are read-only.</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          You can edit a report for {REPORT_EDIT_WINDOW_DAYS} days after its date; older reports are
+          read-only.
+        </p>
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="bg-muted/60 text-xs uppercase text-muted-foreground">
@@ -502,15 +587,27 @@ function EmployeeSodEodPage() {
                       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         Submitted
                       </span>
+                      {report.editedAt && <EditedTag />}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedReport(report)}
-                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium hover:bg-muted"
-                      >
-                        <Eye className="h-4 w-4" /> View
-                      </button>
+                      <div className="inline-flex gap-2">
+                        {canEditReport(report, reportDate) && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingReport(report)}
+                            className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium hover:bg-muted"
+                          >
+                            <Pencil className="h-4 w-4" /> Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReport(report)}
+                          className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium hover:bg-muted"
+                        >
+                          <Eye className="h-4 w-4" /> View
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -522,6 +619,17 @@ function EmployeeSodEodPage() {
 
       {selectedReport && (
         <ReportViewModal report={selectedReport} onClose={() => setSelectedReport(null)} />
+      )}
+
+      {editingReport && (
+        <EditReportModal
+          key={editingReport.id}
+          report={editingReport}
+          currentEmployee={activeEmp}
+          isRequired={(questionId) => isQuestionRequired(editingReport.reportType, questionId)}
+          onSave={(editedAnswers) => saveReportEdit(editingReport, editedAnswers)}
+          onClose={() => setEditingReport(null)}
+        />
       )}
     </div>
   );
@@ -555,6 +663,7 @@ function SubmittedReport({ report }: { report: DailyReport }) {
       <p className="text-sm text-muted-foreground">
         Submitted {formatSubmissionTime(report)}
         {report.submittedLate ? " (late)" : ""}
+        {report.editedAt ? ` · edited ${formatReportTime(report.editedAt, report.timezone)}` : ""}
       </p>
       {report.answers.map((answer, index) => (
         <div key={`${answer.questionId}-${index}`} className="rounded-lg border p-3">
@@ -615,11 +724,132 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
   );
 }
 
+function EditedTag() {
+  return (
+    <span className="ml-1.5 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+      Edited
+    </span>
+  );
+}
+
+function EditReportModal({
+  report,
+  currentEmployee,
+  isRequired,
+  onSave,
+  onClose,
+}: {
+  report: DailyReport;
+  currentEmployee: Employee;
+  isRequired: (questionId: string) => boolean;
+  onSave: (answers: DailyReportAnswer[]) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  // Edits keep the questions the report was submitted with.
+  const [draft, setDraft] = useState<DailyReportAnswer[]>(() =>
+    report.answers.map((answer) => ({ ...answer })),
+  );
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const missing = draft.find((answer) => isRequired(answer.questionId) && !answer.answer.trim());
+    if (missing) {
+      toast.error(`Please answer: ${missing.question}`);
+      return;
+    }
+    setSaving(true);
+    const saved = await onSave(
+      draft.map(({ questionId, question, answer, mentions }) => ({
+        questionId,
+        question,
+        answer: answer.trim(),
+        ...(mentions && mentions.length > 0 ? { mentions } : {}),
+      })),
+    );
+    setSaving(false);
+    if (saved) onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-5 shadow-xl sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">
+              Edit {reportTypeLabel(report.reportType)} report
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {report.reportDate} - you can edit it until the end of{" "}
+              {lastReportEditDate(report.reportDate)}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border p-2 hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-5 space-y-4">
+          {draft.map((answer, index) => (
+            <label key={`${answer.questionId}-${index}`} className="block text-sm font-medium">
+              {answer.question}{" "}
+              {isRequired(answer.questionId) && <span aria-label="required">*</span>}
+              <MentionTextarea
+                value={answer.answer}
+                onChange={(value, mentions) =>
+                  setDraft((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, answer: value, mentions } : item,
+                    ),
+                  )
+                }
+                currentEmployee={currentEmployee}
+                rows={3}
+                className="mt-1.5 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Type @ to mention team members or departments..."
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatSubmissionTime(report: DailyReport) {
-  const submittedAt = toDate(report.submittedAt);
-  if (!submittedAt) return "Processing...";
-  return submittedAt.toLocaleString([], {
-    timeZone: report.timezone,
+  return formatReportTime(report.submittedAt, report.timezone);
+}
+
+function formatReportTime(value: DailyReport["submittedAt"], timeZone: string) {
+  const date = toDate(value);
+  if (!date) return "Processing...";
+  return date.toLocaleString([], {
+    timeZone,
     dateStyle: "medium",
     timeStyle: "short",
   });

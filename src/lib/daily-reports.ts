@@ -2,6 +2,7 @@ import type {
   DailyReport,
   DailyReportType,
   Employee,
+  MentionItem,
   ReportingRequirement,
   ReportingSettings,
 } from "./types.ts";
@@ -90,6 +91,31 @@ export function findDailyReport(
 
 export function reportDateForEmployee(employee: Employee, now = new Date()) {
   return zonedDateKey(now, getEmployeeTimezone(employee));
+}
+
+/** How many days after the day it is for a VA can still correct a submitted report. */
+export const REPORT_EDIT_WINDOW_DAYS = 4;
+
+/** The last day a report can be edited on, as YYYY-MM-DD ("" for a bad date). */
+export function lastReportEditDate(reportDate: string) {
+  const [year, month, day] = reportDate.split("-").map(Number);
+  const last = new Date(Date.UTC(year, month - 1, day + REPORT_EDIT_WINDOW_DAYS));
+  return Number.isNaN(last.getTime()) ? "" : last.toISOString().slice(0, 10);
+}
+
+/**
+ * Whether a VA can still edit a submitted SOD or EOD: until it is four days old,
+ * counted from their own today, so a report sent under the wrong client or as
+ * the wrong type can be put right without rewriting old history.
+ */
+export function canEditReport(report: Pick<DailyReport, "reportDate">, today: string) {
+  return report.reportDate <= today && today <= lastReportEditDate(report.reportDate);
+}
+
+/** Mentions an edit adds, so only newly tagged people are emailed again. */
+export function mentionsAddedByEdit(before: MentionItem[], after: MentionItem[]) {
+  const seen = new Set(before.map((mention) => `${mention.type}:${mention.id}`));
+  return after.filter((mention) => !seen.has(`${mention.type}:${mention.id}`));
 }
 
 export function deadlineForReport(

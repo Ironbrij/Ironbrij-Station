@@ -181,6 +181,16 @@ export interface DailyReport {
   submittedLate: boolean;
   status: DailyReportStatus;
   mentions?: MentionItem[];
+  /** When the VA last corrected the report; submittedAt stays the first submission. */
+  editedAt?: Timestamp;
+  editCount?: number;
+  /** The answers each edit replaced, oldest first, so admins can see what changed. */
+  previousVersions?: DailyReportVersion[];
+}
+
+export interface DailyReportVersion {
+  answers: DailyReportAnswer[];
+  replacedAt: string;
 }
 
 export interface Punch {
