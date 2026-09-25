@@ -7,15 +7,14 @@ import type {
   Punch,
 } from "./types.ts";
 import { COMPANY_ID } from "./types.ts";
-import { computeDay, toDate, toMillis } from "./time.ts";
-import { breakDurationMs } from "./work-breaks.ts";
-import { calculateAttendanceSession, formatWorkMinutes } from "./attendance-calculation.ts";
+import { toDate, toMillis } from "./time.ts";
+import { formatWorkMinutes } from "./attendance-calculation.ts";
+import { buildAttendanceSessions, type AttendanceSession } from "./attendance-sessions.ts";
 import { computeLeaveCreditBalance, leaveDayHours } from "./leave-credits.ts";
 import { formatCovered, formatDaysAndHours, formatHours, formatShortDate } from "./report-format.ts";
 import { getShiftIntervals } from "./shift-clients.ts";
 import { totalsFromDays } from "./report-edits.ts";
 import {
-  computeEmployeeLateness,
   formatInTimezone,
   getEffectiveEmployeeWorkingDays,
   getEffectiveLateGraceMinutes,
@@ -31,8 +30,9 @@ import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
   getEmployeeLeavesForCompany,
-  getEmployeePunchesForCompany,
+  getIndexedEmployeePunches,
   getRequiredWorkMinutes,
+  indexPunchesByEmployee,
   normalizeCompanyId,
 } from "./company-context.ts";
 
@@ -123,6 +123,8 @@ export interface ReportRowsInput {
   fallbackCompany?: Company | null;
   from: string;
   to: string;
+  /** The moment the report is read; sessions still running are measured to it. */
+  now?: Date;
 }
 
 export function addCalendarDay(dateKey: string): string {
@@ -193,8 +195,15 @@ export function buildReportRows({
   fallbackCompany: authCompany = null,
   from,
   to,
+  now = new Date(),
 }: ReportRowsInput): ReportRow[] {
     const rows: ReportRow[] = [];
+    // Every punch, across every client, so a switch to another client ends a
+    // session here exactly as it does on the dashboard.
+    const punchesByEmployee = indexPunchesByEmployee(
+      punches.filter((punch) => !punch.voidedAt && punch.timestamp),
+    );
+    const reportCompanyId = companyFilter === "all" ? null : normalizeCompanyId(companyFilter);
 
     for (const rawEmployee of filteredEmployees) {
       const employee =
@@ -213,36 +222,40 @@ export function buildReportRows({
       ).filter((leave) => leave.status === "approved");
 
       const shiftTimezone = getShiftTimezone(employee);
-      const dayPunchGroups = new Map<string, Punch[]>();
-
-      // Shared scoping drops voided corrections and matches company aliases.
-      for (const punch of getEmployeePunchesForCompany(
-        punches,
-        rawEmployee,
-        companyFilter,
-        reportCompany?.name,
-      )) {
-        if (!punch.timestamp) continue;
-        const punchedAt = toDate(punch.timestamp);
-        if (!punchedAt) continue;
-        const date = punch.attendanceDate || punch.date || zonedDateKey(punchedAt, shiftTimezone);
+      // The dashboard's sessions: breaks punched are taken off, a gap between
+      // two sessions is not work, and each is judged on the schedule its punch
+      // was made under.
+      const ownPunches = getIndexedEmployeePunches(punchesByEmployee, rawEmployee)
+        .filter((punch) => toMillis(punch.timestamp) <= now.getTime() + 5 * 60_000)
+        .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+      const sessionsByDate = new Map<string, AttendanceSession[]>();
+      for (const session of buildAttendanceSessions({
+        employee: rawEmployee,
+        punches: ownPunches,
+        companies,
+        now,
+      })) {
+        if (reportCompanyId && session.companyId !== reportCompanyId) continue;
+        const date = session.attendanceDate;
         if (date < from || date > to) continue;
-        if (!dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
-        dayPunchGroups.get(date)!.push(punch);
+        const list = sessionsByDate.get(date);
+        if (list) list.push(session);
+        else sessionsByDate.set(date, [session]);
       }
+      const dayPunchGroups = new Set<string>(sessionsByDate.keys());
 
       // Collect dates from leaves and holidays within range as well
       for (const date of getEmployeeHolidayDates(reportCompany, employee)) {
-        if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
+        if (date >= from && date <= to) dayPunchGroups.add(date);
       }
       for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
-        if (date >= from && date <= to && !dayPunchGroups.has(date)) dayPunchGroups.set(date, []);
+        if (date >= from && date <= to) dayPunchGroups.add(date);
       }
       // A scheduled day with neither punch nor leave is exactly the day an admin
       // is asking about when a week reads as zero worked days. Seed every one so
       // it gets a row that says what happened instead of going missing.
       const scheduledDays = getEffectiveEmployeeWorkingDays(employee, reportCompany?.workingDays);
-      const todayKey = zonedDateKey(new Date(), shiftTimezone);
+      const todayKey = zonedDateKey(now, shiftTimezone);
       const joinedKey = rawEmployee.createdAt
         ? zonedDateKey(new Date(rawEmployee.createdAt), shiftTimezone)
         : "";
@@ -250,7 +263,7 @@ export function buildReportRows({
       for (let date = from; date <= lastCountedDay; date = addCalendarDay(date)) {
         if (dayPunchGroups.has(date) || (joinedKey && date < joinedKey)) continue;
         if (!scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay())) continue;
-        dayPunchGroups.set(date, []);
+        dayPunchGroups.add(date);
       }
 
       const requiredMinutes = getRequiredWorkMinutes(employee, reportCompany);
@@ -272,16 +285,14 @@ export function buildReportRows({
 
       const dailyIntervals: DailyIntervalRecord[] = [];
 
-      const sortedDates = Array.from(dayPunchGroups.keys()).sort();
+      const sortedDates = Array.from(dayPunchGroups).sort();
 
       for (const date of sortedDates) {
-        const dayPunches = dayPunchGroups.get(date) || [];
-        const sorted = [...dayPunches].sort(
-          (a, b) => toMillis(a.timestamp) - toMillis(b.timestamp),
-        );
-
-        const firstIn = sorted.find((punch) => punch.type === "in");
-        const lastOut = [...sorted].reverse().find((punch) => punch.type === "out");
+        const daySessions = sessionsByDate.get(date) || [];
+        const firstIn = daySessions.find((session) => session.start.type === "in")?.start;
+        const lastOut = [...daySessions]
+          .reverse()
+          .find((session) => session.end?.type === "out")?.end;
 
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
         const holiday = getEmployeeHoliday(reportCompany, employee, date);
@@ -315,95 +326,76 @@ export function buildReportRows({
           }
         }
 
-        // Build individual punch sessions breakdown for the day
-        const sessions: PunchSessionRecord[] = [];
-        let currentIn: Punch | null = null;
-        for (const p of sorted) {
-          if (p.type === "in" || p.type === "extra_in") {
-            currentIn = p;
-          } else if ((p.type === "out" || p.type === "extra_out") && currentIn) {
-            const inDate = toDate(currentIn.timestamp);
-            const outDate = toDate(p.timestamp);
-            if (inDate && outDate) {
-              const durMins = Math.max(
-                0,
-                Math.floor((outDate.getTime() - inDate.getTime()) / 60_000),
-              );
-              const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              });
-              const outTimeStr = formatInTimezone(outDate, shiftTimezone, {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              });
-              const isOt =
-                p.type === "extra_out" ||
-                (typeof p.overtimeMinutes === "number" && p.overtimeMinutes > 0);
-              sessions.push({
-                inTime: inTimeStr,
-                outTime: outTimeStr,
-                durationMinutes: durMins,
-                isOvertime: isOt,
-                isAuto: Boolean(p.isAuto),
-                type: p.type === "extra_out" ? "Extra / OT" : "Regular",
-              });
-            }
-            currentIn = null;
-          }
-        }
-        if (currentIn) {
-          const inDate = toDate(currentIn.timestamp);
-          if (inDate) {
-            const inTimeStr = formatInTimezone(inDate, shiftTimezone, {
+        // One line per session, as the dashboard lists them.
+        const sessions: PunchSessionRecord[] = daySessions.map((session) => {
+          const finished = session.endedAt || session.switchedAt || null;
+          const clock = (value: Date) =>
+            formatInTimezone(value, session.timezone, {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
             });
-            sessions.push({
-              inTime: inTimeStr,
-              durationMinutes: Math.max(0, Math.floor((Date.now() - inDate.getTime()) / 60_000)),
-              isOvertime: currentIn.type === "extra_in",
-              isAuto: false,
-              type: "In Progress",
-            });
-          }
-        }
+          const isOvertime =
+            session.start.type === "extra_in" ||
+            session.end?.type === "extra_out" ||
+            (typeof session.end?.overtimeMinutes === "number" && session.end.overtimeMinutes > 0);
+          return {
+            inTime: clock(session.startedAt),
+            ...(finished ? { outTime: clock(finished) } : {}),
+            durationMinutes: Math.max(
+              0,
+              Math.floor(((finished ?? now).getTime() - session.startedAt.getTime()) / 60_000),
+            ),
+            isOvertime,
+            isAuto: Boolean(session.end?.isAuto),
+            type: session.unresolved
+              ? "Missing Punch Out"
+              : session.active
+                ? "In Progress"
+                : isOvertime
+                  ? "Extra / OT"
+                  : "Regular",
+          };
+        });
 
-        const sessionCalc = firstIn
-          ? calculateAttendanceSession({
-              employee,
-              company: reportCompany,
-          punchIn: toDate(firstIn.timestamp) ?? new Date(),
-              punchOut: lastOut ? (toDate(lastOut.timestamp) ?? new Date()) : null,
-              requiredWorkMinutes: getRequiredWorkMinutes(employee, reportCompany),
-              isOffShiftDay,
-            })
-          : null;
+        // A session with no clock-out is not counted as worked: the dashboard
+        // marks it for review, and so does this report.
+        const resolved = daySessions.filter((session) => !session.unresolved);
+        const regularMinutes = resolved.reduce(
+          (sum, session) => sum + session.calc.normalWorkMinutes,
+          0,
+        );
+        const unloggedBreak = resolved.reduce(
+          (sum, session) => sum + session.calc.unloggedBreakMinutes,
+          0,
+        );
+        const punchedBreakMinutes = daySessions.reduce(
+          (sum, session) => sum + session.breakMinutes,
+          0,
+        );
 
-        const isExcused = Boolean(firstIn?.isExcused);
-        const lateness =
-          firstIn && isScheduledDay
-            ? computeEmployeeLateness(
-                toDate(firstIn.timestamp) ?? new Date(),
-                employee,
-                getEffectiveLateGraceMinutes(reportCompany?.lateGraceMinutes),
-                isExcused,
-              )
-            : null;
+        // Lateness is the late log's: the first clock-in of each shift, on the
+        // schedule saved with it, and never on a day off, a holiday or leave.
+        const judged = daySessions
+          .map((session) => session.lateness)
+          .filter((lateness): lateness is NonNullable<AttendanceSession["lateness"]> =>
+            Boolean(lateness),
+          );
+        const countsLateness = isScheduledDay && !approvedLeave;
+        const minutesLate = countsLateness
+          ? judged.reduce((sum, lateness) => sum + lateness.minutes, 0)
+          : 0;
+        const isExcused = judged.some((lateness) => lateness.excused);
 
-        if (lateness?.isLate) {
+        if (minutesLate > 0) {
           totalLateDays++;
-          lateLines.push(`${formatShortDate(date)} (${lateness.minutes} min late)`);
+          lateLines.push(`${formatShortDate(date)} (${minutesLate} min late)`);
         }
 
-        const isMissingPunchOut = Boolean(firstIn && !lastOut && sessionCalc?.missingPunchOut);
+        const isMissingPunchOut = daySessions.some((session) => session.unresolved);
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
 
-        const regHours = sessionCalc ? sessionCalc.normalWorkMinutes / 60 : 0;
-        const otHours = sessionCalc ? sessionCalc.overtimeMinutes / 60 : 0;
+        const regHours = regularMinutes / 60;
 
         // Check all overtime requests for this employee on this day
         const dayOtRequests = overtimeRequests.filter(
@@ -454,8 +446,9 @@ export function buildReportRows({
             ? `${employee.shiftStartTime}–${employee.shiftEndTime}`
             : "09:00–17:00";
 
+        const dayTimezone = daySessions[0]?.timezone || shiftTimezone;
         const punchInTimeStr = firstIn
-          ? formatInTimezone(toDate(firstIn.timestamp) ?? new Date(), shiftTimezone, {
+          ? formatInTimezone(toDate(firstIn.timestamp) ?? now, dayTimezone, {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
@@ -463,31 +456,18 @@ export function buildReportRows({
           : undefined;
 
         const punchOutTimeStr = lastOut
-          ? formatInTimezone(toDate(lastOut.timestamp) ?? new Date(), shiftTimezone, {
+          ? formatInTimezone(toDate(lastOut.timestamp) ?? now, dayTimezone, {
               hour: "2-digit",
               minute: "2-digit",
               hour12: false,
             })
           : undefined;
 
-        // Lunch and other breaks the employee punched, plus any allowance charged
-        // because none was punched: both explain the gap between clock and hours.
-        const punchedBreakMinutes =
-          firstIn && lastOut
-            ? Math.round(
-                breakDurationMs(
-                  sorted,
-                  toDate(firstIn.timestamp) ?? new Date(),
-                  toDate(lastOut.timestamp) ?? new Date(),
-                ) / 60_000,
-              )
-            : 0;
-
         dailyIntervals.push({
           date,
           dayOfWeek: getDayOfWeekStr(date),
           breakMinutes: punchedBreakMinutes,
-          unloggedBreakMinutes: sessionCalc?.unloggedBreakMinutes || 0,
+          unloggedBreakMinutes: unloggedBreak,
           scheduledShift: scheduledShiftStr,
           punchInTime: punchInTimeStr,
           punchOutTime: punchOutTimeStr,
@@ -496,7 +476,7 @@ export function buildReportRows({
           sessions,
           isMissingPunchOut,
           isAutoPunchOut,
-          minutesLate: lateness?.isLate ? lateness.minutes : 0,
+          minutesLate,
           regularHours: Math.round(regHours * 10) / 10,
           rawOvertimeHours: Math.round(displayOtHours * 10) / 10,
           isOvertimeApproved,
@@ -506,8 +486,8 @@ export function buildReportRows({
             approvedLeave
               ? describeLeave(approvedLeave)
               : holiday?.name ||
-                (sessionCalc?.unloggedBreakMinutes
-                  ? `${formatWorkMinutes(sessionCalc.unloggedBreakMinutes)} break deducted (none punched)`
+                (unloggedBreak
+                  ? `${formatWorkMinutes(unloggedBreak)} break deducted (none punched)`
                   : undefined),
           status: holiday
             ? "Holiday"
@@ -519,10 +499,10 @@ export function buildReportRows({
                   ? "Auto Punched Out"
                   : isOffShiftDay && firstIn
                     ? "Off-day Shift"
-                    : isExcused
+                    : isExcused && minutesLate === 0
                       ? "Excused (Not Late)"
-                      : lateness?.isLate
-                        ? `Late (${lateness.minutes}m)`
+                      : minutesLate > 0
+                        ? `Late (${minutesLate}m)`
                         : firstIn
                           ? "Complete"
                           : isScheduledDay

@@ -1,12 +1,11 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { ArrowLeftRight, Building2, Headphones, LogOut } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useNavigationBadgeCounts } from "@/lib/use-navigation-badge-counts";
 import { useAutoRejectExpiredLeaves } from "@/lib/use-auto-reject-expired-leaves";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { COMPANY_ID, type Punch } from "@/lib/types";
+import { activePunchesInOrder, useEmployeePunchesLive } from "@/lib/live-data";
+import { COMPANY_ID } from "@/lib/types";
 import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
@@ -14,7 +13,6 @@ import {
   getPunchCompanyId,
 } from "@/lib/company-context";
 import { getActiveWorkingSession, getLiveAttendanceStatus } from "@/lib/attendance";
-import { toMillis } from "@/lib/time";
 import { CompanySelector } from "@/components/CompanySelector";
 
 interface NavItem {
@@ -43,7 +41,12 @@ export function AppShell({
     setActiveCompanyId,
   } = useAuth();
   const navigate = useNavigate();
-  const [employeePunches, setEmployeePunches] = useState<Punch[]>([]);
+  // The same live punches the punch page reads, so the header never disagrees.
+  const employeePunchData = useEmployeePunchesLive(employee).data;
+  const employeePunches = useMemo(
+    () => activePunchesInOrder(employeePunchData ?? []),
+    [employeePunchData],
+  );
   const adminPortal = isAdmin && title.includes("Admin");
   const navBadges = useNavigationBadgeCounts({
     isAdmin: adminPortal,
@@ -52,20 +55,6 @@ export function AppShell({
     activeCompanyId,
   });
   useAutoRejectExpiredLeaves(adminPortal);
-
-  useEffect(() => {
-    if (!employee) return;
-    const ids = Array.from(new Set([employee.id, employee.authUid].filter((id): id is string => Boolean(id))));
-    const punchesQuery = query(collection(db(), "punches"), where("employeeId", ids.length > 1 ? "in" : "==", ids.length > 1 ? ids : ids[0]));
-    return onSnapshot(punchesQuery, (snapshot) => {
-      setEmployeePunches(
-        snapshot.docs
-          .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-          .filter((punch) => punch.timestamp)
-          .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp)),
-      );
-    });
-  }, [employee?.id, employee?.authUid]);
 
   const activeAttendanceCompanyIds = useMemo(() => {
     if (!employee) return [];

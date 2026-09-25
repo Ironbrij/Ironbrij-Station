@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, updateDoc, writeBatch } from "firebase/firestore";
+import { createIfAbsent, decideRequest, decideRequests, isStaleWrite } from "@/lib/guarded-writes";
+import {
+  listOf,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeesLive,
+  useOvertimeRequestsLive,
+  useRecentPunchesLive,
+} from "@/lib/live-data";
+import { overtimeRequestId } from "@/lib/punch-session";
 import {
   Building2,
   CheckCircle2,
@@ -14,7 +23,6 @@ import {
   UserX,
   XCircle,
 } from "lucide-react";
-import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
   type Company,
@@ -31,7 +39,6 @@ import { toDate, toMillis } from "@/lib/time";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { recentPunchesQuery } from "@/lib/punch-queries";
 
 export const Route = createFileRoute("/_authenticated/admin/overtime")({
   head: () => ({ meta: [{ title: "Overtime Approvals — SavyTimes Admin" }] }),
@@ -39,11 +46,20 @@ export const Route = createFileRoute("/_authenticated/admin/overtime")({
 });
 
 function AdminOvertimePage() {
-  const [requests, setRequests] = useState<OvertimeRequest[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [allPunches, setAllPunches] = useState<Punch[]>([]);
+  // Shared live reads: a request filed by a punch, or decided in another tab,
+  // shows here at once.
+  const requestsData = useOvertimeRequestsLive().data;
+  const requests = useMemo(
+    () =>
+      [...(requestsData ?? [])].sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+      ),
+    [requestsData],
+  );
+  const employees = listOf(useEmployeesLive());
+  const departments = listOf(useDepartmentsLive());
+  const companies = listOf(useCompaniesLive());
+  const allPunches = listOf(useRecentPunchesLive(45));
   const { user, activeCompanyId } = useAuth();
   const [statusFilter, setStatusFilter] = useState<OvertimeStatus>("pending");
   const [filterCompany, setFilterCompany] = useState(activeCompanyId);
@@ -62,43 +78,6 @@ function AdminOvertimePage() {
     // Clear notification badge
     localStorage.setItem("lastSeenOvertime", Date.now().toString());
     window.dispatchEvent(new Event("OVERTIME_SEEN"));
-
-    const unsubscribers = [
-      onSnapshot(collection(db(), "overtimeRequests"), (snapshot) => {
-        const list = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<OvertimeRequest, "id">),
-        }));
-        list.sort(
-          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
-        );
-        setRequests(list);
-      }),
-      onSnapshot(collection(db(), "employees"), (snapshot) =>
-        setEmployees(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "departments"), (snapshot) =>
-        setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
-        ),
-      ),
-      onSnapshot(collection(db(), "companies"), (snapshot) =>
-        setCompanies(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-        ),
-      ),
-      onSnapshot(recentPunchesQuery(45), (snapshot) =>
-        setAllPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
-      ),
-    ];
-    return () => unsubscribers.forEach((u) => u());
   }, []);
 
   const empMap = useMemo(() => {
@@ -167,72 +146,69 @@ function AdminOvertimePage() {
   }, [statusFilter, filterCompany, filterDept, filterPeriod]);
 
   async function handleDecision(requestId: string, status: "approved" | "rejected") {
+    const shown = requests.find((request) => request.id === requestId);
+    if (!shown) return;
     setProcessingId(requestId);
     try {
-      await updateDoc(doc(db(), "overtimeRequests", requestId), {
-        status,
-        decidedBy: user?.email || "Admin",
-        decidedAt: new Date().toISOString(),
+      // Changed only from the status on screen, so two admins deciding the
+      // same request cannot silently reverse each other.
+      await decideRequest({
+        collectionName: "overtimeRequests",
+        id: requestId,
+        expected: [shown.status],
+        update: {
+          status,
+          decidedBy: user?.email || "Admin",
+          decidedAt: new Date().toISOString(),
+        },
       });
       toast.success(status === "approved" ? "Overtime approved!" : "Overtime rejected.");
     } catch (err) {
-      toast.error("Failed to update decision: " + (err as Error).message);
+      toast.error(
+        isStaleWrite(err)
+          ? `Nothing changed: ${(err as Error).message}`
+          : "Failed to update decision: " + (err as Error).message,
+      );
     } finally {
       setProcessingId(null);
     }
   }
 
-  async function handleRejectAllPending() {
+  async function decideAllPending(status: "approved" | "rejected") {
     const pendingItems = filteredRequests.filter((r) => r.status === "pending");
     if (pendingItems.length === 0) {
-      toast.info("No pending overtime requests to reject.");
+      toast.info(`No pending overtime requests to ${status === "approved" ? "approve" : "reject"}.`);
       return;
     }
 
     setBulkProcessing(true);
     try {
-      const batch = writeBatch(db());
-      pendingItems.forEach((item) => {
-        batch.update(doc(db(), "overtimeRequests", item.id), {
-          status: "rejected",
+      // Anything decided elsewhere since this list loaded is left as decided.
+      const { decided, skipped } = await decideRequests({
+        collectionName: "overtimeRequests",
+        ids: pendingItems.map((item) => item.id),
+        expected: ["pending"],
+        update: {
+          status,
           decidedBy: user?.email || "Admin",
           decidedAt: new Date().toISOString(),
-        });
+        },
       });
-      await batch.commit();
-      toast.success(`Rejected ${pendingItems.length} overtime requests.`);
+      const verb = status === "approved" ? "Approved" : "Rejected";
+      toast.success(
+        `${verb} ${decided} overtime requests${skipped ? ` (${skipped} already decided elsewhere)` : ""}.`,
+      );
     } catch (err) {
-      toast.error("Bulk rejection failed: " + (err as Error).message);
+      toast.error(
+        `Bulk ${status === "approved" ? "approval" : "rejection"} failed: ` + (err as Error).message,
+      );
     } finally {
       setBulkProcessing(false);
     }
   }
 
-  async function handleApproveAllPending() {
-    const pendingItems = filteredRequests.filter((r) => r.status === "pending");
-    if (pendingItems.length === 0) {
-      toast.info("No pending overtime requests to approve.");
-      return;
-    }
-
-    setBulkProcessing(true);
-    try {
-      const batch = writeBatch(db());
-      pendingItems.forEach((item) => {
-        batch.update(doc(db(), "overtimeRequests", item.id), {
-          status: "approved",
-          decidedBy: user?.email || "Admin",
-          decidedAt: new Date().toISOString(),
-        });
-      });
-      await batch.commit();
-      toast.success(`Approved ${pendingItems.length} overtime requests!`);
-    } catch (err) {
-      toast.error("Bulk approval failed: " + (err as Error).message);
-    } finally {
-      setBulkProcessing(false);
-    }
-  }
+  const handleRejectAllPending = () => decideAllPending("rejected");
+  const handleApproveAllPending = () => decideAllPending("approved");
 
   async function handleSyncPastOvertime() {
     setSyncing(true);
@@ -270,7 +246,9 @@ function AdminOvertimePage() {
                   if (earlyMins >= 5) {
                     const punchDate =
                       p.attendanceDate || p.date || zonedDateKey(inTime, shiftTimezone);
-                    await addDoc(collection(db(), "overtimeRequests"), {
+                    // Named after the punch, as the punch page names it, so the
+                    // same early start is never filed twice.
+                    const created = await createIfAbsent(`overtimeRequests/${overtimeRequestId("early", p.id)}`, {
                       employeeId: empId,
                       employeeName: p.employeeName || emp?.name || "Employee",
                       companyId: p.companyId || emp?.companyId || COMPANY_ID,
@@ -285,7 +263,7 @@ function AdminOvertimePage() {
                       createdAt: new Date().toISOString(),
                     });
                     existingInIds.add(p.id);
-                    createdCount++;
+                    if (created) createdCount++;
                   }
                 }
               }
@@ -345,7 +323,7 @@ function AdminOvertimePage() {
                   ? `Worked ${formatWorkMinutes(otMinutes)} post-shift overtime (synced)`
                   : `Worked ${formatWorkMinutes(otMinutes)} past shift hours (synced)`;
 
-              await addDoc(collection(db(), "overtimeRequests"), {
+              const created = await createIfAbsent(`overtimeRequests/${overtimeRequestId("out", p.id)}`, {
                 employeeId: empId,
                 employeeName: p.employeeName || emp?.name || "Employee",
                 companyId: p.companyId || emp?.companyId || COMPANY_ID,
@@ -366,7 +344,7 @@ function AdminOvertimePage() {
               });
 
               existingOutIds.add(p.id);
-              createdCount++;
+              if (created) createdCount++;
             }
             lastIn = null;
           }

@@ -1,15 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { User } from "firebase/auth";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  runTransaction,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import { doc, runTransaction, updateDoc } from "firebase/firestore";
 import { db } from "./firebase";
+import { activePunchesInOrder, useEmployeePunchesLive } from "./live-data";
 import { getEmployeeBreakSettings, getPunchCompanyId } from "./company-context";
 import { companyEmailBranding } from "./email-branding";
 import type { Company, Employee, Punch } from "./types";
@@ -31,10 +24,13 @@ export function useLunchBreakReminder({
 }) {
   const punchesRef = useRef<Punch[]>([]);
   const processingRef = useRef(false);
+  // The same live punches the punch page shows, under either of the ids.
+  const punchesData = useEmployeePunchesLive(user && company ? employee : null).data;
 
   useEffect(() => {
     if (!user || !employee || !company) return;
     let active = true;
+    punchesRef.current = activePunchesInOrder(punchesData ?? []);
 
     async function checkBreakReminders() {
       if (!active || processingRef.current || !user || !employee || !company) return;
@@ -190,20 +186,11 @@ export function useLunchBreakReminder({
       }
     }
 
-    const punchesQuery = query(collection(db(), "punches"), where("employeeId", "==", employee.id));
-    const unsubscribe = onSnapshot(punchesQuery, (snapshot) => {
-      punchesRef.current = snapshot.docs
-        .map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) }))
-        .filter((punch) => punch.timestamp)
-        .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-      void checkBreakReminders();
-    });
-
+    void checkBreakReminders();
     const interval = window.setInterval(() => void checkBreakReminders(), BREAK_CHECK_INTERVAL_MS);
     return () => {
       active = false;
-      unsubscribe();
       window.clearInterval(interval);
     };
-  }, [activeCompanyId, company, employee, user]);
+  }, [activeCompanyId, company, employee, user, punchesData]);
 }

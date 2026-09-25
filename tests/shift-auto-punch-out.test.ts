@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import * as attendance from "../src/lib/attendance.ts";
 import * as companyContext from "../src/lib/company-context.ts";
+import * as punchSession from "../src/lib/punch-session.ts";
 import * as time from "../src/lib/time.ts";
 import type { Employee, Punch } from "../src/lib/types.ts";
 
@@ -16,31 +17,40 @@ const compiled = ts.transpileModule(
 
 function harness(now: Date) {
   const records = new Map<string, Record<string, unknown>>();
+  let closeAttempts = 0;
   const sourceRecords = new Map<string, Record<string, unknown>>();
   const firestore = {
     doc: (_db: unknown, collection: string, id: string) => collection + "/" + id,
     Timestamp: { fromDate: (date: Date) => date },
-    runTransaction: async (_db: unknown, callback: (transaction: unknown) => unknown) =>
-      callback({
-        get: async (ref: string) => ({ exists: () => records.has(ref) || sourceRecords.has(ref), data: () => records.get(ref) || sourceRecords.get(ref) }),
-        set: (ref: string, value: Record<string, unknown>) => records.set(ref, value),
-      }),
     setDoc: async (ref: string, value: Record<string, unknown>) => {
       records.set(ref, value);
     },
+  };
+  // The same protocol production runs, over this in-memory store.
+  const tx: punchSession.DocTx = {
+    get: async (path) => records.get(path) || sourceRecords.get(path),
+    set: (path, value) => records.set(path, value),
+    update: (path, value) =>
+      records.set(path, { ...(records.get(path) || sourceRecords.get(path)), ...value }),
   };
   const dependencies: Record<string, unknown> = {
     react: {},
     "firebase/firestore": firestore,
     sonner: { toast: { info() {} } },
     "./firebase": { db: () => ({}) },
-    "./punch-queries": { recentPunchesQuery: () => ({}) },
+    "./live-data": {},
+    "./punch-session": punchSession,
+    "./punch-writes": {
+      autoCloseSession: (plan: punchSession.AutoClosePlan) => {
+        closeAttempts += 1;
+        return punchSession.applyAutoClose(tx, plan, time.toMillis);
+      },
+    },
     "./attendance": attendance,
     "./company-context": companyContext,
     "./time": time,
     "./attendance-clock": { attendanceNow: () => new Date(now.getTime()) },
     "./app-runtime": {},
-    "./email-branding": {},
   };
   const exports: { reconcileEmployeeShift?: (...args: unknown[]) => Promise<boolean> } = {};
   class Clock extends Date {
@@ -56,7 +66,7 @@ function harness(now: Date) {
     exports,
     Clock,
   );
-  return { records, reconcile: async (...args: unknown[]) => {
+  return { records, attempts: () => closeAttempts, reconcile: async (...args: unknown[]) => {
     for (const punch of args[1] as Punch[]) sourceRecords.set(`punches/${punch.id}`, punch as unknown as Record<string, unknown>);
     return exports.reconcileEmployeeShift!(...args);
   } };
@@ -185,4 +195,50 @@ test("an old company's delayed closing punch does not auto-close the new company
     punch("out", "08:01"),
   ], null, "beta", false);
   assert.equal(run.records.size, 0);
+});
+
+test("a switch made in the early morning is filed under the shift's own date, not UTC's", async () => {
+  // 06:00 in Sydney on 10 Aug is still 9 Aug in UTC.
+  const multi = { ...emp, companyIds: ["alpha", "beta"] };
+  const run = harness(at("09:00"));
+  await run.reconcile(
+    multi,
+    [punch("in", "06:00"), { ...punch("in", "08:00"), companyId: "beta" }],
+    null,
+    "alpha",
+    false,
+  );
+  const out = run.records.get("punches/shift-timeout-in06%3A00");
+  assert.equal(out?.autoReason, "switch_company");
+  assert.equal(out?.attendanceDate, "2026-08-10");
+  assert.equal(out?.date, "2026-08-10");
+});
+
+test("a shift the employee already ended on another device is not closed again", async () => {
+  const run = harness(at("16:00"));
+  const shift = { ...punch("in", "06:00"), closedByPunchId: "phone-out" } as Punch;
+  // This device has not received the phone's clock-out yet.
+  assert.equal(await run.reconcile(emp, [shift], null, "alpha", false), false);
+  assert.equal(run.records.size, 0);
+});
+
+test("closing a shift marks its clock-in so later writers see it closed", async () => {
+  const run = harness(at("16:00"));
+  assert.equal(await run.reconcile(emp, [punch("in", "06:00")], null, "alpha", false), true);
+  assert.equal(
+    run.records.get("punches/in06:00")?.closedByPunchId,
+    "shift-timeout-in06%3A00",
+  );
+});
+
+test("a close the database turned away is not retried every 15 seconds", async () => {
+  const run = harness(at("16:00"));
+  // Closed elsewhere, but this device never saw the clock-out.
+  const shift = { ...punch("in", "06:00"), closedByPunchId: "phone-out" } as Punch;
+  assert.equal(await run.reconcile(emp, [shift], null, "alpha", false), false);
+  assert.equal(run.attempts(), 1);
+  // The next passes, 15 seconds apart, make no transaction (and spend no reads).
+  await run.reconcile(emp, [shift], null, "alpha", false);
+  await run.reconcile(emp, [shift], null, "alpha", false);
+  assert.equal(run.attempts(), 1);
 });

@@ -216,6 +216,15 @@ export interface Punch {
   isOffShiftDay?: boolean;
   overtimeRequestId?: string;
   createdAt?: string;
+  /** Set on a clock-in by an admin correction. */
+  correctedAt?: string;
+  /** On a clock-in: the punch that ended this shift. null once reopened. */
+  closedByPunchId?: string | null;
+  closedAt?: string | null;
+  /** On a clock-in: the break punch running now; null when none is. */
+  breakPunchId?: string | null;
+  /** On a shift boundary: the clock-in of the shift that followed it. */
+  nextPunchInId?: string;
 }
 
 export type AttendanceStatus = "in_progress" | "complete" | "missing_punch_out";

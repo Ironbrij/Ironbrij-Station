@@ -6,8 +6,19 @@ import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { recentPunchesQuery } from "@/lib/punch-queries";
+import { doc, updateDoc } from "firebase/firestore";
+import {
+  isSettled,
+  listOf,
+  liveError,
+  RECENT_PUNCH_DAYS,
+  useCollectionLive,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeesLive,
+  useLeaveRequestsLive,
+  useRecentPunchesLive,
+} from "@/lib/live-data";
 import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
@@ -69,16 +80,34 @@ type LateRecord = {
 function LateArrivalsPage() {
   const runtime = useAppRuntime();
   const [reopenShift, setReopenShift] = useState(true);
-  const [punchesReady, setPunchesReady] = useState(false);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const { company, user, activeCompanyId } = useAuth();
   const [filterDept, setFilterDept] = useState("");
   const [filterCompany, setFilterCompany] = useState(activeCompanyId);
   const [filterPeriod, setFilterPeriod] = useState<"today" | "week" | "month" | "all">("today");
+  // The records the dashboard reads too, so a fix here shows there at once.
+  const employees = listOf(useEmployeesLive());
+  const departments = listOf(useDepartmentsLive());
+  const companies = listOf(useCompaniesLive());
+  const leaves = listOf(useLeaveRequestsLive());
+  // Load only as far back as the chosen period; "all" still reads the full history.
+  const periodDays =
+    filterPeriod === "all"
+      ? null
+      : filterPeriod === "month"
+        ? 32
+        : filterPeriod === "week"
+          ? 8
+          : RECENT_PUNCH_DAYS;
+  const recentPunches = useRecentPunchesLive(periodDays ?? RECENT_PUNCH_DAYS, periodDays !== null);
+  const everyPunch = useCollectionLive<Punch>("punches", periodDays === null);
+  const punchesLive = periodDays === null ? everyPunch : recentPunches;
+  const punchesReady = isSettled(punchesLive);
+  const punchesError = liveError(punchesLive);
+  const punchesData = punchesLive.data;
+  const punches = useMemo(
+    () => (punchesData ?? []).filter((punch) => !punch.voidedAt),
+    [punchesData],
+  );
   const [now, setNow] = useState(() => attendanceNow());
   useEffect(() => { if (runtime.ready) setNow(attendanceNow()); }, [runtime.ready]);
   const graceMinutes = getEffectiveLateGraceMinutes(company?.lateGraceMinutes);
@@ -108,50 +137,8 @@ function LateArrivalsPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(attendanceNow()), 30000);
-    const unsubscribers = [
-      onSnapshot(collection(db(), "companies"), (snapshot) =>
-        setCompanies(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "employees"), (snapshot) =>
-        setEmployees(
-          snapshot.docs.map((item) => ({ ...(item.data() as Omit<Employee, "id">), id: item.id })),
-        ),
-      ),
-      onSnapshot(collection(db(), "departments"), (snapshot) =>
-        setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
-        ),
-      ),
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
-        setLeaves(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<LeaveRequest, "id">),
-          })),
-        ),
-      ),
-    ];
-    return () => {
-      window.clearInterval(timer);
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-    };
+    return () => window.clearInterval(timer);
   }, []);
-
-  // Load only as far back as the chosen period; "all" still reads the full history.
-  useEffect(() => {
-    setPunchesReady(false);
-    const days = filterPeriod === "all" ? null : filterPeriod === "month" ? 32 : 8;
-    const source = days === null ? collection(db(), "punches") : recentPunchesQuery(days);
-    return onSnapshot(source, { includeMetadataChanges: true }, (snapshot) => {
-      setPunches(snapshot.docs.map((item) => ({ ...(item.data() as Omit<Punch, "id">), id: item.id })).filter((p) => !p.voidedAt));
-      setPunchesReady(!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites);
-    }, () => { setPunchesReady(false); toast.error("Late logs could not sync. Refresh to reconnect."); });
-  }, [filterPeriod]);
 
   const records = useMemo(() => buildLateRecords(employees, punches, leaves, companies, now, { period: filterPeriod }),
     [employees, punches, leaves, companies, now, filterPeriod]);
@@ -234,7 +221,13 @@ function LateArrivalsPage() {
 
   async function saveManualClockIn() {
     if (!runtime.ready || !punchesReady || submittingManual) {
-      toast.error(runtime.message || "Wait for attendance records to finish syncing."); return;
+      toast.error(
+        runtime.message ||
+          (punchesError
+            ? "Late logs are reconnecting. Try again in a moment."
+            : "Wait for attendance records to finish syncing."),
+      );
+      return;
     }
     if (!selectedEmpId || !manualDate || !manualTime) {
       toast.error("Please fill in employee, date, and clock-in time.");
@@ -324,6 +317,13 @@ function LateArrivalsPage() {
         </button>
       </div>
 
+      {(punchesError || !punchesReady) && (
+        <p role="status" className="rounded-lg border bg-amber-50 px-4 py-2 text-xs text-amber-900">
+          {punchesError
+            ? "Late logs lost their connection and are reconnecting. Figures may be out of date."
+            : "Syncing attendance…"}
+        </p>
+      )}
       <div className="grid sm:grid-cols-3 gap-4">
         <Stat label="Not punched in" value={missingCount} tone="rose" />
         <Stat label="Late arrivals" value={arrivalCount} tone="amber" />

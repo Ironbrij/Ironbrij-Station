@@ -42,7 +42,15 @@ import {
   markLateAlertsRead,
   readLateAlertIds,
 } from "@/lib/late-alerts";
-import { recentPunchesQuery } from "@/lib/punch-queries";
+import {
+  listOf,
+  useCompaniesLive,
+  useDepartmentsLive,
+  useEmployeesLive,
+  recentWindowStart,
+  useLeavesEndingSinceLive,
+  useRecentPunchesLive,
+} from "@/lib/live-data";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
   head: () => ({ meta: [{ title: "Notifications — SavyTimes Admin" }] }),
@@ -52,10 +60,15 @@ export const Route = createFileRoute("/_authenticated/admin/notices")({
 const NOTICE_PAGE_SIZE = 10;
 
 function NotificationsPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [punches, setPunches] = useState<Punch[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  // Exactly what the navigation badge counts, so the list and the count agree.
+  const employees = listOf(useEmployeesLive());
+  const departments = listOf(useDepartmentsLive());
+  const punches = listOf(useRecentPunchesLive());
+  const leaveData = useLeavesEndingSinceLive(recentWindowStart()).data;
+  const leaves = useMemo(
+    () => (leaveData ?? []).filter((leave) => leave.status === "approved"),
+    [leaveData],
+  );
   const [notices, setNotices] = useState<CompanyNotice[]>([]);
   const [noticeLimit, setNoticeLimit] = useState(NOTICE_PAGE_SIZE);
   const [hasMoreNotices, setHasMoreNotices] = useState(false);
@@ -76,7 +89,7 @@ function NotificationsPage() {
   const [priority, setPriority] = useState<CompanyNotice["priority"]>("info");
   const [targetType, setTargetType] = useState<CompanyNotice["targetType"]>("all");
   const [targetId, setTargetId] = useState("");
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const companies = listOf(useCompaniesLive());
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
@@ -93,42 +106,8 @@ function NotificationsPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
-    const unsubscribers = [
-      onSnapshot(collection(db(), "companies"), (snapshot) =>
-        setCompanies(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Company, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "employees"), (snapshot) =>
-        setEmployees(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Employee, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "departments"), (snapshot) =>
-        setDepartments(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<Department, "id">),
-          })),
-        ),
-      ),
-      onSnapshot(recentPunchesQuery(2), (snapshot) =>
-        setPunches(
-          snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Punch, "id">) })),
-        ),
-      ),
-      onSnapshot(collection(db(), "leaveRequests"), (snapshot) =>
-        setLeaves(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...(item.data() as Omit<LeaveRequest, "id">),
-          })),
-        ),
-      ),
-    ];
     return () => {
       window.clearInterval(timer);
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
 

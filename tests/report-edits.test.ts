@@ -7,6 +7,7 @@ import {
   editDay,
   editRowFields,
   hasReportEdits,
+  mergeReportEdits,
   NO_REPORT_EDITS,
   readReportEdits,
   removeReportRow,
@@ -191,4 +192,73 @@ test("row totals add up the days as listed", () => {
   assert.equal(totals.overtimeHours, 1);
   assert.equal(totals.pendingOvertimeHours, 0.5);
   assert.deepEqual(totals.overtimeDates, ["2026-09-15 (+1.0h)"]);
+});
+
+test("two admins editing different rows of one report both keep their edits", () => {
+  const base = editRowFields(NO_REPORT_EDITS, "ann", { remarks: "saved earlier" });
+  // Admin A changed Ann's leave credit; admin B saved Ben's remarks meanwhile.
+  const mine = editRowFields(base, "ann", { availableLeaveCredit: "5 Days (40 hours)" });
+  const theirs = editRowFields(base, "ben", { remarks: "left early Friday" });
+
+  const merged = mergeReportEdits(base, mine, theirs);
+  assert.equal(merged.rowEdits.ann.availableLeaveCredit, "5 Days (40 hours)");
+  assert.equal(merged.rowEdits.ann.remarks, "saved earlier");
+  assert.equal(merged.rowEdits.ben.remarks, "left early Friday", "their edit is not overwritten");
+});
+
+test("two admins editing different fields of the same row both keep their edits", () => {
+  const mine = editRowFields(NO_REPORT_EDITS, "ann", { remarks: "mine" });
+  const theirs = editRowFields(NO_REPORT_EDITS, "ann", { paidLeaveUsed: "1 Day (8 hours)" });
+  const merged = mergeReportEdits(NO_REPORT_EDITS, mine, theirs);
+  assert.deepEqual(merged.rowEdits.ann, { paidLeaveUsed: "1 Day (8 hours)", remarks: "mine" });
+});
+
+test("the same field changed by both takes the later save", () => {
+  const base = editRowFields(NO_REPORT_EDITS, "ann", { remarks: "first" });
+  const mine = editRowFields(base, "ann", { remarks: "mine" });
+  const theirs = editRowFields(base, "ann", { remarks: "theirs" });
+  assert.equal(mergeReportEdits(base, mine, theirs).rowEdits.ann.remarks, "mine");
+});
+
+test("clearing a field removes only that field, not what someone else typed", () => {
+  const base = editRowFields(NO_REPORT_EDITS, "ann", { remarks: "typo", regularHours: 7 });
+  const mine = clearRowFields(base, "ann", ["remarks"]);
+  const theirs = editRowFields(base, "ann", { overtimeHours: 2 });
+  assert.deepEqual(mergeReportEdits(base, mine, theirs).rowEdits.ann, {
+    regularHours: 7,
+    overtimeHours: 2,
+  });
+});
+
+test("day edits merge day by day", () => {
+  const mine = editDay(NO_REPORT_EDITS, "ann", "2026-09-14", { regularHours: 6 });
+  const theirs = editDay(NO_REPORT_EDITS, "ann", "2026-09-15", { regularHours: 4 });
+  const merged = mergeReportEdits(NO_REPORT_EDITS, mine, theirs);
+  assert.equal(merged.dayEdits.ann["2026-09-14"].regularHours, 6);
+  assert.equal(merged.dayEdits.ann["2026-09-15"].regularHours, 4);
+});
+
+test("rows added or removed on either side all survive a merge", () => {
+  const extra = row("custom-1", { isCustom: true });
+  const base = { ...NO_REPORT_EDITS, customRows: [row("custom-0", { isCustom: true })] };
+  const mine = removeReportRow({ ...base, customRows: [extra, ...base.customRows] }, "ben");
+  const theirs = removeReportRow(removeReportRow(base, "custom-0"), "cal");
+  const merged = mergeReportEdits(base, mine, theirs);
+  assert.deepEqual(merged.customRows.map((item) => item.id), ["custom-1"]);
+  assert.deepEqual(merged.removedRowIds.sort(), ["ben", "cal"]);
+});
+
+test("resetting a report only discards the edits the resetting admin saw", () => {
+  const base = editRowFields(NO_REPORT_EDITS, "ann", { remarks: "old" });
+  const theirs = editRowFields(base, "ben", { remarks: "typed after you loaded" });
+  const merged = mergeReportEdits(base, NO_REPORT_EDITS, theirs);
+  assert.equal(merged.rowEdits.ann, undefined);
+  assert.equal(merged.rowEdits.ben.remarks, "typed after you loaded");
+});
+
+test("an unchanged side leaves the saved copy exactly as it is", () => {
+  const saved = editDay(editRowFields(NO_REPORT_EDITS, "ann", { remarks: "x" }), "ben", "2026-09-14", {
+    regularHours: 3,
+  });
+  assert.deepEqual(mergeReportEdits(NO_REPORT_EDITS, NO_REPORT_EDITS, saved), saved);
 });

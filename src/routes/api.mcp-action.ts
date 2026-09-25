@@ -1,74 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { resolveAppUrl } from "@/lib/app-url";
+import { fromFirestoreFields, patchIfUnchanged, toFirestoreFields } from "@/lib/firestore-rest";
+import { getShiftTimezone, zonedDateKey } from "@/lib/attendance";
 
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "runner-man-634be";
   const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY";
   const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
   return { projectId, apiKey, baseUrl };
-}
-
-// Helper: Convert JS object to Firestore Fields JSON
-function toFirestoreFields(obj: Record<string, unknown>) {
-  const fields: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value === undefined) continue;
-    if (value === null) {
-      fields[key] = { nullValue: null };
-    } else if (typeof value === "boolean") {
-      fields[key] = { booleanValue: value };
-    } else if (typeof value === "number") {
-      if (Number.isInteger(value)) {
-        fields[key] = { integerValue: String(value) };
-      } else {
-        fields[key] = { doubleValue: value };
-      }
-    } else if (typeof value === "string") {
-      fields[key] = { stringValue: value };
-    } else if (Array.isArray(value)) {
-      fields[key] = {
-        arrayValue: {
-          values: value.map((item) => {
-            if (typeof item === "string") return { stringValue: item };
-            if (typeof item === "number") return { doubleValue: item };
-            if (typeof item === "boolean") return { booleanValue: item };
-            if (typeof item === "object")
-              return { mapValue: { fields: toFirestoreFields(item as Record<string, unknown>) } };
-            return { stringValue: String(item) };
-          }),
-        },
-      };
-    } else if (typeof value === "object") {
-      fields[key] = { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
-    }
-  }
-  return fields;
-}
-
-// Helper: Convert Firestore Fields to plain JS object
-function fromFirestoreFields(fields: Record<string, any>) {
-  if (!fields) return {};
-  const obj: Record<string, any> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if ("stringValue" in value) obj[key] = value.stringValue;
-    else if ("integerValue" in value) obj[key] = parseInt(value.integerValue, 10);
-    else if ("doubleValue" in value) obj[key] = value.doubleValue;
-    else if ("booleanValue" in value) obj[key] = value.booleanValue;
-    else if ("nullValue" in value) obj[key] = null;
-    else if ("arrayValue" in value) {
-      obj[key] = (value.arrayValue.values || []).map((v: any) => {
-        if ("stringValue" in v) return v.stringValue;
-        if ("integerValue" in v) return parseInt(v.integerValue, 10);
-        if ("doubleValue" in v) return v.doubleValue;
-        if ("booleanValue" in v) return v.booleanValue;
-        if ("mapValue" in v) return fromFirestoreFields(v.mapValue.fields);
-        return v;
-      });
-    } else if ("mapValue" in value) {
-      obj[key] = fromFirestoreFields(value.mapValue.fields);
-    }
-  }
-  return obj;
 }
 
 // Validate Admin Token
@@ -1591,16 +1530,31 @@ export const Route = createFileRoute("/api/mcp-action")({
             }
 
             const timestampISO = params.timestampISO || new Date().toISOString();
+            const punchedAt = new Date(timestampISO);
+            if (Number.isNaN(punchedAt.getTime())) {
+              return Response.json(
+                { ok: false, error: "timestampISO is not a valid date and time." },
+                { status: 400 },
+              );
+            }
+            // A real timestamp and the shift's own date, like every punch the app
+            // writes: a plain map was invisible to every screen's time-range query.
+            const shiftTimezone = getShiftTimezone(
+              (targetEmp || {}) as Parameters<typeof getShiftTimezone>[0],
+            );
+            const attendanceDate = zonedDateKey(punchedAt, shiftTimezone);
             const punchData = {
               employeeId: empId,
               employeeName: empName,
               companyId: params.companyId || targetEmp?.companyId || "default",
               type: params.type || "out",
               source: "admin",
-              timestamp: {
-                seconds: Math.floor(new Date(timestampISO).getTime() / 1000),
-                nanoseconds: 0,
-              },
+              timestamp: punchedAt,
+              date: attendanceDate,
+              attendanceDate,
+              shiftTimezone,
+              createdAt: new Date().toISOString(),
+              addedByAdmin: authResult.adminEmail || "Admin via MCP",
             };
             const res = await fetch(
               `${baseUrl}/punches/${docId}?key=${encodeURIComponent(apiKey)}`,
@@ -1831,20 +1785,26 @@ export const Route = createFileRoute("/api/mcp-action")({
               decidedBy: params.decidedBy || authResult.adminEmail || "Admin",
               decidedAt: new Date().toISOString(),
             };
-            const updateMask = Object.keys(fieldsToUpdate)
-              .map((k) => `updateMask.fieldPaths=${k}`)
-              .join("&");
-            const res = await fetch(
-              `${baseUrl}/leaveRequests/${params.leaveId}?${updateMask}&key=${encodeURIComponent(
-                apiKey,
-              )}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
-              },
-            );
-            if (!res.ok) throw new Error("Failed to decide leave");
+            // Only a pending request, and only if nobody decides it first.
+            if (params.decision !== "approved" && params.decision !== "rejected") {
+              return Response.json(
+                { ok: false, error: 'decision must be "approved" or "rejected".' },
+                { status: 400 },
+              );
+            }
+            const decided = await patchIfUnchanged({
+              baseUrl,
+              apiKey,
+              path: `leaveRequests/${encodeURIComponent(String(params.leaveId || ""))}`,
+              update: fieldsToUpdate,
+              check: (current) =>
+              current.status === "pending"
+                ? null
+                : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
+            });
+            if (!decided.ok) {
+              return Response.json({ ok: false, error: decided.message }, { status: decided.status });
+            }
 
             // Also trigger decision notification webhook asynchronously
             try {
@@ -1940,24 +1900,29 @@ export const Route = createFileRoute("/api/mcp-action")({
               );
             }
 
-            const fieldsToUpdate = {
-              status: params.decision,
-              decidedBy: authResult.adminEmail || "Admin via MCP",
-              decidedAt: new Date().toISOString(),
-            };
-
-            const updateMask = Object.keys(fieldsToUpdate)
-              .map((k) => `updateMask.fieldPaths=${k}`)
-              .join("&");
-
-            const patchUrl = `${baseUrl}/overtimeRequests/${params.requestId}?${updateMask}&key=${encodeURIComponent(apiKey)}`;
-            const res = await fetch(patchUrl, {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ fields: toFirestoreFields(fieldsToUpdate) }),
+            if (params.decision !== "approved" && params.decision !== "rejected") {
+              return Response.json(
+                { ok: false, error: 'decision must be "approved" or "rejected".' },
+                { status: 400 },
+              );
+            }
+            const decided = await patchIfUnchanged({
+              baseUrl,
+              apiKey,
+              path: `overtimeRequests/${encodeURIComponent(String(params.requestId))}`,
+              update: {
+                status: params.decision,
+                decidedBy: authResult.adminEmail || "Admin via MCP",
+                decidedAt: new Date().toISOString(),
+              },
+              check: (current) =>
+              current.status === "pending"
+                ? null
+                : `This request is already ${current.status}${current.decidedBy ? ` (by ${current.decidedBy})` : ""}; nothing was changed.`,
             });
-
-            if (!res.ok) throw new Error("Failed to update overtime decision");
+            if (!decided.ok) {
+              return Response.json({ ok: false, error: decided.message }, { status: decided.status });
+            }
 
             return Response.json({
               ok: true,

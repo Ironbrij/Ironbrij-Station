@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "./firebase";
 import {
   COMPANY_ID,
   type Company,
@@ -9,9 +7,14 @@ import {
   type OvertimeRequest,
 } from "./types";
 import { useAdminLateNotificationCount } from "./use-admin-late-notification-count";
+import { listOf, useEmployeeLeavesLive, useWhereEqualLive } from "./live-data";
 
 function readLastSeenOvertime() {
-  try { return Number(localStorage.getItem("lastSeenOvertime")) || 0; } catch { return 0; }
+  try {
+    return Number(localStorage.getItem("lastSeenOvertime")) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function useNavigationBadgeCounts({
@@ -25,42 +28,30 @@ export function useNavigationBadgeCounts({
   company: Company | null;
   activeCompanyId: string;
 }): Record<string, number> {
-  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [lastSeenOvertime, setLastSeenOvertime] = useState(readLastSeenOvertime);
   const unreadLateCount = useAdminLateNotificationCount({ enabled: Boolean(isAdmin), company });
+  // Shared live reads: a decision made on the Leave or Overtime page moves the
+  // badge at once. Admins need only what is pending, not the whole history;
+  // employee navigation needs only their own leave requests, never
+  // company-wide admin data.
+  const overtimeRequests = listOf(
+    useWhereEqualLive<OvertimeRequest>("overtimeRequests", "status", isAdmin ? "pending" : null),
+  );
+  const pendingLeaves = listOf(
+    useWhereEqualLive<LeaveRequest>("leaveRequests", "status", isAdmin ? "pending" : null),
+  );
+  const ownLeaves = listOf(useEmployeeLeavesLive(isAdmin ? null : employee));
+  const leaveRequests: LeaveRequest[] = isAdmin ? pendingLeaves : ownLeaves;
 
   useEffect(() => {
-    const unsubscribers: (() => void)[] = [];
-
-    setOvertimeRequests([]);
-    setLeaveRequests([]);
-    // Employee navigation needs only their leave requests, never company-wide admin data.
-    if (isAdmin) {
-      unsubscribers.push(onSnapshot(query(collection(db(), "overtimeRequests"), where("status", "==", "pending")), (snapshot) => {
-        setOvertimeRequests(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as OvertimeRequest)));
-      }));
-    }
-    const employeeIds = Array.from(new Set([employee?.id, employee?.authUid].filter((id): id is string => Boolean(id))));
-    if (isAdmin || employeeIds.length) {
-      const leavesQuery = isAdmin
-        ? query(collection(db(), "leaveRequests"), where("status", "==", "pending"))
-        : query(collection(db(), "leaveRequests"), where("employeeId", employeeIds.length > 1 ? "in" : "==", employeeIds.length > 1 ? employeeIds : employeeIds[0]));
-      unsubscribers.push(onSnapshot(leavesQuery, (snapshot) => {
-        setLeaveRequests(snapshot.docs.map((item) => ({ ...item.data(), id: item.id } as LeaveRequest)));
-      }));
-    }
-
     const syncSeen = () => setLastSeenOvertime(readLastSeenOvertime());
     window.addEventListener("storage", syncSeen);
     window.addEventListener("OVERTIME_SEEN", syncSeen);
-
     return () => {
-      unsubscribers.forEach((unsub) => unsub());
       window.removeEventListener("storage", syncSeen);
       window.removeEventListener("OVERTIME_SEEN", syncSeen);
     };
-  }, [isAdmin, employee?.id, employee?.authUid]);
+  }, []);
 
   return useMemo(() => {
     const badges: Record<string, number> = {};
@@ -71,7 +62,7 @@ export function useNavigationBadgeCounts({
         if (r.status !== "pending") return false;
         const createdTime = new Date(r.createdAt || 0).getTime();
         if (createdTime <= lastSeenOvertime) return false;
-        
+
         if (activeCompanyId && activeCompanyId !== "all" && activeCompanyId !== COMPANY_ID) {
           return r.companyId === activeCompanyId;
         }
@@ -106,5 +97,13 @@ export function useNavigationBadgeCounts({
     }
 
     return badges;
-  }, [isAdmin, employee, activeCompanyId, overtimeRequests, leaveRequests, unreadLateCount, lastSeenOvertime]);
+  }, [
+    isAdmin,
+    employee,
+    activeCompanyId,
+    overtimeRequests,
+    leaveRequests,
+    unreadLateCount,
+    lastSeenOvertime,
+  ]);
 }
