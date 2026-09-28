@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { companyClientEmails } from "@/lib/client-emails";
+import { companyClientEmails, parseClientEmails } from "@/lib/client-emails";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { doc, onSnapshot, runTransaction } from "firebase/firestore";
+import { doc, onSnapshot, runTransaction, updateDoc } from "firebase/firestore";
 import {
   listOf,
   liveError,
@@ -229,6 +229,7 @@ function ReportsPage() {
 
   // Send Email State
   const [recipientEmailsText, setRecipientEmailsText] = useState("");
+  const [saveAsClientEmail, setSaveAsClientEmail] = useState(false);
   const [clientName, setClientName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [customNote, setCustomNote] = useState("");
@@ -924,13 +925,32 @@ function ReportsPage() {
   );
   const coverNote = isCoverNoteEdited ? customNote : autoCoverNote;
 
+  // The addresses saved for the report being sent: the client's email for one
+  // company, or the all-clients recipients on the main company for all of them.
+  const mainCompany = useMemo(
+    () => companies.find((c) => normalizeCompanyId(c.id) === COMPANY_ID || c.isMain) || null,
+    [companies],
+  );
+  const savedRecipients = useMemo(
+    () =>
+      companyFilter === "all"
+        ? parseClientEmails(mainCompany?.weeklyReportAllRecipients)
+        : companyClientEmails(selectedCompany),
+    [companyFilter, mainCompany, selectedCompany],
+  );
+  const typedRecipients = parseClientEmails(recipientEmailsText);
+  const recipientsDifferFromSaved =
+    typedRecipients.length > 0 &&
+    [...typedRecipients].sort().join(",") !== [...savedRecipients].sort().join(",");
+  const savingTarget = companyFilter === "all" ? mainCompany : selectedCompany;
+
   // Open Send Modal with Pre-filled Defaults
   function openSendEmailModal() {
     setEmailSubject(`${companyDisplayName} Attendance & Work Report (${periodLabel})`);
     setClientName(selectedCompany?.name || "");
-    setRecipientEmailsText(
-      companyFilter === "all" ? "" : companyClientEmails(selectedCompany).join(", "),
-    );
+    setRecipientEmailsText(savedRecipients.join(", "));
+    // Nothing saved yet: whatever is typed this time is kept for next time.
+    setSaveAsClientEmail(savedRecipients.length === 0);
     setCustomNote("");
     setIsCoverNoteEdited(false);
     setShowEmailPreview(false);
@@ -1018,6 +1038,24 @@ function ReportsPage() {
           emailList.length > 1 ? "s" : ""
         }!`,
       );
+      if (saveAsClientEmail && recipientsDifferFromSaved && savingTarget?.id) {
+        const addresses = parseClientEmails(emailList);
+        try {
+          await updateDoc(
+            doc(db(), "companies", savingTarget.id),
+            companyFilter === "all"
+              ? { weeklyReportAllRecipients: addresses }
+              : { clientEmails: addresses, weeklyReportRecipients: addresses },
+          );
+          toast.success(
+            companyFilter === "all"
+              ? "Saved as the all-clients report recipients."
+              : `Saved as ${savingTarget.name}'s client email.`,
+          );
+        } catch {
+          toast.warning("The report was sent, but the addresses could not be saved.");
+        }
+      }
       setIsSendModalOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not send report email.");
@@ -2572,8 +2610,33 @@ function ReportsPage() {
                   className="w-full px-3 py-2 rounded-lg border bg-background text-foreground text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  You can enter multiple email addresses separated by commas.
+                  {savedRecipients.length > 0
+                    ? companyFilter === "all"
+                      ? "Filled in from the all-clients report recipients on the main company."
+                      : `Filled in from ${selectedCompany?.name || "this company"}'s client email.`
+                    : "You can enter multiple email addresses separated by commas."}
                 </p>
+                {savedRecipients.length > 0 && recipientsDifferFromSaved && (
+                  <button
+                    type="button"
+                    onClick={() => setRecipientEmailsText(savedRecipients.join(", "))}
+                    className="mt-1 text-[11px] font-bold text-primary hover:underline"
+                  >
+                    Use saved: {savedRecipients.join(", ")}
+                  </button>
+                )}
+                {savingTarget?.id && recipientsDifferFromSaved && (
+                  <label className="mt-1.5 flex items-center gap-2 text-[11px] font-semibold text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveAsClientEmail}
+                      onChange={(event) => setSaveAsClientEmail(event.target.checked)}
+                    />
+                    {companyFilter === "all"
+                      ? "Save these as the all-clients report recipients"
+                      : `Save these as ${savingTarget.name}'s client email, so they fill in next time`}
+                  </label>
+                )}
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
