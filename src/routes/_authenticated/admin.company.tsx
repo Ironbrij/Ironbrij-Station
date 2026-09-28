@@ -30,10 +30,12 @@ import {
 } from "@/lib/types";
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 import { HolidayPlanner } from "@/components/HolidayPlanner";
+import { EmailChipsInput } from "@/components/EmailChipsInput";
 import {
   CLIENT_EMAIL_TOPICS,
   clientWants,
   companyClientEmails,
+  parseClientEmails,
   type ClientEmailTopic,
 } from "@/lib/client-emails";
 import {
@@ -599,6 +601,7 @@ function CompanyPage() {
       {(showAddCompanyModal || editingCompany !== null) && (
         <CompanyModal
           companyToEdit={editingCompany}
+          people={employees}
           onClose={() => {
             setShowAddCompanyModal(false);
             setEditingCompany(null);
@@ -678,9 +681,12 @@ function CompanyPage() {
 
 function CompanyModal({
   companyToEdit,
+  people = [],
   onClose,
 }: {
   companyToEdit?: Company | null;
+  /** Everyone we know, so an address shows its person's name and photo. */
+  people?: Employee[];
   onClose: () => void;
 }) {
   const [name, setName] = useState(companyToEdit?.name ?? "");
@@ -692,25 +698,18 @@ function CompanyModal({
   const [autoDeductUnloggedBreak, setAutoDeductUnloggedBreak] = useState(
     companyToEdit?.autoDeductUnloggedBreak !== false,
   );
-  const [clientEmails, setClientEmails] = useState(
-    companyClientEmails(companyToEdit).join(", "),
+  const [clientEmails, setClientEmails] = useState<string[]>(
+    companyClientEmails(companyToEdit),
   );
   const [clientTopics, setClientTopics] = useState(() =>
     Object.fromEntries(
       CLIENT_EMAIL_TOPICS.map(({ topic }) => [topic, clientWants(companyToEdit, topic)]),
     ) as Record<ClientEmailTopic, boolean>,
   );
-  const [weeklyReportAllRecipients, setWeeklyReportAllRecipients] = useState(
-    (companyToEdit?.weeklyReportAllRecipients || []).join(", "),
+  const [weeklyReportAllRecipients, setWeeklyReportAllRecipients] = useState<string[]>(
+    parseClientEmails(companyToEdit?.weeklyReportAllRecipients),
   );
-  const splitEmails = (value: string) => [
-    ...new Set(
-      value
-        .split(/[,;\s]+/)
-        .map((item) => item.trim().toLowerCase())
-        .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)),
-    ),
-  ];
+  const splitEmails = (value: string[]) => parseClientEmails(value);
   const [punchOutGraceMinutes, setPunchOutGraceMinutes] = useState(
     companyToEdit?.punchOutGraceMinutes ?? 20,
   );
@@ -922,16 +921,17 @@ function CompanyModal({
           <div>
             <label className="text-sm font-medium">Client email</label>
             <p className="text-xs text-muted-foreground">
-              Everyone at this client our emails go to. Separate addresses with commas. Leave
-              empty and the client gets no emails.
+              Everyone at this client our emails go to. Type an address and press Enter or +.
+              Leave empty and the client gets no emails.
             </p>
-            <input
-              type="text"
-              value={clientEmails}
-              onChange={(event) => setClientEmails(event.target.value)}
-              placeholder="client@example.com, manager@example.com"
-              className="mt-1.5 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
-            />
+            <div className="mt-1.5">
+              <EmailChipsInput
+                value={clientEmails}
+                onChange={setClientEmails}
+                people={people}
+                placeholder="client@example.com"
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <div className="text-xs font-semibold text-muted-foreground">Send the client</div>
@@ -958,13 +958,14 @@ function CompanyModal({
               <p className="text-xs text-muted-foreground">
                 Who receives the combined report covering every client.
               </p>
-              <input
-                type="text"
-                value={weeklyReportAllRecipients}
-                onChange={(event) => setWeeklyReportAllRecipients(event.target.value)}
-                placeholder="ops@example.com"
-                className="mt-1.5 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
-              />
+              <div className="mt-1.5">
+                <EmailChipsInput
+                  value={weeklyReportAllRecipients}
+                  onChange={setWeeklyReportAllRecipients}
+                  people={people}
+                  placeholder="ops@example.com"
+                />
+              </div>
             </div>
           )}
         </div>
