@@ -95,7 +95,7 @@ export const Route = createFileRoute("/api/holiday-response")({
         }
         const office =
           response.notifyEmail || process.env.LEAVE_MANAGER_EMAIL || "pabibek9@gmail.com";
-        const notice = buildDecisionNoticeEmail(response, decision);
+        const notice = buildDecisionNoticeEmail(response, decision, vasTold);
         await send({
           event: "holiday_client_answer",
           company: response.company,

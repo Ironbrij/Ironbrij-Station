@@ -58,14 +58,27 @@ const paragraph = (value: string) =>
 export function buildVaWorkEmail(response: HolidayResponse, va: { name: string }) {
   const firstName = va.name.trim().split(/\s+/)[0] || "there";
   const date = formatEmailDate(response.date);
+  const title = "Your Client Asked You to Work";
+  const heading = `${response.holidayName} · ${date}`;
   const subject = `Please work on ${response.holidayName}, ${date}`;
+  const details = [
+    { label: "Holiday", value: `${response.holidayName}, ${date}` },
+    { label: "Client", value: response.companyName },
+    { label: "Client’s Response", value: "Please work on this day" },
+  ];
   const lines = [
-    `${response.holidayName} on ${date} is a holiday, but ${response.companyName} has asked you to work that day.`,
-    "Please work your usual hours for them and punch in as normal. The hours count as holiday work, not regular hours.",
-    "If you cannot work that day, please let us know as soon as possible.",
+    `${response.holidayName} is a holiday, but ${response.companyName} has requested that you work on this day.`,
+    "Please work your usual hours and punch in as normal. The hours worked will be recorded as holiday work and paid as overtime.",
+    "If you are unable to work on this day, please let us know as soon as possible.",
   ];
   const text = [
+    title,
+    "",
     `Hi ${firstName},`,
+    "",
+    heading,
+    "",
+    ...details.map((detail) => `${detail.label}: ${detail.value}`),
     "",
     ...lines.flatMap((line) => [line, ""]),
     "Best regards,",
@@ -75,17 +88,10 @@ export function buildVaWorkEmail(response: HolidayResponse, va: { name: string }
     company: response.company,
     preheader: lines[0],
     label: "Holiday",
-    title: "Your client asked you to work",
-    introHtml: escapeEmailHtml(`Hi ${firstName}, ${response.holidayName} · ${date}`),
+    title,
+    introHtml: `Hi ${escapeEmailHtml(firstName)},<br>${escapeEmailHtml(heading)}`,
     contentHtml: [
-      `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 16px;">${renderEmailDetails(
-        [
-          { label: "Holiday", value: `${response.holidayName}, ${date}` },
-          { label: "Client", value: response.companyName },
-          { label: "Their answer", value: "Please work this day" },
-        ],
-        "#16a34a",
-      )}</table>`,
+      `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 16px;">${renderEmailDetails(details, "#16a34a")}</table>`,
       ...lines.map(paragraph),
       signOff,
     ].join(""),
@@ -94,23 +100,51 @@ export function buildVaWorkEmail(response: HolidayResponse, va: { name: string }
   return { subject, text, html };
 }
 
-/** The office's email with the client's answer, for billing. */
-export function buildDecisionNoticeEmail(response: HolidayResponse, decision: HolidayDecision) {
+/** "Ann Cataring", "Ann Cataring and Ram Thapa", "Ann, Ram and Maria". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] || "their VA";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The office's email with the client's answer, for billing. `vasTold` is how
+ * many VAs were actually emailed, so it never claims one was told when not.
+ */
+export function buildDecisionNoticeEmail(
+  response: HolidayResponse,
+  decision: HolidayDecision,
+  vasTold = 0,
+) {
   const date = formatEmailDate(response.date);
-  const names = response.vas.map((va) => va.name).join(", ") || "their VA";
-  const subject = `${response.companyName}: ${decision === "work" ? "VA will work" : "VA is off"} on ${response.holidayName}, ${date}`;
-  const summary =
+  const names = joinNames(response.vas.map((va) => va.name));
+  const several = response.vas.length > 1;
+  const title =
+    decision === "work" ? "VA Will Work on the Holiday" : "VA Will Take the Holiday Off";
+  const heading = `${response.companyName} · ${response.holidayName} · ${date}`;
+  const lines =
     decision === "work"
-      ? `${response.companyName} wants ${names} to work on ${response.holidayName}, ${date}. The hours are paid overtime for the next invoice.${response.vas.some((va) => va.email) ? " The VA has been emailed." : ""}`
-      : `${response.companyName} confirmed ${names} will take ${response.holidayName}, ${date} off.`;
-  const text = [summary, "", "Sent by SavyTime from the client's holiday email."].join("\n");
+      ? [
+          `${response.companyName} has requested that ${names} work on ${response.holidayName}, ${date}.`,
+          "The hours worked on the holiday will be paid as overtime and included in the next invoice.",
+          vasTold === 0
+            ? `${several ? "The VAs have" : "The VA has"} not been emailed, as no email address is saved for them. Please let them know.`
+            : vasTold < response.vas.length
+              ? `${vasTold} of the ${response.vas.length} VAs have been notified by email. Please let the others know.`
+              : `${several ? "The VAs have" : "The VA has"} been notified by email.`,
+        ]
+      : [
+          `${response.companyName} has confirmed that ${names} will take ${response.holidayName}, ${date} off.`,
+          "No overtime will be billed for this day.",
+        ];
+  const subject = `${response.companyName}: ${decision === "work" ? "VA will work" : "VA is off"} on ${response.holidayName}, ${date}`;
+  const text = [title, "", heading, "", ...lines.flatMap((line) => [line, ""])].join("\n").trim();
   const html = renderCompanyEmail({
     company: response.company,
-    preheader: summary,
+    preheader: lines[0],
     label: "Client answer",
-    title: decision === "work" ? "VA will work the holiday" : "VA will take the holiday",
-    introHtml: escapeEmailHtml(`${response.companyName} · ${response.holidayName} · ${date}`),
-    contentHtml: paragraph(summary),
+    title,
+    introHtml: escapeEmailHtml(heading),
+    contentHtml: lines.map(paragraph).join(""),
     accentColor: decision === "work" ? "#16a34a" : "#7c3aed",
   });
   return { subject, text, html };
