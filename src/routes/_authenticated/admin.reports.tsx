@@ -90,6 +90,7 @@ import {
   addCalendarDay,
   buildReportRows,
   describeLeave,
+  describeScheduledShift,
   getDayOfWeekStr,
   type DailyIntervalRecord,
   type PunchSessionRecord,
@@ -738,14 +739,21 @@ function ReportsPage() {
     const writeCompanyId = resolveWriteCompanyId(emp);
     const scopedEmp = getEmployeeForCompany(emp, writeCompanyId);
     // Pair the clock-out with the day's clock-in so hours and overtime recompute
-    // against the schedule that shift was actually opened on.
-    const dayIn = punches.find(
-      (punch) =>
-        !punch.voidedAt &&
-        punch.type === "in" &&
-        (punch.attendanceDate || punch.date) === date &&
-        (punch.employeeId === emp.id || punch.employeeId === emp.authUid),
-    );
+    // against the schedule that shift was actually opened on. For someone with
+    // two companies it must be this company's clock-in, and the latest one, as
+    // that is the shift left open.
+    const dayIn = punches
+      .filter(
+        (punch) =>
+          !punch.voidedAt &&
+          punch.type === "in" &&
+          (punch.attendanceDate || punch.date) === date &&
+          (punch.employeeId === emp.id || punch.employeeId === emp.authUid) &&
+          (companyFilter === "all" ||
+            normalizeCompanyId(punch.companyId || writeCompanyId) ===
+              normalizeCompanyId(companyFilter)),
+      )
+      .sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp))[0];
     const punchIn = toDate(dayIn?.timestamp);
     if (!dayIn || !punchIn) {
       toast.error(`There is no clock-in on ${date} to close. Set the clock-in time first.`);
@@ -753,7 +761,13 @@ function ReportsPage() {
     }
     const shiftEmployee = scopeEmployeeToPunchSchedule(scopedEmp, dayIn);
     const timezone = dayIn.shiftTimezone || getShiftTimezone(shiftEmployee);
-    const defaultEndTime = shiftEmployee.shiftEndTime || "17:00";
+    const defaultEndTime = shiftEmployee.shiftEndTime;
+    if (!defaultEndTime) {
+      toast.error(
+        `${emp.name} has no shift end time on their profile. Set the clock-out time by hand.`,
+      );
+      return;
+    }
 
     try {
       // The same writer as every other punch fix: it corrects the shift's own
@@ -838,10 +852,7 @@ function ReportsPage() {
       const dayRecord: Partial<DailyIntervalRecord> = {
         date: customDayDate,
         dayOfWeek: getDayOfWeekStr(customDayDate),
-        scheduledShift:
-          emp?.shiftStartTime && emp?.shiftEndTime
-            ? `${emp.shiftStartTime}–${emp.shiftEndTime}`
-            : "09:00–17:00",
+        scheduledShift: scopedEmp ? describeScheduledShift(scopedEmp, customDayDate) : "Not set",
         regularHours: Number(customDayRegularHours) || 0,
         rawOvertimeHours: 0,
         isOvertimeApproved: false,
