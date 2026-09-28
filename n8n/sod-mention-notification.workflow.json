@@ -1,5 +1,5 @@
 {
-  "name": "SavyTimes - Email Notifications",
+  "name": "SavyTime - Email Notifications",
   "nodes": [
     {
       "parameters": {
@@ -64,7 +64,7 @@
         "message": "={{ $json.html || $json.message }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "SavyTimes Notifications"
+          "senderName": "SavyTime Notifications"
         }
       },
       "id": "send-notification-email",

@@ -105,13 +105,13 @@ export const Route = createFileRoute("/api/punch-out-reminder")({
           );
         }
 
-        const company = body.company || { name: "SavyTimes" };
+        const company = body.company || { name: "SavyTime" };
         const formattedShiftEnd = new Intl.DateTimeFormat("en-US", {
           timeZone: body.shiftTimezone || "UTC",
           hour: "numeric",
           minute: "2-digit",
         }).format(new Date(body.shiftEndAt));
-        const subject = `Reminder: your shift at ${company.name || "SavyTimes"} is ending soon`;
+        const subject = `Reminder: your shift at ${company.name || "SavyTime"} is ending soon`;
         const text = `Hi ${body.employeeName}, your shift ends at ${formattedShiftEnd}. Please punch out when you finish work.`;
         const html = renderCompanyEmail({
           company,
@@ -123,7 +123,7 @@ export const Route = createFileRoute("/api/punch-out-reminder")({
             [
               { label: "Attendance date", value: body.attendanceDate },
               { label: "Shift ends", value: formattedShiftEnd },
-              { label: "Company", value: company.name || "SavyTimes" },
+              { label: "Company", value: company.name || "SavyTime" },
             ],
           )}</table>`,
         });

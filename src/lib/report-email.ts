@@ -166,7 +166,7 @@ export async function deliverReportEmail(
     return { ok: false, error: "No valid recipient email addresses provided", status: 400 };
   }
 
-  const companyName = body.companyName || body.company?.name || "SavyTimes";
+  const companyName = body.companyName || body.company?.name || "SavyTime";
   const periodLabel = body.periodLabel || "Recent Period";
   const subject =
     body.subject?.trim() || `${companyName} Attendance & Hours Report (${periodLabel})`;

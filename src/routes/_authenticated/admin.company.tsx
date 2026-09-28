@@ -30,6 +30,8 @@ import {
 } from "@/lib/types";
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 import { HolidayPlanner } from "@/components/HolidayPlanner";
+import { DaylightSavingCard } from "@/components/DaylightSavingCard";
+import { HolidayAnswersCard } from "@/components/HolidayAnswersCard";
 import { EmailChipsInput } from "@/components/EmailChipsInput";
 import {
   CLIENT_EMAIL_TOPICS,
@@ -49,9 +51,9 @@ import {
 export const Route = createFileRoute("/_authenticated/admin/company")({
   head: () => ({
     meta: [
-      { title: "Company Settings — SavyTimes Admin" },
+      { title: "Company Settings — SavyTime Admin" },
       { name: "description", content: "Manage company branding, logo, and holidays." },
-      { property: "og:title", content: "Company Settings — SavyTimes Admin" },
+      { property: "og:title", content: "Company Settings — SavyTime Admin" },
       { property: "og:description", content: "Manage company branding, logo, and holidays." },
     ],
   }),
@@ -548,6 +550,10 @@ function CompanyPage() {
         updateHolidays={updateHolidays}
       />
 
+      <HolidayAnswersCard todayStr={todayStr} />
+
+      <DaylightSavingCard />
+
       <div className="rounded-xl border bg-card p-6 space-y-4 shadow-lift">
         <h2 className="font-bold text-primary flex items-center gap-2">
           <ImageIcon className="h-4 w-4" /> Company Settings
@@ -845,7 +851,7 @@ function CompanyModal({
             ))}
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
-            Holidays for this state give everyone the day off for their work here. People who
+            Holidays for this state give everyone the holiday for their work here. People who
             also work for a company in another state keep working there as normal.
           </p>
         </div>

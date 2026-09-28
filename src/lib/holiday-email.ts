@@ -1,12 +1,15 @@
 import { isHolidayAssignedToEmployee } from "./attendance.ts";
 import { clientEmailsFor } from "./client-emails.ts";
 import { getEmployeeCompanyIds, normalizeCompanyId } from "./company-context.ts";
+import { companyEmailBranding, findCompanyById, findEmployeeCompany } from "./email-branding.ts";
 import {
-  companyEmailBranding,
-  findCompanyById,
-  findEmployeeCompany,
-} from "./email-branding.ts";
-import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "./email-template.ts";
+  escapeEmailHtml,
+  formatEmailDate,
+  renderCompanyEmail,
+  renderEmailDetails,
+} from "./email-template.ts";
+import { companyState, regionLabel } from "./holidays.ts";
+import { holidayResponseUrl } from "./holiday-response.ts";
 import type { Company, CompanyHoliday, Department, Employee } from "./types.ts";
 
 /**
@@ -40,14 +43,24 @@ export function planHolidayEmails(
   return plans;
 }
 
-export function formatHolidayDate(dateKey: string): string {
-  return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("en-AU", {
-    timeZone: "UTC",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+/** "Monday, 5 October 2026". */
+export const formatHolidayDate = formatEmailDate;
+
+const AU_STATE_NAMES: Record<string, string> = {
+  ACT: "the Australian Capital Territory",
+  NSW: "New South Wales",
+  NT: "the Northern Territory",
+  QLD: "Queensland",
+  SA: "South Australia",
+  TAS: "Tasmania",
+  VIC: "Victoria",
+  WA: "Western Australia",
+};
+
+/** "New South Wales", "Auckland", or "" when the company has no state set. */
+function stateName(company: Company): string {
+  const code = companyState(company);
+  return code ? (AU_STATE_NAMES[code] ?? regionLabel(code)) : "";
 }
 
 /**
@@ -67,11 +80,7 @@ export function closedCompanyIds(holiday: CompanyHoliday, employee: Employee): s
 }
 
 /** The company a person's email is branded as: the one closing, if only one is. */
-function brandingFor(
-  plan: HolidayEmailPlan,
-  companies: Company[],
-  departments: Department[],
-) {
+function brandingFor(plan: HolidayEmailPlan, companies: Company[], departments: Department[]) {
   const scopes = plan.holidays.map((holiday) => closedCompanyIds(holiday, plan.employee));
   const closing = [...new Set(scopes.flatMap((ids) => ids ?? []))];
   const company =
@@ -93,11 +102,11 @@ export function buildHolidayEmail(
   const one = holidays.length === 1;
   const name = (holiday: CompanyHoliday) => holiday.name?.trim() || "Company Holiday";
   const subject = one
-    ? `Day off: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
-    : `You have ${holidays.length} days off coming up`;
+    ? `Holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
+    : `You have ${holidays.length} holidays coming up`;
   const headline = one
-    ? `You have a day off on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
-    : `You have ${holidays.length} days off coming up.`;
+    ? `You have a holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
+    : `You have ${holidays.length} holidays coming up.`;
   // Someone working for companies in two states is only off for the closed one.
   const companyName = (id: string) =>
     findCompanyById(companies, id)?.name || (id === "default" ? "the main company" : id);
@@ -117,18 +126,16 @@ export function buildHolidayEmail(
     ...lines,
     "",
     `You don't need to punch in on ${one ? "this day" : "these days"}. Work done on a holiday is counted as holiday work, not regular hours.`,
-    ...(partly
-      ? ["Work for your other companies on the same day is a normal working day."]
-      : []),
+    ...(partly ? ["Work for your other companies on the same day is a normal working day."] : []),
     "",
-    `Open SavyTimes: ${appUrl}`,
+    `Open SavyTime: ${appUrl}`,
   ].join("\n");
   const accentColor = "#7c3aed";
   const html = renderCompanyEmail({
     company,
     preheader: headline,
     label: "Holiday",
-    title: one ? "You have a day off" : "Days off coming up",
+    title: one ? "You have a holiday" : "Holidays coming up",
     introHtml: `Hi ${escapeEmailHtml(firstName)}, ${escapeEmailHtml(headline.charAt(0).toLowerCase() + headline.slice(1))}`,
     contentHtml: `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
@@ -139,7 +146,7 @@ export function buildHolidayEmail(
         accentColor,
       )}</table>
       <p style="margin: 18px 0 0; font-size: 14px; line-height: 21px; color: #4a5568;">You don't need to punch in on ${one ? "this day" : "these days"}.${partly ? " Work for your other companies on the same day is a normal working day." : ""}</p>`,
-    cta: { label: "Open SavyTimes", url: appUrl },
+    cta: { label: "Open SavyTime", url: appUrl },
     accentColor,
   });
   return { company, subject, text, html };
@@ -148,13 +155,17 @@ export function buildHolidayEmail(
 export interface ClientHolidayPlan {
   company: Company;
   to: string[];
-  /** Each holiday that closes this client, with the people it gives the day off. */
-  days: { holiday: CompanyHoliday; people: string[] }[];
+  /** Each holiday that closes this client, with the people it gives the holiday. */
+  days: {
+    holiday: CompanyHoliday;
+    people: string[];
+    vas: { id: string; name: string; email: string }[];
+  }[];
 }
 
 /**
  * Which clients to tell: every company whose client email wants holidays, with
- * the holidays that give its people a day off for their work there.
+ * the holidays its people have off from their work there.
  */
 export function planClientHolidayEmails(
   holidays: CompanyHoliday[],
@@ -168,13 +179,11 @@ export function planClientHolidayEmails(
     if (to.length === 0) continue;
     const id = normalizeCompanyId(company.id);
     const staff = employees.filter(
-      (employee) =>
-        employee.status === "active" && getEmployeeCompanyIds(employee).includes(id),
+      (employee) => employee.status === "active" && getEmployeeCompanyIds(employee).includes(id),
     );
     const days = holidays
-      .map((holiday) => ({
-        holiday,
-        people: staff
+      .map((holiday) => {
+        const vas = staff
           .filter((employee) =>
             isHolidayAssignedToEmployee(
               holiday,
@@ -182,9 +191,14 @@ export function planClientHolidayEmails(
               company,
             ),
           )
-          .map((employee) => employee.name?.trim() || employee.email)
-          .sort((a, b) => a.localeCompare(b)),
-      }))
+          .map((employee) => ({
+            id: employee.id,
+            name: employee.name?.trim() || employee.email,
+            email: employee.email?.trim() || "",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        return { holiday, vas, people: vas.map((va) => va.name) };
+      })
       .filter((day) => day.people.length > 0)
       .sort((a, b) => a.holiday.date.localeCompare(b.holiday.date));
     if (days.length > 0) plans.push({ company, to, days });
@@ -192,49 +206,72 @@ export function planClientHolidayEmails(
   return plans;
 }
 
-export function buildClientHolidayEmail(plan: ClientHolidayPlan, appUrl: string) {
-  const company = companyEmailBranding(plan.company, plan.company.id);
-  const name = (holiday: CompanyHoliday) => holiday.name?.trim() || "Company Holiday";
-  const one = plan.days.length === 1;
-  const first = plan.days[0];
-  const subject = one
-    ? `${name(first.holiday)}: your team is off on ${formatHolidayDate(first.holiday.date)}`
-    : `Your team has ${plan.days.length} days off coming up`;
-  const headline = one
-    ? `${first.people.length === 1 ? first.people[0] : `${first.people.length} of your team`} will be off on ${formatHolidayDate(first.holiday.date)} for ${name(first.holiday)}.`
-    : `Your team has ${plan.days.length} days off coming up.`;
-  const lines = plan.days.map(
-    (day) => `${name(day.holiday)}, ${formatHolidayDate(day.holiday.date)}: ${day.people.join(", ")}`,
-  );
+/**
+ * One holiday, asked of one client: their Virtual Assistant is off unless they
+ * want them to work, and any hours worked are billed as overtime.
+ */
+export function buildClientHolidayEmail(
+  company: Company,
+  holiday: CompanyHoliday,
+  /** The client's answer link, when one was saved; without it they reply instead. */
+  answer?: { appUrl: string; token: string },
+) {
+  const branding = companyEmailBranding(company, company.id);
+  const clientName = company.name?.trim() || "there";
+  const holidayName = holiday.name?.trim() || "the public holiday";
+  const date = formatHolidayDate(holiday.date);
+  const state = stateName(company);
+  const where = state ? ` in ${state},` : "";
+  const paragraphs = [
+    "I hope this email finds you well.",
+    `As ${holidayName} approaches${where} on ${date}, I wanted to remind you of this upcoming holiday.`,
+    `If you would like your Virtual Assistant to work on ${date}, we'd be happy to accommodate this. Please note that any hours worked on this day will be considered paid overtime and will be included in your next invoice.`,
+    answer
+      ? "To ensure accurate billing in the next cycle, kindly let us know if you'd like your VA to work on this day by choosing one option below."
+      : "To ensure accurate billing in the next cycle, kindly let us know if you'd like your VA to work on this day.",
+    "Thank you for your understanding. Should you have any questions or need further assistance, please feel free to reach out.",
+  ];
+  const subject = `Upcoming holiday: ${holidayName}, ${date}`;
+  const workUrl = answer ? holidayResponseUrl(answer.appUrl, answer.token, "work") : "";
+  const offUrl = answer ? holidayResponseUrl(answer.appUrl, answer.token, "off") : "";
   const text = [
-    "Hello,",
+    `Dear ${clientName},`,
     "",
-    headline,
+    `${paragraphs[0]} ${paragraphs[1]}`,
     "",
-    ...lines,
-    "",
-    "Their work for you resumes on the next working day.",
+    ...paragraphs.slice(2, 4).flatMap((paragraph) => [paragraph, ""]),
+    ...(answer ? [`Work on holiday: ${workUrl}`, `Do not work: ${offUrl}`, ""] : []),
+    ...paragraphs.slice(4).flatMap((paragraph) => [paragraph, ""]),
+    "Best regards,",
+    "Accounts Team",
   ].join("\n");
-  const accentColor = "#7c3aed";
+  const paragraph = (value: string) =>
+    `<p style="margin: 0 0 16px; font-size: 15px; line-height: 24px; color: #2d3748;">${value}</p>`;
   const html = renderCompanyEmail({
-    company,
-    preheader: headline,
+    company: branding,
+    preheader: `${holidayName} is on ${date}. Would you like your Virtual Assistant to work?`,
     label: "Holiday",
-    title: one ? "Your team has a day off" : "Days off coming up",
-    introHtml: escapeEmailHtml(headline),
-    contentHtml: `
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
-        plan.days.flatMap((day) => [
-          { label: name(day.holiday), value: formatHolidayDate(day.holiday.date) },
-          { label: "Who is off", value: day.people.join(", ") },
-        ]),
-        accentColor,
-      )}</table>
-      <p style="margin: 18px 0 0; font-size: 14px; line-height: 21px; color: #4a5568;">Their work for you resumes on the next working day.</p>`,
-    cta: { label: "Open SavyTimes", url: appUrl },
-    accentColor,
+    title: `${holidayName} is coming up`,
+    introHtml: escapeEmailHtml(state ? `${date} · ${state}` : date),
+    contentHtml: [
+      paragraph(`Dear ${escapeEmailHtml(clientName)},`),
+      paragraph(escapeEmailHtml(`${paragraphs[0]} ${paragraphs[1]}`)),
+      ...paragraphs.slice(2, 4).map((value) => paragraph(escapeEmailHtml(value))),
+      answer ? answerButtons(workUrl, offUrl) : "",
+      ...paragraphs.slice(4).map((value) => paragraph(escapeEmailHtml(value))),
+      `<p style="margin: 8px 0 0; font-size: 15px; line-height: 24px; color: #2d3748;">Best regards,<br><strong>Accounts Team</strong></p>`,
+    ].join(""),
+    accentColor: "#7c3aed",
+    repliesWelcome: true,
   });
-  return { company, subject, text, html };
+  return { company: branding, subject, text, html };
+}
+
+/** "Work on Holiday" and "Do Not Work", as buttons that work in every mail app. */
+function answerButtons(workUrl: string, offUrl: string): string {
+  const button = (url: string, label: string, background: string) =>
+    `<td style="padding: 0 10px 10px 0;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${background}" style="border-radius: 8px;"><a href="${escapeEmailHtml(url)}" style="display: inline-block; padding: 13px 22px; color: #ffffff; font-size: 15px; line-height: 18px; font-weight: 700; text-decoration: none;">${label}</a></td></tr></table></td>`;
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 4px 0 14px;"><tr>${button(workUrl, "Work on Holiday", "#16a34a")}${button(offUrl, "Do Not Work", "#475569")}</tr></table>`;
 }
 
 export async function sendHolidayEmails({
@@ -243,6 +280,7 @@ export async function sendHolidayEmails({
   companies,
   departments,
   appUrl,
+  saveClientQuestion,
   fetchImpl = fetch,
 }: {
   holidays: CompanyHoliday[];
@@ -250,6 +288,15 @@ export async function sendHolidayEmails({
   companies: Company[];
   departments: Department[];
   appUrl: string;
+  /**
+   * Saves where the client's answer goes and returns its token, or null when it
+   * could not be saved; that client is then asked to reply instead.
+   */
+  saveClientQuestion?: (
+    company: Company,
+    holiday: CompanyHoliday,
+    vas: { id: string; name: string; email: string }[],
+  ) => Promise<string | null>;
   fetchImpl?: typeof fetch;
 }): Promise<HolidayEmailResult> {
   if (holidays.length === 0) return { ok: false, status: 404, error: "Holiday not found" };
@@ -295,30 +342,40 @@ export async function sendHolidayEmails({
       }),
     );
   }
-  // Each client that has people off, told once, on its own client email.
+  // Each client that has people off is asked, once per holiday, on its own client email.
   let clients = 0;
   for (const plan of clientPlans) {
-    const email = buildClientHolidayEmail(plan, appUrl);
-    try {
-      const response = await fetchImpl(webhookUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          event: "holiday_client_notice",
-          company: email.company,
-          holidays: plan.days.map(({ holiday }) => ({
-            id: holiday.id,
-            date: holiday.date,
-            name: holiday.name,
-          })),
-          email: { to: plan.to.join(","), subject: email.subject, text: email.text, html: email.html },
-        }),
-      });
-      if (response.ok) clients += 1;
-      else failed += 1;
-    } catch {
-      failed += 1;
+    let reached = false;
+    for (const { holiday, vas } of plan.days) {
+      const token = await saveClientQuestion?.(plan.company, holiday, vas).catch(() => null);
+      const email = buildClientHolidayEmail(
+        plan.company,
+        holiday,
+        token ? { appUrl, token } : undefined,
+      );
+      try {
+        const response = await fetchImpl(webhookUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            event: "holiday_client_notice",
+            company: email.company,
+            holidays: [{ id: holiday.id, date: holiday.date, name: holiday.name }],
+            email: {
+              to: plan.to.join(","),
+              subject: email.subject,
+              text: email.text,
+              html: email.html,
+            },
+          }),
+        });
+        if (response.ok) reached = true;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
     }
+    if (reached) clients += 1;
   }
   if (plans.length + clientPlans.length > 0 && sent + clients === 0) {
     return { ok: false, status: 502, error: "The n8n webhook did not accept the holiday emails" };

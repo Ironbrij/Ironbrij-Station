@@ -56,12 +56,12 @@ import { recentPunchesQuery } from "@/lib/punch-queries";
 export const Route = createFileRoute("/_authenticated/admin/departments")({
   head: () => ({
     meta: [
-      { title: "Departments — SavyTimes Admin" },
+      { title: "Departments — SavyTime Admin" },
       {
         name: "description",
         content: "Manage departments, assigned users, and download department reports.",
       },
-      { property: "og:title", content: "Departments — SavyTimes Admin" },
+      { property: "og:title", content: "Departments — SavyTime Admin" },
       {
         property: "og:description",
         content: "Manage departments, assigned users, and download department reports.",

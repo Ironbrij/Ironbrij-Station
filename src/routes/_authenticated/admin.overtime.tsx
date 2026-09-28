@@ -41,7 +41,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/_authenticated/admin/overtime")({
-  head: () => ({ meta: [{ title: "Overtime Approvals — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "Overtime Approvals — SavyTime Admin" }] }),
   component: AdminOvertimePage,
 });
 

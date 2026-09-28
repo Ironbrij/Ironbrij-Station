@@ -18,9 +18,9 @@ import { Calendar, CheckCircle2, Clock, Edit3, Plus, Trash2, X } from "lucide-re
 export const Route = createFileRoute("/_authenticated/admin/leaves")({
   head: () => ({
     meta: [
-      { title: "Leave Requests — SavyTimes Admin" },
+      { title: "Leave Requests — SavyTime Admin" },
       { name: "description", content: "Review and manage employee leave requests." },
-      { property: "og:title", content: "Leave Requests — SavyTimes Admin" },
+      { property: "og:title", content: "Leave Requests — SavyTime Admin" },
       {
         property: "og:description",
         content: "Review and manage employee leave requests.",

@@ -54,7 +54,7 @@ test("an approved leave emails the person's own team without any setup", async (
   assert.equal(posts.length, 1);
   const email = posts[0].body.email as { to: string; subject: string; text: string };
   assert.equal(email.to, "ann@example.com");
-  assert.equal(email.subject, "bibek will be on leave on Mon, 5 Oct 2026");
+  assert.equal(email.subject, "bibek will be on leave on Monday, 5 October 2026");
   assert.doesNotMatch(email.text, /private/);
 });
 
@@ -136,8 +136,22 @@ test("the client the person works for is told on its own email, without the reas
     employees: [worker, employee("ann", "dev")],
     departments,
     companies: [
-      { id: "alpha", name: "Alpha", clientEmails: ["boss@alpha.com"], defaultShiftHours: 8, workingDays: [1], holidays: [] },
-      { id: "beta", name: "Beta", clientEmails: ["boss@beta.com"], defaultShiftHours: 8, workingDays: [1], holidays: [] },
+      {
+        id: "alpha",
+        name: "Alpha",
+        clientEmails: ["boss@alpha.com"],
+        defaultShiftHours: 8,
+        workingDays: [1],
+        holidays: [],
+      },
+      {
+        id: "beta",
+        name: "Beta",
+        clientEmails: ["boss@beta.com"],
+        defaultShiftHours: 8,
+        workingDays: [1],
+        holidays: [],
+      },
     ],
     company: { name: "Ironbrij" },
     appUrl: "https://station.example.com",
@@ -162,7 +176,15 @@ test("a client that switched leave emails off is not told", async () => {
     employees: [worker],
     departments,
     companies: [
-      { id: "alpha", name: "Alpha", clientEmails: ["boss@alpha.com"], clientEmailTopics: { leave: false }, defaultShiftHours: 8, workingDays: [1], holidays: [] },
+      {
+        id: "alpha",
+        name: "Alpha",
+        clientEmails: ["boss@alpha.com"],
+        clientEmailTopics: { leave: false },
+        defaultShiftHours: 8,
+        workingDays: [1],
+        holidays: [],
+      },
     ],
     company: { name: "Ironbrij" },
     appUrl: "https://station.example.com",

@@ -1,6 +1,6 @@
-# SavyTimes Admin MCP Server
+# SavyTime Admin MCP Server
 
-The **Model Context Protocol (MCP)** server allows AI assistants (such as **Claude Desktop**, **ChatGPT**, or **Cursor**) to directly manage and edit **everything** in your SavyTimes system through conversational prompts.
+The **Model Context Protocol (MCP)** server allows AI assistants (such as **Claude Desktop**, **ChatGPT**, or **Cursor**) to directly manage and edit **everything** in your SavyTime system through conversational prompts.
 
 ---
 

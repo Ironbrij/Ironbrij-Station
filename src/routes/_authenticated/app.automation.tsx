@@ -32,7 +32,7 @@ import { getEmployeeTimezone, zonedDateKey } from "@/lib/attendance";
 export const Route = createFileRoute("/_authenticated/app/automation")({
   head: () => ({
     meta: [
-      { title: "Help & Feedback — SavyTimes" },
+      { title: "Help & Feedback — SavyTime" },
       {
         name: "description",
         content:

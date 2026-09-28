@@ -227,6 +227,20 @@ service cloud.firestore {
       );
     }
 
+    // A client's Work on Holiday / Do Not Work answer. The holiday email links
+    // to one by its random token, and the client answers without signing in,
+    // so it can be read by token and answered once. Only admins make or list them.
+    match /holidayResponses/{token} {
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        resource.data.decision == null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['decision', 'decidedAt']) &&
+        request.resource.data.decision in ['work', 'off'] &&
+        request.resource.data.decidedAt is string
+      );
+    }
+
     // Admin API Tokens
     match /adminApiTokens/{token} {
       allow read: if isAdmin();

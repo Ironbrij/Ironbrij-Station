@@ -132,7 +132,7 @@ type AttendanceRow = {
 export type { DailyIntervalRecord, PunchSessionRecord, ReportRow };
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({
-  head: () => ({ meta: [{ title: "Reports & Client Delivery — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "Reports & Client Delivery — SavyTime Admin" }] }),
   component: ReportsPage,
 });
 

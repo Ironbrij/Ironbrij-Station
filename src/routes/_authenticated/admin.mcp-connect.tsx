@@ -38,7 +38,7 @@ interface AdminApiToken {
 }
 
 export const Route = createFileRoute("/_authenticated/admin/mcp-connect")({
-  head: () => ({ meta: [{ title: "AI & MCP Integration — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "AI & MCP Integration — SavyTime Admin" }] }),
   component: McpConnectPage,
 });
 
@@ -51,7 +51,7 @@ function generateSecureToken(): string {
   return token;
 }
 
-const GPT_SYSTEM_INSTRUCTIONS = `You are the executive AI Admin Assistant for SavyTimes (https://station.savykids.com).
+const GPT_SYSTEM_INSTRUCTIONS = `You are the executive AI Admin Assistant for SavyTime (https://station.savykids.com).
 You have full real-time access via MCP / Actions to manage companies, departments, attendance, employees, punches, leaves, overtime approvals, SOD/EOD daily reports, and notices.
 
 ### 🏢 COMPANY & CLIENT MANAGEMENT
@@ -234,7 +234,7 @@ export function McpConnectPage() {
             <Bot className="h-6 w-6 text-primary" /> AI & MCP Integration
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Connect ChatGPT, Claude, Cursor, and AI agents directly to your SavyTimes admin account.
+            Connect ChatGPT, Claude, Cursor, and AI agents directly to your SavyTime admin account.
           </p>
         </div>
 
@@ -309,7 +309,7 @@ export function McpConnectPage() {
             <div>
               <h3 className="text-sm font-bold text-foreground">No Admin Key Generated Yet</h3>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                Generate an admin key to connect SavyTimes to ChatGPT or Claude.
+                Generate an admin key to connect SavyTime to ChatGPT or Claude.
               </p>
             </div>
             <button
@@ -383,7 +383,7 @@ export function McpConnectPage() {
           <div className="p-6 space-y-5 text-sm">
             <div>
               <h3 className="text-base font-bold text-foreground">
-                How to Connect SavyTimes into ChatGPT (Custom GPT)
+                How to Connect SavyTime into ChatGPT (Custom GPT)
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
                 Set up your Custom GPT in under 2 minutes with full OpenAPI Action support.
@@ -398,7 +398,7 @@ export function McpConnectPage() {
                 <p className="text-xs text-foreground leading-relaxed">
                   Go to <strong>ChatGPT &gt; Explore GPTs &gt; Create a GPT &gt; Configure</strong>.
                   <br />
-                  Set Name: <strong>SavyTimes Admin Assistant</strong>.
+                  Set Name: <strong>SavyTime Admin Assistant</strong>.
                 </p>
               </div>
 
@@ -641,7 +641,7 @@ export function McpConnectPage() {
                 How to Connect with Claude Desktop & Claude Code
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                Add the SavyTimes MCP Server config to Claude to let Claude auto-manage the
+                Add the SavyTime MCP Server config to Claude to let Claude auto-manage the
                 workspace.
               </p>
             </div>
@@ -652,7 +652,7 @@ export function McpConnectPage() {
                   <Terminal className="h-3.5 w-3.5" /> For Claude Code (1-Click Terminal Command)
                 </div>
                 <p className="text-xs text-muted-foreground font-medium">
-                  Run this command in your terminal to add SavyTimes MCP to Claude Code:
+                  Run this command in your terminal to add SavyTime MCP to Claude Code:
                 </p>
                 <div className="relative">
                   <pre className="p-3 pr-24 rounded-lg bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">

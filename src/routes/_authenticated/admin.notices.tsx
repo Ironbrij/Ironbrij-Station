@@ -53,7 +53,7 @@ import {
 } from "@/lib/live-data";
 
 export const Route = createFileRoute("/_authenticated/admin/notices")({
-  head: () => ({ meta: [{ title: "Notifications — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "Notifications — SavyTime Admin" }] }),
   component: NotificationsPage,
 });
 

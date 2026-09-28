@@ -35,6 +35,7 @@ import {
 import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import { describeWorkStates, employeeWorkStates } from "@/lib/holidays";
 import { MultiStateBadge } from "@/components/MultiStateBadge";
+import { Switch } from "@/components/ui/switch";
 import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -130,9 +131,9 @@ export function formatShiftRange(
 export const Route = createFileRoute("/_authenticated/admin/employees")({
   head: () => ({
     meta: [
-      { title: "Employees — SavyTimes Admin" },
+      { title: "Employees — SavyTime Admin" },
       { name: "description", content: "Manage your team." },
-      { property: "og:title", content: "Employees — SavyTimes Admin" },
+      { property: "og:title", content: "Employees — SavyTime Admin" },
       { property: "og:description", content: "Manage your team." },
     ],
   }),
@@ -1345,6 +1346,7 @@ const EDITABLE_EMPLOYEE_FIELDS = [
   "shiftEndTime",
   "workingDays",
   "annualLeaveCredits",
+  "noPublicHolidays",
 ] as const;
 
 export function PromoteModal({
@@ -1381,6 +1383,7 @@ export function PromoteModal({
   const [annualLeaveCredits, setAnnualLeaveCredits] = useState(
     typeof emp.annualLeaveCredits === "number" ? String(emp.annualLeaveCredits) : "",
   );
+  const [noPublicHolidays, setNoPublicHolidays] = useState(Boolean(emp.noPublicHolidays));
   const [busy, setBusy] = useState(false);
   const { user, company } = useAuth();
   // The profile as the form opened with it, to tell whether someone else saved
@@ -1443,6 +1446,7 @@ export function PromoteModal({
           workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
           // null clears credits, so a blank field stops tracking them.
           annualLeaveCredits: credits,
+          noPublicHolidays,
           updatedAt: new Date().toISOString(),
         }),
       });
@@ -1543,6 +1547,17 @@ export function PromoteModal({
             paid leave as Available Leave Credit. Leave blank to not track credits.
           </p>
         </div>
+        <label className="flex items-start justify-between gap-3 rounded-md border p-3 cursor-pointer">
+          <span>
+            <span className="block text-sm font-medium">Not entitled to public holidays</span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {noPublicHolidays
+                ? "On: they work as normal on public holidays, get no holiday emails, and clients are not asked about them."
+                : "Off: they get the public holidays of the companies they work for."}
+            </span>
+          </span>
+          <Switch checked={noPublicHolidays} onCheckedChange={setNoPublicHolidays} />
+        </label>
 
         <div>
           <label className="text-sm font-medium">Company Allocation</label>
@@ -1978,7 +1993,7 @@ function WorkStatesNote({ states }: { states: string[] }) {
         {states.length > 1 && <MultiStateBadge states={states} />}
       </div>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        Set by each company&apos;s state. A state holiday gives them the day off only for
+        Set by each company&apos;s state. A state holiday gives them the holiday only for
         companies in that state.
       </p>
     </div>

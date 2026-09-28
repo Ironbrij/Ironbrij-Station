@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { adminMasterKey } from "@/lib/admin-key";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
-import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import {
+  escapeEmailHtml,
+  formatEmailDate,
+  renderCompanyEmail,
+  renderEmailDetails,
+} from "@/lib/email-template";
 import { resolveAppUrl } from "@/lib/app-url";
 
 type LeaveNotificationInput = {
@@ -37,8 +42,7 @@ export const Route = createFileRoute("/api/leave-notification")({
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-        const masterKey =
-          adminMasterKey();
+        const masterKey = adminMasterKey();
         const isMasterKey = Boolean(token && token === masterKey);
 
         const candidateKeys = [
@@ -107,11 +111,13 @@ export const Route = createFileRoute("/api/leave-notification")({
           );
         }
 
-        const company = body.company || { name: "SavyTimes" };
-        const companyName = company.name?.trim() || "SavyTimes";
+        const company = body.company || { name: "SavyTime" };
+        const companyName = company.name?.trim() || "SavyTime";
         const managerEmail = process.env.LEAVE_MANAGER_EMAIL ?? "pabibek9@gmail.com";
         const dateRange =
-          body.dateFrom === body.dateTo ? body.dateFrom : `${body.dateFrom} to ${body.dateTo}`;
+          body.dateFrom === body.dateTo
+            ? formatEmailDate(body.dateFrom)
+            : `${formatEmailDate(body.dateFrom)} to ${formatEmailDate(body.dateTo)}`;
         const requestType =
           body.leaveType === "timed_break"
             ? `a break from ${body.startTime} to ${body.endTime}`
@@ -119,7 +125,7 @@ export const Route = createFileRoute("/api/leave-notification")({
               ? `${body.halfDayPeriod === "second_half" ? "second" : "first"}-half leave`
               : "full-day leave";
         const subject = `New ${requestType} request from ${body.employeeName}`;
-        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange} at ${companyName}.\n\nReason: ${body.reason}\n\nOpen SavyTimes to approve or reject this request.`;
+        const text = `${body.employeeName} (${body.employeeEmail}) is asking for ${requestType} on ${dateRange} at ${companyName}.\n\nReason: ${body.reason}\n\nOpen SavyTime to approve or reject this request.`;
         const appUrl = resolveAppUrl(request.url);
         const html = renderCompanyEmail({
           company,

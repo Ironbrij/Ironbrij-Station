@@ -52,7 +52,7 @@ interface Draft {
   items: { date: string; name: string }[];
   /** The country whose states or regions are offered. */
   country: HolidayCountry;
-  /** EVERYONE, or the AU states that get the day off. */
+  /** EVERYONE, or the AU states that get the holiday. */
   states: string[];
   /** Empty means every company. */
   companyIds: string[];
@@ -477,7 +477,7 @@ export function HolidayPlanner({
           onClick={() => openDraft([{ date: todayStr, name: "" }], [EVERYONE])}
           className="btn-lift shrink-0 rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground flex items-center gap-1.5"
         >
-          <Plus className="h-3.5 w-3.5" /> Add a day off
+          <Plus className="h-3.5 w-3.5" /> Add a holiday
         </button>
       </div>
 
@@ -537,7 +537,7 @@ export function HolidayPlanner({
                   key={dateKey}
                   type="button"
                   onClick={() => openDay(dateKey)}
-                  title={names.join("\n") || "Add a day off"}
+                  title={names.join("\n") || "Add a holiday"}
                   className={`relative aspect-square rounded-md text-xs font-semibold transition-colors ${
                     scheduled.length > 0
                       ? "bg-purple-600 text-white hover:bg-purple-700"
@@ -554,7 +554,7 @@ export function HolidayPlanner({
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-semibold text-muted-foreground">
             <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-purple-600" /> Day off
+              <span className="h-2.5 w-2.5 rounded-sm bg-purple-600" /> Holiday
             </span>
             <span className="flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Public holiday
@@ -562,7 +562,7 @@ export function HolidayPlanner({
           </div>
         </div>
 
-        {/* Scheduled days off, as events */}
+        {/* Scheduled holidays, as events */}
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-bold">
@@ -715,9 +715,9 @@ export function HolidayPlanner({
           {publicSource === "nager"
             ? "From Nager.Date (date.nager.at), including the days each state or region proclaims."
             : publicSource === "built-in"
-              ? "Nager.Date could not be reached, so these are worked out from each state's rules. Proclaimed days (like show days) are missing; add those with Add a day off."
+              ? "Nager.Date could not be reached, so these are worked out from each state's rules. Proclaimed days (like show days) are missing; add those with Add a holiday."
               : publicSource === "unavailable"
-                ? "Nager.Date could not be reached. Try again later, or add days with Add a day off."
+                ? "Nager.Date could not be reached. Try again later, or add days with Add a holiday."
                 : "Loading from Nager.Date…"}
         </p>
       </div>
@@ -727,7 +727,7 @@ export function HolidayPlanner({
           <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border bg-card p-5 shadow-lift space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-primary">
-                {draft.items.length === 1 ? "Add a day off" : `Add ${draft.items.length} holidays`}
+                {draft.items.length === 1 ? "Add a holiday" : `Add ${draft.items.length} holidays`}
               </h3>
               <button
                 type="button"
@@ -801,7 +801,7 @@ export function HolidayPlanner({
                     Which {countryInfo(draft.country).regionWord === "country"
                       ? "countries"
                       : `${countryInfo(draft.country).regionWord}s`}{" "}
-                    get the day off?
+                    get the holiday?
                   </div>
                   <div className="flex gap-1 rounded-md border bg-background p-0.5">
                     {HOLIDAY_COUNTRIES.map((item) => (
@@ -930,7 +930,7 @@ export function HolidayPlanner({
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Someone who works for two companies only gets the day off for the companies picked
+                Someone who works for two companies only gets the holiday for the companies picked
                 here. Work for any other company that day counts as a normal day.
               </p>
             </div>
@@ -1058,7 +1058,7 @@ function StateScope({
   if (states.includes(EVERYONE)) {
     return (
       <p className="text-[11px] text-muted-foreground">
-        Everyone in the companies below gets the day off, whatever state they are in.
+        Everyone in the companies below gets the holiday, whatever state they are in.
       </p>
     );
   }
@@ -1100,7 +1100,7 @@ function StateScope({
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 space-y-1">
           <p className="font-semibold text-amber-800 dark:text-amber-300">
             {split.length} {split.length === 1 ? "person works" : "people work"} in more than one
-            state. They get the day off for their {describeRegions(states)} work only and work as normal
+            state. They get the holiday for their {describeRegions(states)} work only and work as normal
             for their other companies:
           </p>
           <div className="flex flex-wrap gap-1.5">

@@ -8,6 +8,33 @@ export function escapeEmailHtml(value: string) {
   );
 }
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * "Monday, 5 October 2026": how every email writes a date. Built by hand, not
+ * with toLocaleDateString, whose comma after the weekday depends on the runtime.
+ */
+export function formatEmailDate(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  if (!year || !month || !day) return dateKey;
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return `${WEEKDAYS[weekday]}, ${day} ${MONTHS[month - 1]} ${year}`;
+}
+
 function safeLogoUrl(value?: string) {
   if (!value) return "";
   try {
@@ -43,6 +70,7 @@ export function renderCompanyEmail({
   cta,
   accentColor = "#2459a9",
   maxWidth = 640,
+  repliesWelcome = false,
 }: {
   company?: CompanyEmailBranding;
   preheader: string;
@@ -54,8 +82,10 @@ export function renderCompanyEmail({
   accentColor?: string;
   /** Card width in pixels; a wide table such as a report needs more than a letter. */
   maxWidth?: number;
+  /** The email asks for an answer, so the footer invites a reply instead of warning against one. */
+  repliesWelcome?: boolean;
 }) {
-  const companyName = company?.name?.trim() || "SavyTimes";
+  const companyName = company?.name?.trim() || "SavyTime";
   const logoUrl = safeLogoUrl(company?.logoUrl?.trim());
   const initial = companyName.charAt(0).toUpperCase() || "S";
   const safeCompanyName = escapeEmailHtml(companyName);
@@ -77,7 +107,7 @@ export function renderCompanyEmail({
         <tr><td style="padding: 20px 24px; border-bottom: 1px solid #e7edf4;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
             <td width="60" valign="middle">${logoHtml}</td>
-            <td valign="middle"><div style="font-size: 17px; line-height: 22px; font-weight: 800; color: #16283f;">${safeCompanyName}</div><div style="margin-top: 2px; font-size: 11px; line-height: 16px; color: #718096;">Powered by SavyTimes</div></td>
+            <td valign="middle"><div style="font-size: 17px; line-height: 22px; font-weight: 800; color: #16283f;">${safeCompanyName}</div><div style="margin-top: 2px; font-size: 11px; line-height: 16px; color: #718096;">Powered by SavyTime</div></td>
             <td align="right" valign="middle"><span style="display: inline-block; padding: 6px 10px; border-radius: 999px; background-color: #edf4ff; color: ${accentColor}; font-size: 10px; line-height: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">${escapeEmailHtml(label)}</span></td>
           </tr></table>
         </td></tr>
@@ -87,7 +117,7 @@ export function renderCompanyEmail({
         </td></tr>
         <tr><td style="padding: 28px;">${contentHtml}${ctaHtml}</td></tr>
         <tr><td style="padding: 18px 28px; background-color: #f8fafc; border-top: 1px solid #e7edf4; color: #718096; font-size: 11px; line-height: 17px;">
-          This automated email was sent for <strong style="color: #526477;">${safeCompanyName}</strong> through SavyTimes. Please do not reply to this message unless your organisation has configured a reply address.
+          This automated email was sent for <strong style="color: #526477;">${safeCompanyName}</strong> through SavyTime. ${repliesWelcome ? "Simply reply to this email to answer." : "Please do not reply to this message unless your organisation has configured a reply address."}
         </td></tr>
       </table>
     </td></tr>

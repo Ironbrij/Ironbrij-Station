@@ -55,7 +55,7 @@ import {
 import { formatShiftRange } from "./admin.employees";
 
 export const Route = createFileRoute("/_authenticated/admin/late")({
-  head: () => ({ meta: [{ title: "Late Logs — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "Late Logs — SavyTime Admin" }] }),
   component: LateArrivalsPage,
 });
 

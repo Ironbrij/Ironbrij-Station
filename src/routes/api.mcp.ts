@@ -16,7 +16,7 @@ const MCP_TOOLS = [
   {
     name: "add_employee",
     description:
-      "Add a single employee or Virtual Assistant (V.A.) to SavyTimes with shift schedule, company, and department. Can also accept a list of employees in 'employees' parameter.",
+      "Add a single employee or Virtual Assistant (V.A.) to SavyTime with shift schedule, company, and department. Can also accept a list of employees in 'employees' parameter.",
     inputSchema: {
       type: "object",
       properties: {
@@ -50,7 +50,7 @@ const MCP_TOOLS = [
   },
   {
     name: "batch_add_employees",
-    description: "Add multiple employees / Virtual Assistants to SavyTimes in a single batch call.",
+    description: "Add multiple employees / Virtual Assistants to SavyTime in a single batch call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -78,7 +78,7 @@ const MCP_TOOLS = [
   {
     name: "list_employees",
     description:
-      "List all employees and Virtual Assistants in SavyTimes with their details and shift hours.",
+      "List all employees and Virtual Assistants in SavyTime with their details and shift hours.",
     inputSchema: {
       type: "object",
       properties: {
@@ -105,13 +105,13 @@ const MCP_TOOLS = [
   },
   {
     name: "list_companies",
-    description: "List all registered client companies in SavyTimes.",
+    description: "List all registered client companies in SavyTime.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "create_company",
     description:
-      "Create a new client company in SavyTimes with complete configuration: timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments.",
+      "Create a new client company in SavyTime with complete configuration: timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments.",
     inputSchema: {
       type: "object",
       properties: {
@@ -175,7 +175,7 @@ const MCP_TOOLS = [
   },
   {
     name: "batch_create_companies",
-    description: "Create multiple client company profiles in SavyTimes in a single batch call.",
+    description: "Create multiple client company profiles in SavyTime in a single batch call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -238,7 +238,7 @@ const MCP_TOOLS = [
   },
   {
     name: "rename_company",
-    description: "Rename an existing company in SavyTimes.",
+    description: "Rename an existing company in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -254,7 +254,7 @@ const MCP_TOOLS = [
   },
   {
     name: "archive_company",
-    description: "Archive a company in SavyTimes to hide it from active dropdowns.",
+    description: "Archive a company in SavyTime to hide it from active dropdowns.",
     inputSchema: {
       type: "object",
       properties: {
@@ -266,7 +266,7 @@ const MCP_TOOLS = [
   },
   {
     name: "unarchive_company",
-    description: "Unarchive and restore a previously archived company in SavyTimes.",
+    description: "Unarchive and restore a previously archived company in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -278,7 +278,7 @@ const MCP_TOOLS = [
   },
   {
     name: "create_department",
-    description: "Create a new department under a company in SavyTimes.",
+    description: "Create a new department under a company in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -292,7 +292,7 @@ const MCP_TOOLS = [
   },
   {
     name: "list_departments",
-    description: "List all departments in SavyTimes, optionally filtered by company ID.",
+    description: "List all departments in SavyTime, optionally filtered by company ID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -302,7 +302,7 @@ const MCP_TOOLS = [
   },
   {
     name: "send_employee_invite",
-    description: "Send or resend email invitation link to an employee / V.A. to join SavyTimes.",
+    description: "Send or resend email invitation link to an employee / V.A. to join SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -314,7 +314,7 @@ const MCP_TOOLS = [
   },
   {
     name: "delete_employee",
-    description: "Remove or deactivate an employee from SavyTimes.",
+    description: "Remove or deactivate an employee from SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -325,7 +325,7 @@ const MCP_TOOLS = [
   },
   {
     name: "create_notice",
-    description: "Post a team announcement / notice in SavyTimes.",
+    description: "Post a team announcement / notice in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -697,7 +697,7 @@ export const Route = createFileRoute("/api/mcp")({
       GET: async () => {
         return Response.json({
           jsonrpc: "2.0",
-          server: "SavyTimes Remote MCP Server",
+          server: "SavyTime Remote MCP Server",
           version: "1.0.0",
           protocol: "2024-11-05",
           transport: "HTTP JSON-RPC",
@@ -711,7 +711,7 @@ export const Route = createFileRoute("/api/mcp")({
               jsonrpc: "2.0",
               error: {
                 code: -32000,
-                message: "Unauthorized: Invalid or missing SavyTimes Admin API Token",
+                message: "Unauthorized: Invalid or missing SavyTime Admin API Token",
               },
             },
             { status: 401 },

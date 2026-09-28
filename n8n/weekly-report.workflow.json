@@ -1,5 +1,5 @@
 {
-  "name": "SavyTimes - Weekly Monday to Friday Report",
+  "name": "SavyTime - Weekly Monday to Friday Report",
   "nodes": [
     {
       "parameters": {
@@ -49,7 +49,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [220, 0],
-      "notes": "The only node to edit. adminKey must match ADMIN_API_KEY in the SavyTimes deployment. weeksAgo 0 is the week that just finished; 1 replays the week before."
+      "notes": "The only node to edit. adminKey must match ADMIN_API_KEY in the SavyTime deployment. weeksAgo 0 is the week that just finished; 1 replays the week before."
     },
     {
       "parameters": {
@@ -140,7 +140,7 @@
         "message": "={{ $json.html }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "SavyTimes"
+          "senderName": "SavyTime"
         }
       },
       "id": "weekly-report-notify",

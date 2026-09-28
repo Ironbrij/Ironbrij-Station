@@ -134,8 +134,8 @@ export const Route = createFileRoute("/api/invite-notification")({
           process.env.N8N_INVITE_WEBHOOK_URL ||
           "https://vmi3182726.contaboserver.net/webhook/time-station-employee-invite";
 
-        const company = body.company || { name: body.companyName?.trim() || "SavyTimes" };
-        const companyName = company.name?.trim() || "SavyTimes";
+        const company = body.company || { name: body.companyName?.trim() || "SavyTime" };
+        const companyName = company.name?.trim() || "SavyTime";
         const appUrl = resolveAppUrl(request.url);
         const inviteUrl = `${appUrl}/invite/${body.inviteToken}`;
         const subject = `You're invited to ${companyName}`;
@@ -143,7 +143,7 @@ export const Route = createFileRoute("/api/invite-notification")({
           body.shiftStartTime && body.shiftEndTime
             ? `${body.shiftStartTime}–${body.shiftEndTime}${body.shiftTimezone ? ` (${body.shiftTimezone})` : ""}`
             : "Your manager will confirm your shift";
-        const text = `Hi ${body.employeeName},\n\nYou have been invited to join ${companyName} on SavyTimes.\n\nActivate your account: ${inviteUrl}\n\nRole: ${body.jobTitle || "Employee"}\nDepartment: ${body.departmentName || "Not assigned"}\nShift: ${shift}`;
+        const text = `Hi ${body.employeeName},\n\nYou have been invited to join ${companyName} on SavyTime.\n\nActivate your account: ${inviteUrl}\n\nRole: ${body.jobTitle || "Employee"}\nDepartment: ${body.departmentName || "Not assigned"}\nShift: ${shift}`;
         const html = renderCompanyEmail({
           company,
           preheader: `Your invitation to join ${companyName} is ready.`,
@@ -151,7 +151,7 @@ export const Route = createFileRoute("/api/invite-notification")({
           title: `Welcome to ${companyName}`,
           introHtml: `Hi <strong style="color: #ffffff;">${escapeEmailHtml(body.employeeName)}</strong>. Your employee profile is ready to activate.`,
           contentHtml: `
-            <p style="margin: 0 0 22px; color: #526477; font-size: 15px; line-height: 24px;">Use the secure activation link below to finish setting up your SavyTimes account.</p>
+            <p style="margin: 0 0 22px; color: #526477; font-size: 15px; line-height: 24px;">Use the secure activation link below to finish setting up your SavyTime account.</p>
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
               [
                 { label: "Role", value: body.jobTitle || "Employee" },
@@ -189,7 +189,7 @@ export const Route = createFileRoute("/api/invite-notification")({
                 createdAt: new Date().toISOString(),
               },
               email: {
-                from: process.env.INVITE_FROM_EMAIL || "SavyTimes <onboarding@example.com>",
+                from: process.env.INVITE_FROM_EMAIL || "SavyTime <onboarding@example.com>",
                 to: body.employeeEmail,
                 subject,
                 text,

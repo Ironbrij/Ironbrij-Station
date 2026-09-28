@@ -21,7 +21,7 @@ import {
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
     meta: [
-      { title: "Attendance - SavyTimes Admin" },
+      { title: "Attendance - SavyTime Admin" },
       {
         name: "description",
         content: "A simple live attendance log with punch times, hours, and late arrivals.",

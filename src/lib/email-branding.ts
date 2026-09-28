@@ -10,7 +10,7 @@ export function companyEmailBranding(
   company: Company | null | undefined,
   fallbackId?: string,
 ): CompanyEmailBranding {
-  const name = company?.name?.trim() || "SavyTimes";
+  const name = company?.name?.trim() || "SavyTime";
   const logoUrl = company?.logoUrl?.trim();
 
   return {

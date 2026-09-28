@@ -105,9 +105,9 @@ import { LunchBreakCard } from "@/components/lunch/LunchBreakCard";
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
     meta: [
-      { title: "Web Punch — SavyTimes" },
+      { title: "Web Punch — SavyTime" },
       { name: "description", content: "Punch in and out for your shift." },
-      { property: "og:title", content: "Web Punch — SavyTimes" },
+      { property: "og:title", content: "Web Punch — SavyTime" },
       { property: "og:description", content: "Punch in and out for your shift." },
     ],
   }),

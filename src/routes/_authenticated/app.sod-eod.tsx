@@ -52,7 +52,7 @@ import { resolveMentionRecipients, sanitizeFirestoreObject } from "@/lib/mention
 import { getEmployeeCompanyIds } from "@/lib/company-context";
 
 export const Route = createFileRoute("/_authenticated/app/sod-eod")({
-  head: () => ({ meta: [{ title: "SOD & EOD Reports - SavyTimes" }] }),
+  head: () => ({ meta: [{ title: "SOD & EOD Reports - SavyTime" }] }),
   component: EmployeeSodEodPage,
 });
 

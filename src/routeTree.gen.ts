@@ -16,7 +16,9 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ApiAutoPunchOutNotificationRouteImport } from './routes/api.auto-punch-out-notification'
 import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation-status'
+import { Route as ApiDstNotificationRouteImport } from './routes/api.dst-notification'
 import { Route as ApiHolidayNotificationRouteImport } from './routes/api.holiday-notification'
+import { Route as ApiHolidayResponseRouteImport } from './routes/api.holiday-response'
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
 import { Route as ApiLeaveDecisionNotificationRouteImport } from './routes/api.leave-decision-notification'
 import { Route as ApiLeaveNotificationRouteImport } from './routes/api.leave-notification'
@@ -25,9 +27,11 @@ import { Route as ApiLunchBreakNotificationRouteImport } from './routes/api.lunc
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
 import { Route as ApiMcpActionRouteImport } from './routes/api.mcp-action'
 import { Route as ApiPunchOutReminderRouteImport } from './routes/api.punch-out-reminder'
+import { Route as ApiScheduleChangeNotificationRouteImport } from './routes/api.schedule-change-notification'
 import { Route as ApiSendReportRouteImport } from './routes/api.send-report'
 import { Route as ApiSodMentionNotificationRouteImport } from './routes/api.sod-mention-notification'
 import { Route as ApiWeeklyReportRouteImport } from './routes/api.weekly-report'
+import { Route as HolidayResponseTokenRouteImport } from './routes/holiday-response.$token'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminCompanyRouteImport } from './routes/_authenticated/admin.company'
@@ -85,9 +89,19 @@ const ApiAutomationStatusRoute = ApiAutomationStatusRouteImport.update({
   path: '/api/automation-status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDstNotificationRoute = ApiDstNotificationRouteImport.update({
+  id: '/api/dst-notification',
+  path: '/api/dst-notification',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiHolidayNotificationRoute = ApiHolidayNotificationRouteImport.update({
   id: '/api/holiday-notification',
   path: '/api/holiday-notification',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHolidayResponseRoute = ApiHolidayResponseRouteImport.update({
+  id: '/api/holiday-response',
+  path: '/api/holiday-response',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiInviteNotificationRoute = ApiInviteNotificationRouteImport.update({
@@ -133,6 +147,12 @@ const ApiPunchOutReminderRoute = ApiPunchOutReminderRouteImport.update({
   path: '/api/punch-out-reminder',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiScheduleChangeNotificationRoute =
+  ApiScheduleChangeNotificationRouteImport.update({
+    id: '/api/schedule-change-notification',
+    path: '/api/schedule-change-notification',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSendReportRoute = ApiSendReportRouteImport.update({
   id: '/api/send-report',
   path: '/api/send-report',
@@ -147,6 +167,11 @@ const ApiSodMentionNotificationRoute =
 const ApiWeeklyReportRoute = ApiWeeklyReportRouteImport.update({
   id: '/api/weekly-report',
   path: '/api/weekly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HolidayResponseTokenRoute = HolidayResponseTokenRouteImport.update({
+  id: '/holiday-response/$token',
+  path: '/holiday-response/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -274,7 +299,9 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
+  '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -283,9 +310,11 @@ export interface FileRoutesByFullPath {
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/schedule-change-notification': typeof ApiScheduleChangeNotificationRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -314,7 +343,9 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
+  '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -323,9 +354,11 @@ export interface FileRoutesByTo {
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/schedule-change-notification': typeof ApiScheduleChangeNotificationRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -357,7 +390,9 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
+  '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
   '/api/leave-decision-notification': typeof ApiLeaveDecisionNotificationRoute
   '/api/leave-notification': typeof ApiLeaveNotificationRoute
@@ -366,9 +401,11 @@ export interface FileRoutesById {
   '/api/mcp': typeof ApiMcpRoute
   '/api/mcp-action': typeof ApiMcpActionRoute
   '/api/punch-out-reminder': typeof ApiPunchOutReminderRoute
+  '/api/schedule-change-notification': typeof ApiScheduleChangeNotificationRoute
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/admin/company': typeof AuthenticatedAdminCompanyRoute
   '/_authenticated/admin/departments': typeof AuthenticatedAdminDepartmentsRoute
@@ -400,7 +437,9 @@ export interface FileRouteTypes {
     | '/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/dst-notification'
     | '/api/holiday-notification'
+    | '/api/holiday-response'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -409,9 +448,11 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/schedule-change-notification'
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/holiday-response/$token'
     | '/invite/$token'
     | '/admin/company'
     | '/admin/departments'
@@ -440,7 +481,9 @@ export interface FileRouteTypes {
     | '/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/dst-notification'
     | '/api/holiday-notification'
+    | '/api/holiday-response'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -449,9 +492,11 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/schedule-change-notification'
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/holiday-response/$token'
     | '/invite/$token'
     | '/admin/company'
     | '/admin/departments'
@@ -482,7 +527,9 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/dst-notification'
     | '/api/holiday-notification'
+    | '/api/holiday-response'
     | '/api/invite-notification'
     | '/api/leave-decision-notification'
     | '/api/leave-notification'
@@ -491,9 +538,11 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/mcp-action'
     | '/api/punch-out-reminder'
+    | '/api/schedule-change-notification'
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/holiday-response/$token'
     | '/invite/$token'
     | '/_authenticated/admin/company'
     | '/_authenticated/admin/departments'
@@ -523,7 +572,9 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiAutoPunchOutNotificationRoute: typeof ApiAutoPunchOutNotificationRoute
   ApiAutomationStatusRoute: typeof ApiAutomationStatusRoute
+  ApiDstNotificationRoute: typeof ApiDstNotificationRoute
   ApiHolidayNotificationRoute: typeof ApiHolidayNotificationRoute
+  ApiHolidayResponseRoute: typeof ApiHolidayResponseRoute
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
   ApiLeaveDecisionNotificationRoute: typeof ApiLeaveDecisionNotificationRoute
   ApiLeaveNotificationRoute: typeof ApiLeaveNotificationRoute
@@ -532,9 +583,11 @@ export interface RootRouteChildren {
   ApiMcpRoute: typeof ApiMcpRoute
   ApiMcpActionRoute: typeof ApiMcpActionRoute
   ApiPunchOutReminderRoute: typeof ApiPunchOutReminderRoute
+  ApiScheduleChangeNotificationRoute: typeof ApiScheduleChangeNotificationRoute
   ApiSendReportRoute: typeof ApiSendReportRoute
   ApiSodMentionNotificationRoute: typeof ApiSodMentionNotificationRoute
   ApiWeeklyReportRoute: typeof ApiWeeklyReportRoute
+  HolidayResponseTokenRoute: typeof HolidayResponseTokenRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
 
@@ -589,11 +642,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutomationStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/dst-notification': {
+      id: '/api/dst-notification'
+      path: '/api/dst-notification'
+      fullPath: '/api/dst-notification'
+      preLoaderRoute: typeof ApiDstNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/holiday-notification': {
       id: '/api/holiday-notification'
       path: '/api/holiday-notification'
       fullPath: '/api/holiday-notification'
       preLoaderRoute: typeof ApiHolidayNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/holiday-response': {
+      id: '/api/holiday-response'
+      path: '/api/holiday-response'
+      fullPath: '/api/holiday-response'
+      preLoaderRoute: typeof ApiHolidayResponseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/invite-notification': {
@@ -652,6 +719,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPunchOutReminderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/schedule-change-notification': {
+      id: '/api/schedule-change-notification'
+      path: '/api/schedule-change-notification'
+      fullPath: '/api/schedule-change-notification'
+      preLoaderRoute: typeof ApiScheduleChangeNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/send-report': {
       id: '/api/send-report'
       path: '/api/send-report'
@@ -671,6 +745,13 @@ declare module '@tanstack/react-router' {
       path: '/api/weekly-report'
       fullPath: '/api/weekly-report'
       preLoaderRoute: typeof ApiWeeklyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/holiday-response/$token': {
+      id: '/holiday-response/$token'
+      path: '/holiday-response/$token'
+      fullPath: '/holiday-response/$token'
+      preLoaderRoute: typeof HolidayResponseTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite/$token': {
@@ -914,7 +995,9 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiAutoPunchOutNotificationRoute: ApiAutoPunchOutNotificationRoute,
   ApiAutomationStatusRoute: ApiAutomationStatusRoute,
+  ApiDstNotificationRoute: ApiDstNotificationRoute,
   ApiHolidayNotificationRoute: ApiHolidayNotificationRoute,
+  ApiHolidayResponseRoute: ApiHolidayResponseRoute,
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
   ApiLeaveDecisionNotificationRoute: ApiLeaveDecisionNotificationRoute,
   ApiLeaveNotificationRoute: ApiLeaveNotificationRoute,
@@ -923,9 +1006,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMcpRoute: ApiMcpRoute,
   ApiMcpActionRoute: ApiMcpActionRoute,
   ApiPunchOutReminderRoute: ApiPunchOutReminderRoute,
+  ApiScheduleChangeNotificationRoute: ApiScheduleChangeNotificationRoute,
   ApiSendReportRoute: ApiSendReportRoute,
   ApiSodMentionNotificationRoute: ApiSodMentionNotificationRoute,
   ApiWeeklyReportRoute: ApiWeeklyReportRoute,
+  HolidayResponseTokenRoute: HolidayResponseTokenRoute,
   InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport

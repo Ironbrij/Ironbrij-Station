@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SavyTimes Admin Model Context Protocol (MCP) Server
+ * SavyTime Admin Model Context Protocol (MCP) Server
  * Enables Claude, ChatGPT, Cursor, and AI agents to manage employees, companies,
  * shifts, punches, leaves, overtime approvals, and dispatch reports automatically.
  */
@@ -80,7 +80,7 @@ const TOOLS = [
   {
     name: "add_employee",
     description:
-      "Add a single employee or Virtual Assistant (V.A.) to SavyTimes with their shift schedule, company membership, country, and department. Can also accept a list in 'employees'.",
+      "Add a single employee or Virtual Assistant (V.A.) to SavyTime with their shift schedule, company membership, country, and department. Can also accept a list in 'employees'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,7 +122,7 @@ const TOOLS = [
   },
   {
     name: "batch_add_employees",
-    description: "Add multiple employees / Virtual Assistants to SavyTimes in a single batch call.",
+    description: "Add multiple employees / Virtual Assistants to SavyTime in a single batch call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -149,7 +149,7 @@ const TOOLS = [
   },
   {
     name: "list_employees",
-    description: "List all employees and Virtual Assistants in SavyTimes with their details.",
+    description: "List all employees and Virtual Assistants in SavyTime with their details.",
     inputSchema: {
       type: "object",
       properties: {
@@ -190,7 +190,7 @@ const TOOLS = [
   },
   {
     name: "delete_employee",
-    description: "Delete or deactivate an employee from SavyTimes.",
+    description: "Delete or deactivate an employee from SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -203,13 +203,13 @@ const TOOLS = [
   // 2. Company & Client Management
   {
     name: "list_companies",
-    description: "List all registered client companies in SavyTimes.",
+    description: "List all registered client companies in SavyTime.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "create_company",
     description:
-      "Create a new client company profile in SavyTimes with full configuration (timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments).",
+      "Create a new client company profile in SavyTime with full configuration (timezone, working days, default shift hours, break allowance, max daily breaks, grace minutes, holiday rules, and optional initial departments).",
     inputSchema: {
       type: "object",
       properties: {
@@ -269,7 +269,7 @@ const TOOLS = [
   },
   {
     name: "batch_create_companies",
-    description: "Create multiple client company profiles in SavyTimes in a single batch call.",
+    description: "Create multiple client company profiles in SavyTime in a single batch call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -329,7 +329,7 @@ const TOOLS = [
   },
   {
     name: "rename_company",
-    description: "Rename an existing company in SavyTimes.",
+    description: "Rename an existing company in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -345,7 +345,7 @@ const TOOLS = [
   },
   {
     name: "archive_company",
-    description: "Archive a company in SavyTimes to hide it from active dropdowns.",
+    description: "Archive a company in SavyTime to hide it from active dropdowns.",
     inputSchema: {
       type: "object",
       properties: {
@@ -357,7 +357,7 @@ const TOOLS = [
   },
   {
     name: "unarchive_company",
-    description: "Unarchive and restore a previously archived company in SavyTimes.",
+    description: "Unarchive and restore a previously archived company in SavyTime.",
     inputSchema: {
       type: "object",
       properties: {
@@ -623,7 +623,7 @@ async function executeTool(name, args) {
     const created = await createSingleEmployee(args);
     return {
       success: true,
-      message: `Employee '${created.name}' successfully added to SavyTimes!`,
+      message: `Employee '${created.name}' successfully added to SavyTime!`,
       employeeId: created.id,
       inviteToken: created.inviteToken,
       data: created.employee,

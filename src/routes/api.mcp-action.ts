@@ -111,17 +111,17 @@ function getOpenApiSchema(appUrl: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "SavyTimes Admin API",
+      title: "SavyTime Admin API",
       description:
-        "Full admin API for SavyTimes (https://station.savykids.com). Manage employees, create companies, send invites, fix punch-outs, approve leaves, manage departments, and post notices.",
+        "Full admin API for SavyTime (https://station.savykids.com). Manage employees, create companies, send invites, fix punch-outs, approve leaves, manage departments, and post notices.",
       version: "1.3.0",
     },
     servers: [{ url: appUrl }],
     paths: {
       "/api/mcp-action": {
         post: {
-          summary: "Execute SavyTimes Admin Tool Action",
-          description: "Execute administrative actions across all modules of SavyTimes.",
+          summary: "Execute SavyTime Admin Tool Action",
+          description: "Execute administrative actions across all modules of SavyTime.",
           operationId: "executeAdminAction",
           requestBody: {
             required: true,
@@ -394,7 +394,7 @@ function getOpenApiSchema(appUrl: string) {
         BearerAuth: {
           type: "http",
           scheme: "bearer",
-          description: "SavyTimes Admin API Token (st_adm_...)",
+          description: "SavyTime Admin API Token (st_adm_...)",
         },
       },
     },
@@ -657,7 +657,7 @@ export const Route = createFileRoute("/api/mcp-action")({
 
         return Response.json({
           ok: true,
-          service: "SavyTimes Admin AI / MCP Action Endpoint",
+          service: "SavyTime Admin AI / MCP Action Endpoint",
           openapiUrl: `${appUrl}/api/mcp-action?openapi=true`,
         });
       },
@@ -866,7 +866,7 @@ export const Route = createFileRoute("/api/mcp-action")({
 
             return Response.json({
               ok: true,
-              result: { message: `Employee '${targetId}' removed from SavyTimes.` },
+              result: { message: `Employee '${targetId}' removed from SavyTime.` },
             });
           }
 

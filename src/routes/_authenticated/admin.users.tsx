@@ -23,12 +23,12 @@ import { calculateShiftEndTime, calculateShiftMinutes } from "@/lib/company-cont
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({
     meta: [
-      { title: "Registered Users — SavyTimes Admin" },
+      { title: "Registered Users — SavyTime Admin" },
       {
         name: "description",
         content: "View all registered users, grant owner status, and assign employee roles.",
       },
-      { property: "og:title", content: "Registered Users — SavyTimes Admin" },
+      { property: "og:title", content: "Registered Users — SavyTime Admin" },
       {
         property: "og:description",
         content: "View all registered users, grant owner status, and assign employee roles.",

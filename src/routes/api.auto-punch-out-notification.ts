@@ -113,7 +113,7 @@ export const Route = createFileRoute("/api/auto-punch-out-notification")({
           );
         }
 
-        const company = body.company || { name: "SavyTimes" };
+        const company = body.company || { name: "SavyTime" };
         const formattedShiftEnd = new Intl.DateTimeFormat("en-US", {
           timeZone: body.shiftTimezone || "UTC",
           hour: "numeric",
@@ -121,18 +121,18 @@ export const Route = createFileRoute("/api/auto-punch-out-notification")({
         }).format(new Date(body.autoPunchOutAt));
 
         const subject = `Auto Punch-Out Notice: We think you forgot to punch out`;
-        const text = `Hi ${body.employeeName}, our system noticed you remained punched in well past your scheduled shift at ${company.name || "SavyTimes"}. To keep your attendance records accurate, you were automatically punched out at ${formattedShiftEnd}. If you worked overtime or need adjustments, please contact your administrator.`;
+        const text = `Hi ${body.employeeName}, our system noticed you remained punched in well past your scheduled shift at ${company.name || "SavyTime"}. To keep your attendance records accurate, you were automatically punched out at ${formattedShiftEnd}. If you worked overtime or need adjustments, please contact your administrator.`;
         const html = renderCompanyEmail({
           company,
           preheader: "We think you forgot to punch out — Auto Punch-Out Notice.",
           label: "Auto Punch-Out",
           title: "We think you forgot to punch out",
-          introHtml: `Hi <strong style="color: #ffffff;">${escapeEmailHtml(body.employeeName)}</strong>, our system noticed you remained punched in well past your scheduled shift at ${company.name || "SavyTimes"}. To keep your records accurate, you were automatically punched out at your scheduled shift end.`,
+          introHtml: `Hi <strong style="color: #ffffff;">${escapeEmailHtml(body.employeeName)}</strong>, our system noticed you remained punched in well past your scheduled shift at ${company.name || "SavyTime"}. To keep your records accurate, you were automatically punched out at your scheduled shift end.`,
           contentHtml: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
             [
               { label: "Attendance Date", value: body.attendanceDate },
               { label: "Auto Clock-Out Time", value: formattedShiftEnd },
-              { label: "Company", value: company.name || "SavyTimes" },
+              { label: "Company", value: company.name || "SavyTime" },
               {
                 label: "Note",
                 value: "Overtime worked can be reviewed by your admin in the Overtime tab.",
