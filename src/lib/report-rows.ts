@@ -22,6 +22,7 @@ import {
   getEmployeeApprovedLeaveForDate,
   getEmployeeHoliday,
   getEmployeeHolidayDates,
+  getEmployeeShiftWindow,
   getLeaveLabel,
   getShiftTimezone,
   zonedDateKey,
@@ -139,6 +140,41 @@ export function describeLeave(leave: LeaveRequest): string {
   const payment = leave.paymentStatus === "unpaid" ? " (unpaid)" : "";
   const reason = leave.reason?.trim();
   return `${category}${payment}${reason ? ` - ${reason}` : ""}`;
+}
+
+/**
+ * The shift someone was due to work on a date, as the report shows it:
+ * "09:00–17:00", or "04:00–07:00, 13:00–17:00" for split shifts. "Not set" when
+ * their profile has no times, rather than a made-up nine to five.
+ */
+export function describeScheduledShift(employee: Employee, date: string): string {
+  const hasTimes =
+    employee.isMultipleShift && Array.isArray(employee.shifts) && employee.shifts.length > 0
+      ? true
+      : Boolean(employee.shiftStartTime && employee.shiftEndTime);
+  if (!hasTimes) return "Not set";
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  const slots = getShiftIntervals(employee).filter(
+    (slot) =>
+      !Array.isArray(slot.workingDays) ||
+      slot.workingDays.length === 0 ||
+      slot.workingDays.map(Number).includes(weekday),
+  );
+  return slots.length > 0
+    ? slots.map((slot) => `${slot.startTime}–${slot.endTime}`).join(", ")
+    : "Not set";
+}
+
+/** The schedule each of a day's shifts was punched under, else the profile's. */
+function describeDaySchedule(employee: Employee, date: string, sessions: AttendanceSession[]) {
+  const punched = [
+    ...new Set(
+      sessions
+        .filter((session) => session.start.type === "in" && session.start.scheduledShiftStart)
+        .map((session) => `${session.scoped.shiftStartTime}–${session.scoped.shiftEndTime}`),
+    ),
+  ];
+  return punched.length > 0 ? punched.join(", ") : describeScheduledShift(employee, date);
 }
 
 export function getDayOfWeekStr(dateStr: string): string {
@@ -265,8 +301,15 @@ export function buildReportRows({
         ? zonedDateKey(new Date(rawEmployee.createdAt), shiftTimezone)
         : "";
       const lastCountedDay = to < todayKey ? to : todayKey;
-      for (let date = from; date <= lastCountedDay; date = addCalendarDay(date)) {
+      // Today is only missed once today's shift is over; before then nobody is absent yet.
+      const shiftNow = getEmployeeShiftWindow(employee, now);
+      const todayStillOpen = shiftNow.dateKey === todayKey && now < shiftNow.end;
+      // Someone who has left, or never accepted their invite, cannot miss a day.
+      const expectedToWork =
+        rawEmployee.status !== "inactive" && rawEmployee.inviteStatus === "accepted";
+      for (let date = from; expectedToWork && date <= lastCountedDay; date = addCalendarDay(date)) {
         if (dayPunchGroups.has(date) || (joinedKey && date < joinedKey)) continue;
+        if (date === todayKey && todayStillOpen) continue;
         if (!scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay())) continue;
         dayPunchGroups.add(date);
       }
@@ -283,6 +326,8 @@ export function buildReportRows({
       let unpaidLeaveHours = 0;
       // One dated line per exception, for the remarks.
       const absentLines: string[] = [];
+      const missingOutLines: string[] = [];
+      const stillWorkingLines: string[] = [];
       const lateLines: string[] = [];
       const paidLeaveLines: string[] = [];
       const unpaidLeaveLines: string[] = [];
@@ -294,7 +339,10 @@ export function buildReportRows({
 
       for (const date of sortedDates) {
         const daySessions = sessionsByDate.get(date) || [];
-        const firstIn = daySessions.find((session) => session.start.type === "in")?.start;
+        const worked = daySessions.length > 0;
+        const firstIn = (
+          daySessions.find((session) => session.start.type === "in") || daySessions[0]
+        )?.start;
         const lastOut = [...daySessions]
           .reverse()
           .find((session) => session.end?.type === "out")?.end;
@@ -310,9 +358,10 @@ export function buildReportRows({
         const isScheduledDay = effectiveWorkingDays.includes(shiftWeekday) && !holiday;
         const isOffShiftDay = !isScheduledDay;
 
-        if (firstIn) {
+        const notOverYet = date === todayKey && todayStillOpen;
+        if (worked) {
           workedDaysCount++;
-        } else if (isScheduledDay && !approvedLeave) {
+        } else if (isScheduledDay && !approvedLeave && !notOverYet && expectedToWork) {
           absentDaysCount++;
           absentLines.push(`${formatShortDate(date)} No punch`);
         }
@@ -398,6 +447,9 @@ export function buildReportRows({
         }
 
         const isMissingPunchOut = daySessions.some((session) => session.unresolved);
+        if (isMissingPunchOut) missingOutLines.push(`${formatShortDate(date)} No clock-out`);
+        const isInProgress = daySessions.some((session) => session.active);
+        if (isInProgress) stillWorkingLines.push(`${formatShortDate(date)} Still clocked in`);
         const isAutoPunchOut = Boolean(lastOut?.isAuto);
 
         const regHours = regularMinutes / 60;
@@ -446,10 +498,11 @@ export function buildReportRows({
         const displayOtHours =
           approvedOtHours > 0 ? approvedOtHours : pendingOtHours > 0 ? pendingOtHours : 0;
 
-        const scheduledShiftStr =
-          employee.shiftStartTime && employee.shiftEndTime
-            ? `${employee.shiftStartTime}–${employee.shiftEndTime}`
-            : "09:00–17:00";
+        const scheduledShiftStr = holiday
+          ? "Holiday"
+          : !isScheduledDay && !worked
+            ? "Day off"
+            : describeDaySchedule(employee, date, daySessions);
 
         const dayTimezone = daySessions[0]?.timezone || shiftTimezone;
         const punchInTimeStr = firstIn
@@ -495,12 +548,16 @@ export function buildReportRows({
                   ? `${formatWorkMinutes(unloggedBreak)} break deducted (none punched)`
                   : undefined),
           status: holiday
-            ? "Holiday"
+            ? worked
+              ? "Worked on holiday"
+              : "Holiday"
             : approvedLeave
               ? getLeaveLabel(approvedLeave)
               : isMissingPunchOut
                 ? "Missing Punch Out"
-                : isAutoPunchOut
+                : isInProgress
+                  ? "In progress"
+                  : isAutoPunchOut
                   ? "Auto Punched Out"
                   : isOffShiftDay && firstIn
                     ? "Off-day Shift"
@@ -508,11 +565,13 @@ export function buildReportRows({
                       ? "Excused (Not Late)"
                       : minutesLate > 0
                         ? `Late (${minutesLate}m)`
-                        : firstIn
+                        : worked
                           ? "Complete"
-                          : isScheduledDay
-                            ? "Absent (no punch)"
-                            : "Off / No punches",
+                          : isScheduledDay && notOverYet
+                            ? "Shift not finished yet"
+                            : isScheduledDay && expectedToWork
+                              ? "Absent (no punch)"
+                              : "Day off",
         });
       }
 
@@ -527,7 +586,19 @@ export function buildReportRows({
       const sections: string[] = [];
       if (absentLines.length > 0) {
         sections.push(`Absent:\n${absentLines.join("\n")}`);
-      } else if (workedDaysCount > 0) {
+      }
+      if (missingOutLines.length > 0) {
+        sections.push(`Missing Clock-out (hours not counted):\n${missingOutLines.join("\n")}`);
+      }
+      if (stillWorkingLines.length > 0) {
+        sections.push(`In Progress:\n${stillWorkingLines.join("\n")}`);
+      }
+      if (
+        absentLines.length === 0 &&
+        missingOutLines.length === 0 &&
+        stillWorkingLines.length === 0 &&
+        workedDaysCount > 0
+      ) {
         sections.push(
           `Complete Attendance for the ${isWeek ? "Week" : "Period"}: ${formatCovered(from, to)}`,
         );
@@ -576,8 +647,8 @@ export function buildReportRows({
         employeeId: employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
-        department: departments.find((d) => d.id === employee.deptId)?.name || "General",
-        role: employee.jobTitle || "V.A.",
+        department: departments.find((d) => d.id === employee.deptId)?.name || "—",
+        role: employee.jobTitle?.trim() || "—",
         client: reportClientName(employee, rawEmployee, companyFilter, reportCompany, companies),
         status: rawEmployee.status === "inactive" ? "inactive" : "active",
         hoursPerDay,
