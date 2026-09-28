@@ -1,6 +1,6 @@
 /**
- * The holiday calendar, and the Australian public holidays an admin can add to
- * it with one click.
+ * The holiday calendar, and the public holidays of Australia, New Zealand and
+ * the United Kingdom that an admin can add to it with one click.
  *
  * Every holiday is saved on the main company, but each screen reads holidays
  * from the company it is showing: a client, or "All Companies". Those never saw
@@ -13,6 +13,102 @@ import { COMPANY_ID, type Company, type CompanyHoliday, type Employee } from "./
 
 export const AU_STATES = ["ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
 export type AuState = (typeof AU_STATES)[number];
+
+export type HolidayCountry = "AU" | "NZ" | "GB";
+
+export interface Region {
+  /** Australian states keep their short code ("NSW"); others use ISO codes ("NZ-AUK"). */
+  code: string;
+  label: string;
+}
+
+export interface HolidayCountryInfo {
+  code: HolidayCountry;
+  name: string;
+  /** What the country calls the areas its holidays follow. */
+  regionWord: string;
+  regions: Region[];
+}
+
+export const HOLIDAY_COUNTRIES: HolidayCountryInfo[] = [
+  {
+    code: "AU",
+    name: "Australia",
+    regionWord: "state",
+    regions: AU_STATES.map((code) => ({ code, label: code })),
+  },
+  {
+    code: "NZ",
+    name: "New Zealand",
+    regionWord: "region",
+    regions: [
+      { code: "NZ-AUK", label: "Auckland" },
+      { code: "NZ-BOP", label: "Bay of Plenty" },
+      { code: "NZ-CAN", label: "Canterbury" },
+      { code: "NZ-CIT", label: "Chatham Islands" },
+      { code: "NZ-GIS", label: "Gisborne" },
+      { code: "NZ-HKB", label: "Hawke's Bay" },
+      { code: "NZ-MBH", label: "Marlborough" },
+      { code: "NZ-MWT", label: "Manawatū-Whanganui" },
+      { code: "NZ-NSN", label: "Nelson" },
+      { code: "NZ-NTL", label: "Northland" },
+      { code: "NZ-OTA", label: "Otago" },
+      { code: "NZ-STL", label: "Southland" },
+      { code: "NZ-TAS", label: "Tasman" },
+      { code: "NZ-TKI", label: "Taranaki" },
+      { code: "NZ-WGN", label: "Wellington" },
+      { code: "NZ-WKO", label: "Waikato" },
+      { code: "NZ-WTC", label: "West Coast" },
+    ],
+  },
+  {
+    code: "GB",
+    name: "United Kingdom",
+    regionWord: "country",
+    regions: [
+      { code: "GB-ENG", label: "England" },
+      { code: "GB-NIR", label: "Northern Ireland" },
+      { code: "GB-SCT", label: "Scotland" },
+      { code: "GB-WLS", label: "Wales" },
+    ],
+  },
+];
+
+const REGIONS = new Map(
+  HOLIDAY_COUNTRIES.flatMap((country) =>
+    country.regions.map((region) => [region.code, { ...region, country: country.code }] as const),
+  ),
+);
+
+export function countryInfo(country: HolidayCountry): HolidayCountryInfo {
+  return HOLIDAY_COUNTRIES.find((item) => item.code === country) ?? HOLIDAY_COUNTRIES[0];
+}
+
+export function regionCodes(country: HolidayCountry): string[] {
+  return countryInfo(country).regions.map((region) => region.code);
+}
+
+/** "NSW", "Auckland", "Scotland"; unknown codes as they are. */
+export function regionLabel(code: string): string {
+  return REGIONS.get(code)?.label ?? code;
+}
+
+export function regionCountry(code: string): HolidayCountry | null {
+  return REGIONS.get(code)?.country ?? null;
+}
+
+/** "NSW, VIC", "Auckland, Wellington", or "New Zealand" when it is all of them. */
+export function describeRegions(codes: string[]): string {
+  const picked = new Set(codes);
+  const whole = HOLIDAY_COUNTRIES.filter((country) =>
+    country.regions.every((region) => picked.has(region.code)),
+  );
+  const covered = new Set(whole.flatMap((country) => regionCodes(country.code)));
+  return [
+    ...whole.map((country) => country.name),
+    ...codes.filter((code) => !covered.has(code)).map(regionLabel),
+  ].join(", ");
+}
 
 function isMainCompany(company: Company): boolean {
   return company.id === COMPANY_ID || Boolean(company.isMain);
@@ -38,10 +134,10 @@ export function withSharedHolidays<T extends Company>(company: T, source: Compan
   };
 }
 
-/** The Australian state a company is in, or "" when none is set. */
+/** The state or region a company is in ("NSW", "NZ-AUK", "GB-ENG"), or "". */
 export function companyState(company: Pick<Company, "state"> | null | undefined): string {
   const state = company?.state?.trim() || "";
-  return (AU_STATES as readonly string[]).includes(state) ? state : "";
+  return REGIONS.has(state) ? state : "";
 }
 
 /**
@@ -95,23 +191,24 @@ export function employeeWorkStates(
   ].sort();
 }
 
-/** "NSW · VIC", or a prompt to set the companies' states. */
+/** "NSW · Auckland", or a prompt to set the companies' states. */
 export function describeWorkStates(states: string[]): string {
-  return states.length > 0 ? states.join(" · ") : "No state set on their companies";
+  return states.length > 0 ? states.map(regionLabel).join(" · ") : "No state set on their companies";
 }
 
 // ---------------------------------------------------------------------------
-// Australian public holidays
+// Public holidays
 // ---------------------------------------------------------------------------
 
 export interface PublicHoliday {
   date: string; // YYYY-MM-DD
   name: string;
-  /** The states that take the day off; all eight for a national holiday. */
-  states: AuState[];
+  country: HolidayCountry;
+  /** The states or regions that take the day off; all of them for a national holiday. */
+  states: string[];
 }
 
-const ALL: AuState[] = [...AU_STATES];
+const ALL: string[] = [...AU_STATES];
 
 function key(year: number, month: number, day: number): string {
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -165,8 +262,8 @@ function shift(dateKey: string, days: number): string {
  */
 export function australianPublicHolidays(year: number): PublicHoliday[] {
   const list: PublicHoliday[] = [];
-  const add = (date: string, name: string, states: AuState[] = ALL) =>
-    list.push({ date, name, states });
+  const add = (date: string, name: string, states: string[] = ALL) =>
+    list.push({ date, name, country: "AU", states });
 
   add(key(year, 1, 1), "New Year's Day");
   const newYear = weekday(year, 1, 1);
@@ -234,58 +331,79 @@ interface NagerHoliday {
 
 export interface PublicHolidayList {
   holidays: PublicHoliday[];
-  /** "nager" from date.nager.at; "built-in" when it could not be reached. */
-  source: "nager" | "built-in";
+  /**
+   * "nager" from date.nager.at; "built-in" when it could not be reached and the
+   * Australian rules stood in; "unavailable" when there is nothing to stand in.
+   */
+  source: "nager" | "built-in" | "unavailable";
 }
 
-const nagerCache = new Map<number, Promise<PublicHolidayList>>();
+const nagerCache = new Map<string, Promise<PublicHolidayList>>();
 
 /** Nager.Date's list, as the planner shows it: one row per day and states. */
-export function fromNager(list: NagerHoliday[]): PublicHoliday[] {
+export function fromNager(list: NagerHoliday[], country: HolidayCountry = "AU"): PublicHoliday[] {
+  const known = new Set(regionCodes(country));
   return list
     .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.date))
     .filter((item) => !item.types || item.types.includes("Public"))
     .map((item) => {
       const states = (item.counties ?? [])
-        .map((county) => county.replace(/^AU-/, ""))
-        .filter((state): state is AuState => (AU_STATES as readonly string[]).includes(state));
+        .map((county) => (country === "AU" ? county.replace(/^AU-/, "") : county))
+        .filter((state) => known.has(state));
       return {
         date: item.date,
         name: item.localName || item.name || "Public holiday",
-        states: item.counties?.length ? [...new Set(states)].sort() : ALL,
+        country,
+        states: item.counties?.length ? [...new Set(states)].sort() : [...known],
       };
     })
+    .filter((item) => item.states.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
 /**
- * The year's Australian public holidays from Nager.Date (it includes days set
- * by proclamation), or the built-in rules when it cannot be reached.
+ * A country's public holidays for the year from Nager.Date (it includes days
+ * set by proclamation). For Australia the built-in rules stand in when it
+ * cannot be reached.
  */
+export function loadPublicHolidays(
+  year: number,
+  country: HolidayCountry,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PublicHolidayList> {
+  const cacheKey = `${country}-${year}`;
+  const cached = nagerCache.get(cacheKey);
+  if (cached) return cached;
+  const loading = (async (): Promise<PublicHolidayList> => {
+    try {
+      const response = await fetchImpl(
+        `https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`,
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      const holidays = fromNager((await response.json()) as NagerHoliday[], country);
+      if (holidays.length === 0) throw new Error("empty");
+      return { holidays, source: "nager" };
+    } catch {
+      nagerCache.delete(cacheKey);
+      return country === "AU"
+        ? { holidays: australianPublicHolidays(year), source: "built-in" }
+        : { holidays: [], source: "unavailable" };
+    }
+  })();
+  nagerCache.set(cacheKey, loading);
+  return loading;
+}
+
 export function loadAustralianPublicHolidays(
   year: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<PublicHolidayList> {
-  const cached = nagerCache.get(year);
-  if (cached) return cached;
-  const loading = (async (): Promise<PublicHolidayList> => {
-    try {
-      const response = await fetchImpl(`https://date.nager.at/api/v3/PublicHolidays/${year}/AU`);
-      if (!response.ok) throw new Error(String(response.status));
-      const holidays = fromNager((await response.json()) as NagerHoliday[]);
-      if (holidays.length === 0) throw new Error("empty");
-      return { holidays, source: "nager" };
-    } catch {
-      nagerCache.delete(year);
-      return { holidays: australianPublicHolidays(year), source: "built-in" };
-    }
-  })();
-  nagerCache.set(year, loading);
-  return loading;
+  return loadPublicHolidays(year, "AU", fetchImpl);
 }
 
-export function isNationalHoliday(holiday: Pick<PublicHoliday, "states">): boolean {
-  return holiday.states.length === AU_STATES.length;
+/** Every state or region of its country takes the day off. */
+export function isNationalHoliday(holiday: Pick<PublicHoliday, "states"> & { country?: HolidayCountry }): boolean {
+  return holiday.states.length === regionCodes(holiday.country ?? "AU").length;
 }
 
 /** The saved holidays on a date, the legacy everyone-list included. */
