@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { companyClientEmails, parseClientEmails } from "@/lib/client-emails";
+import { EmailChipsInput } from "@/components/EmailChipsInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot, runTransaction, updateDoc } from "firebase/firestore";
 import {
@@ -228,7 +229,7 @@ function ReportsPage() {
   });
 
   // Send Email State
-  const [recipientEmailsText, setRecipientEmailsText] = useState("");
+  const [recipientEmails, setRecipientEmails] = useState<string[]>([]);
   const [saveAsClientEmail, setSaveAsClientEmail] = useState(false);
   const [clientName, setClientName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -938,7 +939,7 @@ function ReportsPage() {
         : companyClientEmails(selectedCompany),
     [companyFilter, mainCompany, selectedCompany],
   );
-  const typedRecipients = parseClientEmails(recipientEmailsText);
+  const typedRecipients = recipientEmails;
   const recipientsDifferFromSaved =
     typedRecipients.length > 0 &&
     [...typedRecipients].sort().join(",") !== [...savedRecipients].sort().join(",");
@@ -948,7 +949,7 @@ function ReportsPage() {
   function openSendEmailModal() {
     setEmailSubject(`${companyDisplayName} Attendance & Work Report (${periodLabel})`);
     setClientName(selectedCompany?.name || "");
-    setRecipientEmailsText(savedRecipients.join(", "));
+    setRecipientEmails(savedRecipients);
     // Nothing saved yet: whatever is typed this time is kept for next time.
     setSaveAsClientEmail(savedRecipients.length === 0);
     setCustomNote("");
@@ -959,17 +960,10 @@ function ReportsPage() {
 
   // Dispatch Email via Backend API
   async function handleSendReportEmail() {
-    if (!recipientEmailsText.trim()) {
-      return toast.error("Please enter at least one recipient email address.");
-    }
-
-    const emailList = recipientEmailsText
-      .split(/[,;\n]+/)
-      .map((e) => e.trim())
-      .filter((e) => Boolean(e));
+    const emailList = parseClientEmails(recipientEmails);
 
     if (emailList.length === 0) {
-      return toast.error("Please enter valid recipient email addresses.");
+      return toast.error("Add at least one recipient email.");
     }
 
     setIsSendingEmail(true);
@@ -2602,24 +2596,23 @@ function ReportsPage() {
                 <label className="block text-xs font-bold text-foreground mb-1">
                   Recipient Email(s) <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={recipientEmailsText}
-                  onChange={(e) => setRecipientEmailsText(e.target.value)}
-                  placeholder="e.g. client@company.com, manager@domain.com"
-                  className="w-full px-3 py-2 rounded-lg border bg-background text-foreground text-sm font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                <EmailChipsInput
+                  value={recipientEmails}
+                  onChange={setRecipientEmails}
+                  people={employees}
+                  placeholder="client@company.com"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {savedRecipients.length > 0
                     ? companyFilter === "all"
                       ? "Filled in from the all-clients report recipients on the main company."
                       : `Filled in from ${selectedCompany?.name || "this company"}'s client email.`
-                    : "You can enter multiple email addresses separated by commas."}
+                    : "Type an address and press Enter or +. Add as many as you need."}
                 </p>
                 {savedRecipients.length > 0 && recipientsDifferFromSaved && (
                   <button
                     type="button"
-                    onClick={() => setRecipientEmailsText(savedRecipients.join(", "))}
+                    onClick={() => setRecipientEmails(savedRecipients)}
                     className="mt-1 text-[11px] font-bold text-primary hover:underline"
                   >
                     Use saved: {savedRecipients.join(", ")}
