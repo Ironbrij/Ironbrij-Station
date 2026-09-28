@@ -139,3 +139,21 @@ test("one click emails the client and each VA whose own hours move", async () =>
     /From Sunday, 4 October 2026: 6:00 AM – 2:00 PM Manila time \(before: 7:00 AM – 3:00 PM Manila time\)/,
   );
 });
+
+test("a California client is told when its own clocks change, and Arizona never is", () => {
+  const plans = planClientDstEmails(
+    [company("cal", "US-CA"), company("ari", "US-AZ")],
+    [va("maria", ["cal"], { shiftTimezone: "America/Los_Angeles" }), va("jo", ["ari"])],
+    new Date("2026-10-20T00:00:00Z"),
+  );
+  assert.deepEqual(
+    plans.map((plan) => plan.company.id),
+    ["cal"],
+  );
+  assert.equal(plans[0].change.date, "2026-11-01");
+  assert.equal(plans[0].change.kind, "end");
+  assert.match(
+    buildClientDstEmail(plans[0]).text,
+    /Daylight Saving Time ends in California on Sunday, 1 November 2026/,
+  );
+});
