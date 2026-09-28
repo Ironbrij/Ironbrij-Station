@@ -205,30 +205,44 @@ export function getActiveEmployeeLeave(
   return null;
 }
 
+/** The company a day is judged for; its state decides its state holidays. */
+export type HolidayContext = Pick<Company, "id" | "state"> | null | undefined;
+
+/**
+ * `context` is the company the day is being judged for. Someone who works for
+ * two companies gets a holiday only for the company that is closed, and a state
+ * holiday closes the companies in that state: their work for a company in
+ * another state is an ordinary day. Without one ("All Companies"), a holiday for
+ * any company they belong to counts.
+ */
 export function isHolidayAssignedToEmployee(
   holiday: CompanyHoliday,
   employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">,
+  context?: HolidayContext,
 ): boolean {
-  // If companyIds are specified on the holiday, the employee must belong to at least one target company first
+  const forCompany =
+    context?.id && context.id !== "all" ? normalizeCompanyId(context.id) : null;
+  const empCompanyIds = (
+    [employee.companyId, ...(employee.companyIds || [])].filter(Boolean) as string[]
+  ).map(normalizeCompanyId);
   if (Array.isArray(holiday.companyIds) && holiday.companyIds.length > 0) {
-    const empCompanyIds = [employee.companyId, ...(employee.companyIds || [])].filter(
-      Boolean,
-    ) as string[];
-
-    const matchesCompany = empCompanyIds.some((cId) =>
-      holiday.companyIds?.some(
-        (hId) => normalizeCompanyId(hId) === normalizeCompanyId(cId),
-      ),
-    );
-    if (!matchesCompany) return false;
+    const closed = holiday.companyIds.map(normalizeCompanyId);
+    if (forCompany ? !closed.includes(forCompany) : !empCompanyIds.some((id) => closed.includes(id)))
+      return false;
   }
 
   if (holiday.targetType === "all" || holiday.targetType === "companies") return true;
   if (holiday.targetType === "departments")
     return Boolean(employee.deptId && holiday.departmentIds?.includes(employee.deptId));
   if (holiday.targetType === "states") {
+    const states = holiday.stateCodes ?? [];
+    const companyState = context?.state?.trim();
+    if (forCompany && companyState) return states.includes(companyState);
+    if (!forCompany && holiday.stateCompanyIds?.some((id) => empCompanyIds.includes(normalizeCompanyId(id))))
+      return true;
+    // A company with no state yet falls back to the state on the person's profile.
     const employeeState = employee.state?.trim() || "N/A";
-    return employeeState !== "N/A" && Boolean(holiday.stateCodes?.includes(employeeState));
+    return employeeState !== "N/A" && states.includes(employeeState);
   }
 
   const employeeIds = [employee.id, employee.authUid].filter(Boolean) as string[];
@@ -236,7 +250,7 @@ export function isHolidayAssignedToEmployee(
 }
 
 export function getEmployeeHoliday(
-  company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
+  company: Pick<Company, "id" | "state" | "holidays" | "holidayAssignments"> | null | undefined,
   employee:
     | Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">
     | null
@@ -254,18 +268,19 @@ export function getEmployeeHoliday(
   }
   return (
     company.holidayAssignments?.find(
-      (holiday) => holiday.date === dateKey && isHolidayAssignedToEmployee(holiday, employee),
+      (holiday) =>
+        holiday.date === dateKey && isHolidayAssignedToEmployee(holiday, employee, company),
     ) ?? null
   );
 }
 
 export function getEmployeeHolidayDates(
-  company: Pick<Company, "holidays" | "holidayAssignments"> | null | undefined,
+  company: Pick<Company, "id" | "state" | "holidays" | "holidayAssignments"> | null | undefined,
   employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">,
 ): string[] {
   const dates = new Set(company?.holidays ?? []);
   for (const holiday of company?.holidayAssignments ?? []) {
-    if (isHolidayAssignedToEmployee(holiday, employee)) dates.add(holiday.date);
+    if (isHolidayAssignedToEmployee(holiday, employee, company)) dates.add(holiday.date);
   }
   return [...dates];
 }

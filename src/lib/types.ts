@@ -16,6 +16,11 @@ export interface CompanyHoliday {
   departmentIds?: string[];
   stateCodes?: string[];
   employeeIds?: string[];
+  /**
+   * For a state holiday: the companies located in those states. Worked out when
+   * the calendar is read (see holidays.ts), never saved.
+   */
+  stateCompanyIds?: string[];
 }
 
 export interface Company {
@@ -23,6 +28,8 @@ export interface Company {
   name: string;
   code?: string;
   logoUrl?: string;
+  /** The Australian state the company is in; its state holidays follow it. */
+  state?: string;
   defaultShiftHours: number;
   holidays: string[]; // Legacy company-wide YYYY-MM-DD dates
   holidayAssignments?: CompanyHoliday[];

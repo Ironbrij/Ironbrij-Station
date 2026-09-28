@@ -33,7 +33,8 @@ import {
   type ShiftInterval,
 } from "@/lib/types";
 import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
-import { getStateOptions, normalizeState } from "@/lib/states";
+import { describeWorkStates, employeeWorkStates } from "@/lib/holidays";
+import { MultiStateBadge } from "@/components/MultiStateBadge";
 import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -442,6 +443,7 @@ function EmployeesListPage() {
                       <div className="text-xs text-muted-foreground font-normal">
                         {e.email?.trim() || "No email assigned"}
                       </div>
+                      <MultiStateBadge states={employeeWorkStates(e, companies)} />
                     </td>
                     <td className="p-3">{e.jobTitle?.trim() || "—"}</td>
                     <td className="p-3">{getEmployeeListDepartmentLabel(e, filterCompany, depts)}</td>
@@ -1366,9 +1368,12 @@ export function PromoteModal({
     () => initialMemberships(emp, initialCompanyIds),
   );
   const [country, setCountry] = useState<CountryCode>(emp.country ?? "NP");
-  const [state, setState] = useState(
-    normalizeState(emp.state ?? depts.find((department) => department.id === emp.deptId)?.state),
+  // State comes from the companies someone works for, not from their profile.
+  const workStates = employeeWorkStates(
+    { companyId: selectedCompanyIds[0], companyIds: selectedCompanyIds },
+    companies,
   );
+  const state = workStates.join(", ");
   const [shiftTimezone, setShiftTimezone] = useState(emp.shiftTimezone || DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState(emp.shiftStartTime ?? "09:00");
   const [shiftEndTime, setShiftEndTime] = useState(emp.shiftEndTime ?? "17:00");
@@ -1428,7 +1433,6 @@ export function PromoteModal({
           companyIds: finalCompanyIds,
           companyMemberships: normalizedMemberships,
           country,
-          state: state || "N/A",
           timezone: COUNTRY_TIMEZONES[country].timezone,
           requiredWorkMinutes: primaryMembership.requiredWorkMinutes,
           isMultipleShift: primaryMembership.isMultipleShift ?? false,
@@ -1598,7 +1602,6 @@ export function PromoteModal({
             value={country}
             onChange={(e) => {
               setCountry(e.target.value as CountryCode);
-              setState("N/A");
             }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
           >
@@ -1607,20 +1610,7 @@ export function PromoteModal({
             <option value="PH">Philippines (Asia/Manila)</option>
           </select>
         </div>
-        <div>
-          <label className="text-sm font-medium">State / province / region (optional)</label>
-          <select
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
-          >
-            {getStateOptions(country).map((option) => (
-              <option key={option} value={option}>
-                {option === "N/A" ? "N/A — no state" : option}
-              </option>
-            ))}
-          </select>
-        </div>
+        <WorkStatesNote states={workStates} />
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -1659,7 +1649,11 @@ function NewEmployeeForm({
       initialMemberships(null, []),
   );
   const [country, setCountry] = useState<CountryCode>("PH");
-  const [state, setState] = useState("N/A");
+  const workStates = employeeWorkStates(
+    { companyId: selectedCompanyIds[0], companyIds: selectedCompanyIds },
+    companies,
+  );
+  const state = workStates.join(", ");
   const [shiftTimezone, setShiftTimezone] = useState(DEFAULT_SHIFT_TIMEZONE);
   const [shiftStartTime, setShiftStartTime] = useState("09:00");
   const [shiftEndTime, setShiftEndTime] = useState("17:00");
@@ -1757,7 +1751,6 @@ function NewEmployeeForm({
           shiftTimezone: primaryMembership.shiftTimezone || shiftTimezone,
           workingDays: primaryMembership.workingDays || workingDays || [0, 1, 2, 3, 4, 5],
           country: country || "NP",
-          state: state || "N/A",
           timezone: COUNTRY_TIMEZONES[country]?.timezone || "Asia/Kathmandu",
           status: "active",
           inviteStatus: "pending",
@@ -1950,7 +1943,6 @@ function NewEmployeeForm({
               value={country}
               onChange={(e) => {
                 setCountry(e.target.value as CountryCode);
-                setState("N/A");
               }}
               className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
             >
@@ -1959,20 +1951,7 @@ function NewEmployeeForm({
               <option value="PH">Philippines (Asia/Manila)</option>
             </select>
           </div>
-          <div>
-            <label className="text-sm font-medium">State / province / region (optional)</label>
-            <select
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
-            >
-              {getStateOptions(country).map((option) => (
-                <option key={option} value={option}>
-                  {option === "N/A" ? "N/A — no state" : option}
-                </option>
-              ))}
-            </select>
-          </div>
+          <WorkStatesNote states={workStates} />
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md border px-4 py-2 text-sm">
@@ -1989,6 +1968,23 @@ function NewEmployeeForm({
     </div>
   );
 }
+/** Where someone works, from their companies; more than one state is flagged. */
+function WorkStatesNote({ states }: { states: string[] }) {
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">Works in</span>
+        <span>{describeWorkStates(states)}</span>
+        {states.length > 1 && <MultiStateBadge states={states} />}
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Set by each company&apos;s state. A state holiday gives them the day off only for
+        companies in that state.
+      </p>
+    </div>
+  );
+}
+
 function Field({
   label,
   value,

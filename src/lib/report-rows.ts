@@ -215,6 +215,11 @@ export function buildReportRows({
               (item) => normalizeCompanyId(item.id) === normalizeCompanyId(companyFilter),
             ) || authCompany;
 
+      // Across all clients a holiday for any of the person's companies counts;
+      // for one client, only that client's holidays do.
+      const holidayCalendar =
+        companyFilter === "all" && reportCompany ? { ...reportCompany, id: "all" } : reportCompany;
+
       const employeeLeaves = getEmployeeLeavesForCompany(
         leaves,
         rawEmployee,
@@ -245,7 +250,7 @@ export function buildReportRows({
       const dayPunchGroups = new Set<string>(sessionsByDate.keys());
 
       // Collect dates from leaves and holidays within range as well
-      for (const date of getEmployeeHolidayDates(reportCompany, employee)) {
+      for (const date of getEmployeeHolidayDates(holidayCalendar, employee)) {
         if (date >= from && date <= to) dayPunchGroups.add(date);
       }
       for (const date of getEmployeeApprovedLeaveDates(employee, employeeLeaves)) {
@@ -295,7 +300,7 @@ export function buildReportRows({
           .find((session) => session.end?.type === "out")?.end;
 
         const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
-        const holiday = getEmployeeHoliday(reportCompany, employee, date);
+        const holiday = getEmployeeHoliday(holidayCalendar, employee, date);
         const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
         const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
         const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
@@ -540,7 +545,7 @@ export function buildReportRows({
         hoursPerDay,
         isWorkingDay: (date) =>
           scheduledDays.includes(new Date(`${date}T12:00:00Z`).getUTCDay()) &&
-          !getEmployeeHoliday(reportCompany, employee, date),
+          !getEmployeeHoliday(holidayCalendar, employee, date),
       });
 
       // Totals come from the days as listed, so the row and its inspect panel agree

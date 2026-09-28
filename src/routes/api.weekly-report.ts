@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
+import { shareHolidays } from "@/lib/holidays";
 import { deliverReportEmail } from "@/lib/report-email";
 import { buildReportCoverMessage } from "@/lib/report-cover-message";
 import { fromFirestoreFields, type FirestoreValue } from "@/lib/firestore-rest";
@@ -236,12 +237,14 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const dryRun = String(read("dryRun")) === "true";
   const overrideRecipients = parseRecipients(body.recipients ?? url.searchParams.get("recipients"));
 
-  const [companies, employees, departments, leaves] = await Promise.all([
+  const [savedCompanies, employees, departments, leaves] = await Promise.all([
     listCollection<Company>("companies"),
     listCollection<Employee>("employees"),
     listCollection<Department>("departments"),
     listCollection<LeaveRequest>("leaveRequests"),
   ]);
+  // Holidays are saved on the main company; every client's report reads them.
+  const companies = shareHolidays(savedCompanies);
 
   // A scheduler asks which clients to send for, so adding a client never means
   // editing the schedule: configure recipients and it joins the next run.
