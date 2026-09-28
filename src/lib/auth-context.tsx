@@ -27,6 +27,7 @@ import { resolveProfilePhoto } from "./profile-photo";
 import { toast } from "sonner";
 import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePortalCompanies, resolveEmployeeCompanyId } from "./company-context";
 import { liveStore } from "./live-data";
+import { findHolidaySource, sharedCalendar, shareHolidays, withSharedHolidays } from "./holidays";
 
 interface AuthState {
   user: User | null;
@@ -47,7 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [savedCompanies, setCompanies] = useState<Company[]>([]);
+  // The main company holds every holiday. An employee who only works for a
+  // client still reads it, so their holidays are the admin's holidays.
+  const [holidaySource, setHolidaySource] = useState<Company | null>(null);
+  const companies = useMemo(
+    () => shareHolidays(savedCompanies, findHolidaySource(savedCompanies) ?? holidaySource),
+    [savedCompanies, holidaySource],
+  );
   const [adminCompanyId, setAdminCompanyId] = useState(COMPANY_ID);
   const [employeeCompanyId, setEmployeeCompanyId] = useState("");
   const employeePortal = useRouterState({ select: (state) => state.location.pathname === "/app" || state.location.pathname.startsWith("/app/") });
@@ -282,6 +290,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else current.delete(companyId);
       setCompanies(companyIds.flatMap((id) => current.has(id) ? [current.get(id)!] : []));
     }, (error) => console.error("Company settings could not sync:", error)));
+    if (!companyIds.includes(COMPANY_ID)) {
+      unsubscribers.push(onSnapshot(doc(db(), "companies", COMPANY_ID), (snapshot) => {
+        setHolidaySource(snapshot.exists() ? { ...(snapshot.data() as Omit<Company, "id">), id: snapshot.id, isMain: true } : null);
+      }, (error) => console.error("Holidays could not sync:", error)));
+    }
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [employeeCompanyKey, isAdmin]);
 
@@ -322,16 +335,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const company = useMemo(() => {
     if (activeCompanyId === "all") {
-      return {
-        id: "all",
-        name: "All Companies",
-        defaultShiftHours: 8,
-        workingDays: [1, 2, 3, 4, 5],
-        holidays: [],
-      } as Company;
+      return withSharedHolidays(
+        {
+          id: "all",
+          name: "All Companies",
+          defaultShiftHours: 8,
+          workingDays: [1, 2, 3, 4, 5],
+          holidays: [],
+        } as Company,
+        sharedCalendar(savedCompanies, findHolidaySource(savedCompanies) ?? holidaySource),
+      );
     }
     return companies.find((item) => (item.id || COMPANY_ID) === activeCompanyId) || null;
-  }, [activeCompanyId, companies]);
+  }, [activeCompanyId, companies, savedCompanies, holidaySource]);
 
   const scopedEmployee = useMemo(() => {
     if (employee) return getEmployeeForCompany(employee, activeCompanyId);

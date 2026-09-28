@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   onSnapshot,
@@ -14,12 +13,10 @@ import {
   Archive,
   ArchiveRestore,
   Building2,
-  Calendar,
   Check,
   Image as ImageIcon,
   MapPin,
   PartyPopper,
-  Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,13 +25,12 @@ import {
   COMPANY_ID,
   type Company,
   type CompanyHoliday,
-  type CountryCode,
   type Department,
   type Employee,
-  type HolidayTargetType,
 } from "@/lib/types";
-import { normalizeState, STATE_NOT_APPLICABLE } from "@/lib/states";
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
+import { HolidayPlanner } from "@/components/HolidayPlanner";
+import { AU_STATES, companyState } from "@/lib/holidays";
 
 export const Route = createFileRoute("/_authenticated/admin/company")({
   head: () => ({
@@ -73,19 +69,6 @@ function CompanyPage() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [companyFilterTab, setCompanyFilterTab] = useState<"active" | "archived" | "all">("active");
 
-  const [newHoliday, setNewHoliday] = useState("");
-  const [holidayName, setHolidayName] = useState("");
-  const [useCompanyScope, setUseCompanyScope] = useState(false);
-  const [holidayTargetType, setHolidayTargetType] = useState<HolidayTargetType>("all");
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
-  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
-  const [selectedStateCodes, setSelectedStateCodes] = useState<string[]>([]);
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
-  const [countryFilter, setCountryFilter] = useState<"all" | CountryCode>("all");
-  const [stateFilter, setStateFilter] = useState("all");
-  const [sendHolidayNotice, setSendHolidayNotice] = useState(true);
-  const [holidayNoticeMode, setHolidayNoticeMode] = useState<"instant" | "scheduled">("instant");
-  const [holidayNoticeAt, setHolidayNoticeAt] = useState("");
   const [showTodayHolidayConfirmModal, setShowTodayHolidayConfirmModal] = useState(false);
   const [todayHolidayCompanyId, setTodayHolidayCompanyId] = useState("all");
 
@@ -294,220 +277,6 @@ function CompanyPage() {
     );
   }
 
-  async function addHoliday() {
-    if (!newHoliday) return;
-    if (useCompanyScope && selectedCompanyIds.length === 0) {
-      toast.error("Select at least one company.");
-      return;
-    }
-    if (holidayTargetType === "departments" && selectedDepartmentIds.length === 0) {
-      toast.error("Select at least one department.");
-      return;
-    }
-    if (holidayTargetType === "states" && selectedStateCodes.length === 0) {
-      toast.error("Select at least one state.");
-      return;
-    }
-    if (holidayTargetType === "employees" && selectedEmployeeIds.length === 0) {
-      toast.error("Select at least one employee.");
-      return;
-    }
-    if (sendHolidayNotice && holidayNoticeMode === "scheduled" && !holidayNoticeAt) {
-      toast.error("Choose when the holiday notification should be delivered.");
-      return;
-    }
-    const noticePublishAt =
-      holidayNoticeMode === "scheduled"
-        ? new Date(holidayNoticeAt).toISOString()
-        : new Date().toISOString();
-    if (
-      sendHolidayNotice &&
-      holidayNoticeMode === "scheduled" &&
-      new Date(noticePublishAt).getTime() <= Date.now()
-    ) {
-      toast.error("Scheduled notification time must be in the future.");
-      return;
-    }
-
-    let assignment: CompanyHoliday | null = null;
-    if (holidayTargetType === "all" && !useCompanyScope) {
-      assignment = null;
-    } else {
-      assignment = {
-        id: `${newHoliday}-${Date.now()}`,
-        date: newHoliday,
-        name: holidayName.trim() || "Company Holiday",
-        targetType: holidayTargetType,
-        ...(useCompanyScope && selectedCompanyIds.length > 0
-          ? { companyIds: selectedCompanyIds }
-          : {}),
-        ...(holidayTargetType === "departments"
-          ? { departmentIds: selectedDepartmentIds }
-          : holidayTargetType === "states"
-            ? { stateCodes: selectedStateCodes }
-            : holidayTargetType === "employees"
-              ? {
-                  employeeIds: [
-                    ...new Set(
-                      employees
-                        .filter((employee) => selectedEmployeeIds.includes(employee.id))
-                        .flatMap((employee) => [employee.id, employee.authUid].filter(Boolean)),
-                    ),
-                  ] as string[],
-                }
-              : {}),
-      };
-    }
-
-    const added = assignment;
-    const saved = await updateHolidays((holidays, assignments) =>
-      added
-        ? { holidays, assignments: [...assignments, added] }
-        : { holidays: [...holidays, newHoliday], assignments },
-    );
-    if (!saved) return;
-    toast.success("Holiday saved.");
-    setNewHoliday("");
-    setHolidayName("");
-    setSelectedDepartmentIds([]);
-    setSelectedStateCodes([]);
-    setSelectedEmployeeIds([]);
-    if (sendHolidayNotice) {
-      try {
-        const target =
-          holidayTargetType === "all"
-            ? { targetType: "all" as const }
-            : holidayTargetType === "departments"
-              ? {
-                  targetType: "dept" as const,
-                  targetDeptIds: selectedDepartmentIds,
-                  ...(selectedDepartmentIds.length === 1
-                    ? { targetDeptId: selectedDepartmentIds[0] }
-                    : {}),
-                }
-              : holidayTargetType === "states"
-                ? {
-                    targetType: "states" as const,
-                    targetStateCodes: selectedStateCodes,
-                  }
-                : {
-                    targetType: "employee" as const,
-                    targetEmployeeIds: selectedEmployeeIds,
-                    ...(selectedEmployeeIds.length === 1
-                      ? { targetEmployeeId: selectedEmployeeIds[0] }
-                      : {}),
-                  };
-        await addDoc(collection(db(), "notices"), {
-          title: holidayName.trim() || "Company Holiday",
-          message: `${holidayName.trim() || "A company holiday"} is scheduled for ${newHoliday}. You are not required to punch in on this date.`,
-          priority: "info",
-          ...target,
-          createdAt: new Date().toISOString(),
-          publishAt: noticePublishAt,
-          authorName: "Admin",
-        });
-        toast.success(
-          holidayNoticeMode === "scheduled"
-            ? `Holiday notification scheduled for ${new Date(noticePublishAt).toLocaleString()}`
-            : "Holiday notification sent",
-        );
-      } catch (error) {
-        toast.error("Holiday was saved, but its notification could not be created.");
-        console.error(error);
-      }
-    }
-    setHolidayNoticeMode("instant");
-    setHolidayNoticeAt("");
-  }
-
-  async function removeGlobalHoliday(date: string) {
-    if (
-      await updateHolidays((holidays, assignments) => ({
-        holidays: holidays.filter((holiday) => holiday !== date),
-        assignments,
-      }))
-    ) {
-      toast.success("Holiday removed.");
-    }
-  }
-
-  async function removeHolidayAssignment(id: string) {
-    if (
-      await updateHolidays((holidays, assignments) => ({
-        holidays,
-        assignments: assignments.filter((holiday) => holiday.id !== id),
-      }))
-    ) {
-      toast.success("Holiday removed.");
-    }
-  }
-
-  function toggleSelection(id: string, selected: string[], update: (ids: string[]) => void) {
-    update(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
-  }
-
-  const visibleHolidayDepartments = useMemo(() => {
-    if (!useCompanyScope || selectedCompanyIds.length === 0) return departments;
-    return departments.filter((d) => {
-      return (
-        (d.companyId && selectedCompanyIds.includes(d.companyId)) ||
-        (!d.companyId && selectedCompanyIds.includes(COMPANY_ID))
-      );
-    });
-  }, [departments, useCompanyScope, selectedCompanyIds]);
-
-  const visibleEmployees = useMemo(
-    () =>
-      employees
-        .filter((employee) => employee.status === "active")
-        .filter((employee) => {
-          if (!useCompanyScope || selectedCompanyIds.length === 0) return true;
-          const empCompIds = [employee.companyId, ...(employee.companyIds || [])].filter(
-            Boolean,
-          ) as string[];
-          return selectedCompanyIds.some(
-            (cId) => empCompIds.includes(cId) || (!employee.companyId && cId === COMPANY_ID),
-          );
-        })
-        .filter(
-          (employee) => countryFilter === "all" || (employee.country || "NP") === countryFilter,
-        )
-        .filter(
-          (employee) => stateFilter === "all" || normalizeState(employee.state) === stateFilter,
-        )
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [employees, useCompanyScope, selectedCompanyIds, countryFilter, stateFilter],
-  );
-
-  const availableStates = useMemo(
-    () =>
-      [...new Set(employees.map((employee) => normalizeState(employee.state)))]
-        .filter((state) => state !== STATE_NOT_APPLICABLE)
-        .sort(),
-    [employees],
-  );
-
-  function holidayAudienceLabel(holiday: CompanyHoliday) {
-    if (holiday.targetType === "all") return "Everyone";
-    if (holiday.targetType === "departments") {
-      const names = departments
-        .filter((department) => holiday.departmentIds?.includes(department.id))
-        .map((department) => department.name);
-      return names.length ? names.join(", ") : "Selected departments";
-    }
-    if (holiday.targetType === "states") {
-      return holiday.stateCodes?.length ? holiday.stateCodes.join(", ") : "Selected states";
-    }
-    const names = employees
-      .filter(
-        (employee) =>
-          holiday.employeeIds?.includes(employee.id) ||
-          Boolean(employee.authUid && holiday.employeeIds?.includes(employee.authUid)),
-      )
-      .map((employee) => employee.name);
-    return names.length ? names.join(", ") : "Selected employees";
-  }
-
   return (
     <div className="max-w-3xl space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -656,6 +425,16 @@ function CompanyPage() {
                         <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
                           <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
                         </div>
+                        <div className="text-[11px] mt-0.5 font-semibold flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" />
+                          {companyState(c) ? (
+                            <span className="text-foreground">{companyState(c)}</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">
+                              No state set — state holidays won&apos;t reach it
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -737,379 +516,14 @@ function CompanyPage() {
         )}
       </div>
 
-      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
-        <h2 className="font-bold text-primary flex items-center gap-2">
-          <Calendar className="h-4 w-4" /> Assign a Company Holiday
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Select the company scope, then specify departments, states, or specific people for this
-          holiday.
-        </p>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input
-            type="date"
-            value={newHoliday}
-            onChange={(event) => setNewHoliday(event.target.value)}
-            className="rounded-md border px-3 py-2 text-sm bg-background font-medium"
-          />
-          <input
-            value={holidayName}
-            onChange={(event) => setHolidayName(event.target.value)}
-            placeholder="Holiday name (optional)"
-            className="rounded-md border px-3 py-2 text-sm bg-background font-medium"
-          />
-        </div>
-
-        {/* Step 1: Company Scope Selector */}
-        <div className="rounded-lg border bg-secondary/30 p-3 space-y-2">
-          <div className="text-xs font-extrabold text-primary flex items-center gap-1.5">
-            <Building2 className="h-3.5 w-3.5" /> 1. Target Company Scope
-          </div>
-          <div className="flex items-center gap-4 text-xs font-semibold">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="radio"
-                name="companyScope"
-                checked={!useCompanyScope}
-                onChange={() => {
-                  setUseCompanyScope(false);
-                  setSelectedCompanyIds([]);
-                }}
-              />
-              <span>All Companies</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="radio"
-                name="companyScope"
-                checked={useCompanyScope}
-                onChange={() => setUseCompanyScope(true)}
-              />
-              <span>Specific Companies ({selectedCompanyIds.length})</span>
-            </label>
-          </div>
-
-          {useCompanyScope && (
-            <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t mt-2">
-              {companies.map((c) => (
-                <label
-                  key={c.id || c.name}
-                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedCompanyIds.includes(c.id || COMPANY_ID)}
-                    onChange={() =>
-                      toggleSelection(c.id || COMPANY_ID, selectedCompanyIds, setSelectedCompanyIds)
-                    }
-                  />
-                  <span>
-                    {c.name} {c.isMain ? "(Main)" : ""}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Step 2: Target Audience inside Company */}
-        <div className="space-y-2">
-          <div className="text-xs font-extrabold text-primary">
-            2. Target Audience inside Company
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            {(
-              [
-                ["all", "Everyone in Company"],
-                ["departments", "Specific Departments"],
-                ["states", "Specific States"],
-                ["employees", "Specific People"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setHolidayTargetType(value)}
-                className={`rounded-lg border px-3 py-2 text-xs font-bold ${
-                  holidayTargetType === value
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "bg-background text-muted-foreground"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {holidayTargetType === "departments" && (
-          <div className="rounded-lg border bg-secondary/20 p-3 space-y-2">
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <Building2 className="h-3.5 w-3.5" /> Select departments
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {visibleHolidayDepartments.map((department) => (
-                <label
-                  key={department.id}
-                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedDepartmentIds.includes(department.id)}
-                    onChange={() =>
-                      toggleSelection(
-                        department.id,
-                        selectedDepartmentIds,
-                        setSelectedDepartmentIds,
-                      )
-                    }
-                  />
-                  <span>{department.name}</span>
-                </label>
-              ))}
-            </div>
-            {visibleHolidayDepartments.length === 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                No departments belong to the selected company. You can assign this holiday to
-                &quot;Everyone in Company&quot; or assign departments to this company in the
-                Departments tab.
-              </p>
-            )}
-          </div>
-        )}
-
-        {holidayTargetType === "states" && (
-          <div className="rounded-lg border bg-secondary/20 p-3 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-bold flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" /> Select one or more states
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStateCodes(availableStates)}
-                  className="text-xs font-bold text-primary hover:underline"
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStateCodes([])}
-                  className="text-xs font-bold text-muted-foreground hover:underline"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {availableStates.map((state) => (
-                <label
-                  key={state}
-                  className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedStateCodes.includes(state)}
-                    onChange={() =>
-                      toggleSelection(state, selectedStateCodes, setSelectedStateCodes)
-                    }
-                  />
-                  {state}
-                </label>
-              ))}
-              {availableStates.length === 0 && (
-                <span className="text-xs text-muted-foreground italic">
-                  No employee states have been assigned yet.
-                </span>
-              )}
-            </div>
-            <div className="text-xs font-semibold text-primary">
-              {selectedStateCodes.length} state{selectedStateCodes.length === 1 ? "" : "s"} selected
-            </div>
-          </div>
-        )}
-
-        {holidayTargetType === "employees" && (
-          <div className="rounded-lg border bg-secondary/20 p-3 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="text-xs font-bold flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5" /> Select specific people
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <select
-                  value={countryFilter}
-                  onChange={(event) => setCountryFilter(event.target.value as "all" | CountryCode)}
-                  className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium"
-                >
-                  <option value="all">All countries</option>
-                  <option value="AU">Australia</option>
-                  <option value="PH">Philippines</option>
-                  <option value="NP">Nepal</option>
-                </select>
-                <select
-                  value={stateFilter}
-                  onChange={(event) => setStateFilter(event.target.value)}
-                  className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium"
-                >
-                  <option value="all">All states</option>
-                  <option value={STATE_NOT_APPLICABLE}>N/A</option>
-                  {availableStates.map((state) => (
-                    <option key={state} value={state}>
-                      {state}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelectedEmployeeIds((current) => [
-                      ...new Set([...current, ...visibleEmployees.map((employee) => employee.id)]),
-                    ])
-                  }
-                  className="text-xs font-bold text-primary hover:underline"
-                >
-                  Select filtered
-                </button>
-              </div>
-            </div>
-            <div className="max-h-64 overflow-y-auto grid gap-2 sm:grid-cols-2">
-              {visibleEmployees.map((employee) => (
-                <label
-                  key={employee.id}
-                  className="flex items-start gap-2 rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={selectedEmployeeIds.includes(employee.id)}
-                    onChange={() =>
-                      toggleSelection(employee.id, selectedEmployeeIds, setSelectedEmployeeIds)
-                    }
-                  />
-                  <span>
-                    <span className="font-semibold block">{employee.name}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {departments.find((department) => department.id === employee.deptId)?.name ||
-                        "No department"}{" "}
-                      · {employee.country || "NP"}
-                    </span>
-                  </span>
-                </label>
-              ))}
-              {visibleEmployees.length === 0 && (
-                <span className="text-xs text-muted-foreground italic">
-                  No active employees in this country.
-                </span>
-              )}
-            </div>
-            <div className="text-xs font-semibold text-primary">
-              {selectedEmployeeIds.length} employee
-              {selectedEmployeeIds.length === 1 ? "" : "s"} selected
-            </div>
-          </div>
-        )}
-
-        <fieldset className="rounded-lg border bg-sky-500/5 p-3 space-y-3">
-          <legend className="px-1 text-xs font-bold text-primary">Holiday notification</legend>
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={sendHolidayNotice}
-              onChange={(event) => setSendHolidayNotice(event.target.checked)}
-            />
-            Notify the selected users about this holiday
-          </label>
-          {sendHolidayNotice && (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setHolidayNoticeMode("instant")}
-                  className={`rounded-md border px-3 py-2 text-xs font-bold ${
-                    holidayNoticeMode === "instant"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "bg-background"
-                  }`}
-                >
-                  Send instantly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHolidayNoticeMode("scheduled")}
-                  className={`rounded-md border px-3 py-2 text-xs font-bold ${
-                    holidayNoticeMode === "scheduled"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "bg-background"
-                  }`}
-                >
-                  Schedule
-                </button>
-              </div>
-              {holidayNoticeMode === "scheduled" && (
-                <label className="block text-xs font-bold text-muted-foreground">
-                  Notification calendar and clock
-                  <input
-                    type="datetime-local"
-                    value={holidayNoticeAt}
-                    onChange={(event) => setHolidayNoticeAt(event.target.value)}
-                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground"
-                  />
-                  <span className="mt-1 block font-normal">
-                    Uses your current device timezone. Employees will see it at the same instant.
-                  </span>
-                </label>
-              )}
-            </>
-          )}
-        </fieldset>
-
-        <button
-          onClick={addHoliday}
-          disabled={busy || !newHoliday}
-          className="btn-lift rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-bold disabled:opacity-50"
-        >
-          Assign Holiday
-        </button>
-      </div>
-
-      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-3">
-        <h2 className="font-bold text-primary">
-          Scheduled Holidays ({company.holidays.length + (company.holidayAssignments?.length ?? 0)})
-        </h2>
-        <ul className="space-y-2">
-          {company.holidays.map((date) => (
-            <li
-              key={date}
-              className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs bg-purple-500/10 text-purple-700 border border-purple-500/20"
-            >
-              <span>
-                <strong>{date}</strong> · Company Holiday · Everyone
-              </span>
-              <button onClick={() => removeGlobalHoliday(date)} title="Remove holiday">
-                <X className="h-3.5 w-3.5 text-rose-500" />
-              </button>
-            </li>
-          ))}
-          {(company.holidayAssignments ?? []).map((holiday) => (
-            <li
-              key={holiday.id}
-              className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs bg-sky-500/10 text-sky-800 dark:text-sky-300 border border-sky-500/20"
-            >
-              <span>
-                <strong>{holiday.date}</strong> · {holiday.name || "Company Holiday"} ·{" "}
-                {holidayAudienceLabel(holiday)}
-              </span>
-              <button onClick={() => removeHolidayAssignment(holiday.id)} title="Remove holiday">
-                <X className="h-3.5 w-3.5 text-rose-500" />
-              </button>
-            </li>
-          ))}
-          {company.holidays.length === 0 && (company.holidayAssignments?.length ?? 0) === 0 && (
-            <li className="text-sm text-muted-foreground italic">No holidays set.</li>
-          )}
-        </ul>
-      </div>
+      <HolidayPlanner
+        calendar={company}
+        companies={companies}
+        departments={departments}
+        employees={employees}
+        todayStr={todayStr}
+        updateHolidays={updateHolidays}
+      />
 
       <div className="rounded-xl border bg-card p-6 space-y-4 shadow-lift">
         <h2 className="font-bold text-primary flex items-center gap-2">
@@ -1250,6 +664,7 @@ function CompanyModal({
 }) {
   const [name, setName] = useState(companyToEdit?.name ?? "");
   const [code, setCode] = useState(companyToEdit?.code ?? "");
+  const [state, setState] = useState(companyState(companyToEdit));
   const [logoUrl, setLogoUrl] = useState(companyToEdit?.logoUrl ?? DEFAULT_LOGO);
   const [defaultShiftHours, setDefaultShiftHours] = useState(companyToEdit?.defaultShiftHours ?? 8);
   const [lateGraceMinutes, setLateGraceMinutes] = useState(companyToEdit?.lateGraceMinutes ?? 5);
@@ -1297,6 +712,7 @@ function CompanyModal({
         await updateDoc(doc(db(), "companies", companyToEdit.id), {
           name: name.trim(),
           code: code.trim().toUpperCase(),
+          state,
           logoUrl: logoUrl.trim() || DEFAULT_LOGO,
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
@@ -1317,6 +733,7 @@ function CompanyModal({
         await setDoc(compRef, {
           name: name.trim(),
           code: code.trim().toUpperCase(),
+          state,
           logoUrl: logoUrl.trim() || DEFAULT_LOGO,
           defaultShiftHours: Number(defaultShiftHours) || 8,
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
@@ -1378,6 +795,26 @@ function CompanyModal({
             placeholder="e.g. SK-AU"
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium uppercase"
           />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">State</label>
+          <select
+            value={state}
+            onChange={(e) => setState(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
+          >
+            <option value="">Not set</option>
+            {AU_STATES.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Holidays for this state give everyone the day off for their work here. People who
+            also work for a company in another state keep working there as normal.
+          </p>
         </div>
 
         <div>

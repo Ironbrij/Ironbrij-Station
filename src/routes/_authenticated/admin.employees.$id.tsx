@@ -62,7 +62,8 @@ import {
   zonedDateKey,
 } from "@/lib/attendance";
 import { useAuth } from "@/lib/auth-context";
-import { normalizeState } from "@/lib/states";
+import { describeWorkStates, employeeWorkStates } from "@/lib/holidays";
+import { MultiStateBadge } from "@/components/MultiStateBadge";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { resolveProfilePhoto } from "@/lib/profile-photo";
 import { formatShiftRange, formatWorkingDaysSummary, PromoteModal } from "./admin.employees";
@@ -737,8 +738,13 @@ function EmployeeDetail() {
           />
           <DetailRow
             icon={<MapPin className="h-4 w-4" />}
-            label="Region"
-            value={normalizeState(employee.state)}
+            label="Works in"
+            value={
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                {describeWorkStates(employeeWorkStates(employee, companies))}
+                <MultiStateBadge states={employeeWorkStates(employee, companies)} />
+              </span>
+            }
           />
           <DetailRow
             icon={<Clock3 className="h-4 w-4" />}
@@ -1346,7 +1352,7 @@ function DetailRow({
 }: {
   icon?: React.ReactNode;
   label: string;
-  value: string;
+  value: React.ReactNode;
 }) {
   return (
     <div className="flex min-w-0 items-start gap-3 border-b py-3 last:border-b-0">
@@ -1359,7 +1365,10 @@ function DetailRow({
         <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
           {label}
         </div>
-        <div className="mt-0.5 break-words text-sm font-semibold text-foreground" title={value}>
+        <div
+          className="mt-0.5 break-words text-sm font-semibold text-foreground"
+          title={typeof value === "string" ? value : undefined}
+        >
           {value}
         </div>
       </div>

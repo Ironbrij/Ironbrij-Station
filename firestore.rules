@@ -77,9 +77,11 @@ service cloud.firestore {
     }
 
     // Admins Collection
+    // Only an admin may make or remove an admin. Anyone signed in used to be
+    // able to write their own record here, which made them an admin.
     match /admins/{uid} {
       allow read: if isAuthed();
-      allow write: if isAuthed() && (isOwner(uid) || isAdmin());
+      allow write: if isAdmin();
     }
 
     // Employees Collection

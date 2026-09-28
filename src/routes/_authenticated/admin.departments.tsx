@@ -40,6 +40,7 @@ import {
   BellRing,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { shareHolidays } from "@/lib/holidays";
 import { format } from "date-fns";
 import Papa from "papaparse";
 import { createPdf } from "@/lib/pdf-export";
@@ -94,7 +95,9 @@ function DepartmentsPage() {
     if (authLoading || !user) return;
 
     const u0 = onSnapshot(collection(db(), "companies"), (s) => {
-      setCompanies(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) })));
+      setCompanies(
+        shareHolidays(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Company, "id">) }))),
+      );
     });
 
     const u1 = onSnapshot(

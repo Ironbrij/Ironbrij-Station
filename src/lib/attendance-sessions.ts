@@ -15,6 +15,7 @@ import { getEmployeeForCompany, getPunchCompanyId, normalizeCompanyId } from "./
 import {
   computeEmployeeLateness,
   getActiveWorkingSession,
+  getEmployeeHoliday,
   getEmployeeShiftWindow,
   getShiftTimezone,
 } from "./attendance.ts";
@@ -182,6 +183,9 @@ export function buildAttendanceSessions({
       open.get(cid) === session &&
       live.activeCompanyId === cid;
     const company = companyOf(cid);
+    // Work on this company's holiday is never regular hours, even when the
+    // holiday was added after the clock-in was saved.
+    const onHoliday = Boolean(getEmployeeHoliday(company, base, shift.dateKey));
     const calc = calculateAttendanceSession({
       employee: scoped,
       company,
@@ -189,7 +193,8 @@ export function buildAttendanceSessions({
       punchOut: endedAt || session.switchedAt,
       now,
       punches: session.punches,
-      isOffShiftDay: session.start.type === "extra_in" || session.start.isOffShiftDay,
+      isOffShiftDay:
+        session.start.type === "extra_in" || Boolean(session.start.isOffShiftDay) || onHoliday,
     });
     const judged = shiftLateness.get(shiftLatenessKey(cid, shift.start));
     const finishedAt = endedAt || session.switchedAt || (active ? now : null);

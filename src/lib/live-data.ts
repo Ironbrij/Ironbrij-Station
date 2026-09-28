@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { toMillis } from "./time";
+import { shareHolidays } from "./holidays";
 import { createLiveStore, LOADING_STATE, type LiveSource, type LiveState } from "./live-store";
 import type {
   Company,
@@ -197,8 +198,12 @@ export function useCollectionLive<T>(name: string, enabled = true): LiveState<T[
 
 export const useEmployeesLive = (enabled = true) =>
   useCollectionLive<Employee>("employees", enabled);
+/** Every company, each carrying the saved holiday calendar (see holidays.ts). */
 export const useCompaniesLive = (enabled = true) =>
-  useCollectionLive<Company>("companies", enabled);
+  useLiveQuery<Company[]>(enabled ? "companies" : null, () => {
+    const source = querySource<Company>(() => collection(db(), "companies"));
+    return (emit, fail) => source((list, meta) => emit(shareHolidays(list), meta), fail);
+  });
 export const useDepartmentsLive = (enabled = true) =>
   useCollectionLive<Department>("departments", enabled);
 export const useLeaveRequestsLive = (enabled = true) =>
