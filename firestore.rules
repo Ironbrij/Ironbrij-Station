@@ -85,11 +85,24 @@ service cloud.firestore {
     }
 
     // Employees Collection
+    // Only admins create or change employee records. Signing in only links a
+    // person's own record to their login: they may set their login id, email,
+    // photo and accepted invite on it, and only while no other login owns it.
     match /employees/{empId} {
       allow read: if isAuthed();
-      allow create: if isAuthed();
-      allow update: if isAuthed();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || linksOwnEmployee(empId);
       allow delete: if isAdmin();
+    }
+
+    function linksOwnEmployee(empId) {
+      return ownsEmployee(empId) &&
+        resource.data.get('authUid', '') in ['', request.auth.uid] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['authUid', 'email', 'inviteStatus', 'photoUrl']) &&
+        request.resource.data.get('authUid', request.auth.uid) == request.auth.uid &&
+        request.resource.data.get('inviteStatus', 'accepted') == 'accepted' &&
+        request.resource.data.get('email', '').lower() == request.auth.token.email.lower();
     }
 
     // Company & Departments Settings
@@ -199,9 +212,19 @@ service cloud.firestore {
     }
 
     // Invites (Account activation)
+    // An invite link is opened before signing in, so one invite can be read by
+    // its token. Only admins make or list invites; the invited person may only
+    // mark their own invite used.
     match /invites/{token} {
-      allow read, create, update: if true;
-      allow delete: if isAdmin();
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthed() &&
+        request.auth.token.email != null &&
+        resource.data.email.lower() == request.auth.token.email.lower() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
+        request.resource.data.used == true
+      );
     }
 
     // Admin API Tokens
