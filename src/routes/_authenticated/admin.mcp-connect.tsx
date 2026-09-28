@@ -213,14 +213,14 @@ export function McpConnectPage() {
     "savytimes": {
       "url": "${currentAppUrl}/api/mcp",
       "headers": {
-        "Authorization": "Bearer ${activeToken?.token || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc"}"
+        "Authorization": "Bearer ${activeToken?.token || "YOUR_ADMIN_TOKEN"}"
       }
     }
   }
 }`;
 
   // Claude Code CLI command
-  const claudeCodeCmd = `claude mcp add --transport http savytimes ${currentAppUrl}/api/mcp --header "Authorization: Bearer ${activeToken?.token || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc"}"`;
+  const claudeCodeCmd = `claude mcp add --transport http savytimes ${currentAppUrl}/api/mcp --header "Authorization: Bearer ${activeToken?.token || "YOUR_ADMIN_TOKEN"}"`;
 
   // OpenAPI Schema for ChatGPT
   const openApiUrl = `${currentAppUrl}/api/mcp-action?openapi=true`;

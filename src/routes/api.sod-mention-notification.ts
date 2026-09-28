@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { adminMasterKey } from "@/lib/admin-key";
 import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
 import type { MentionNotificationRequest, MentionRecipient } from "@/lib/mention-notifications";
 import { resolveAppUrl } from "@/lib/app-url";
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/api/sod-mention-notification")({
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
         const masterKey =
-          process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+          adminMasterKey();
         const isMasterKey = Boolean(token && token === masterKey);
 
         const candidateKeys = [
