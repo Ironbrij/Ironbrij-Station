@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { adminMasterKey } from "@/lib/admin-key";
 import { resolveAppUrl } from "@/lib/app-url";
 import { fromFirestoreFields, patchIfUnchanged, toFirestoreFields } from "@/lib/firestore-rest";
 import { getShiftTimezone, zonedDateKey } from "@/lib/attendance";
@@ -18,7 +19,7 @@ async function validateAdminToken(token: string): Promise<{ ok: boolean; adminEm
 
   // Master Admin Key
   const masterKey =
-    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+    adminMasterKey();
   if (token === masterKey) {
     return { ok: true, adminEmail: "pabibek9@gmail.com" };
   }

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { adminMasterKey } from "@/lib/admin-key";
 
 import { deliverReportEmail, type SendReportInput } from "@/lib/report-email";
 
@@ -14,7 +15,7 @@ export const Route = createFileRoute("/api/send-report")({
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
         const masterKey =
-          process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+          adminMasterKey();
         const isMasterKey = Boolean(token && token === masterKey);
 
         const candidateKeys = [

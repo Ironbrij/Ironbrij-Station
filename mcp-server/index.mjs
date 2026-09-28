@@ -1259,7 +1259,7 @@ rl.on("line", async (line) => {
     try {
       // Validate Token if provided in env
       const adminToken = process.env.SAVYTIMES_ADMIN_TOKEN;
-      const masterKey = "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+      const masterKey = process.env.ADMIN_API_KEY || null;
       if (adminToken && adminToken !== masterKey) {
         const tokenRes = await fetch(
           `${FIRESTORE_BASE_URL}/adminApiTokens/${encodeURIComponent(adminToken)}?key=${encodeURIComponent(

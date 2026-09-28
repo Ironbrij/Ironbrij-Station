@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { adminMasterKey } from "@/lib/admin-key";
 import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
@@ -163,7 +164,7 @@ function parseRecipients(value: unknown): string[] {
 async function isAuthorisedKey(token: string): Promise<boolean> {
   if (!token || token.length < 20) return false;
   const masterKey =
-    process.env.ADMIN_API_KEY || "st_adm_9f82a1b7c3d4e5f67890123456789abcdef0123456789abc";
+    adminMasterKey();
   if (token === masterKey) return true;
   const { baseUrl, apiKey } = getFirestoreConfig();
   const response = await fetch(
