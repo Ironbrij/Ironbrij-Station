@@ -1,29 +1,8 @@
-import type { Employee, Punch } from "./types.ts";
-import { formatInTimezone, getShiftTimezone } from "./attendance.ts";
-import { toDate } from "./time.ts";
+import type { Punch } from "./types.ts";
 
-/**
- * Every punch stores the schedule it was taken against. Reusing it keeps the
- * late log and the dashboard judging the same clock-in against the same shift,
- * so excusing or correcting a punch in one place lands in the other.
- */
-export function scopeEmployeeToPunchSchedule(employee: Employee, punch?: Punch | null): Employee {
-  const start = toDate(punch?.scheduledShiftStart);
-  const end = toDate(punch?.scheduledShiftEnd);
-  if (!start || !end) return employee;
-  const timezone = punch?.shiftTimezone || getShiftTimezone(employee);
-  const clockTime = (value: Date) =>
-    formatInTimezone(value, timezone, { hour: "2-digit", minute: "2-digit", hour12: false });
-  return {
-    ...employee,
-    isMultipleShift: false,
-    shifts: undefined,
-    shiftTimezone: timezone,
-    shiftStartTime: clockTime(start),
-    shiftEndTime: clockTime(end),
-    requiredWorkMinutes: punch?.requiredWorkMinutes ?? employee.requiredWorkMinutes,
-  };
-}
+// The schedule a punch was made on. It lives beside computeEmployeeLateness so
+// every lateness check, the live one included, can use it.
+export { scopeEmployeeToPunchSchedule } from "./attendance.ts";
 
 /**
  * Lateness belongs to the shift, not to each clock-in inside it. Overtime and
