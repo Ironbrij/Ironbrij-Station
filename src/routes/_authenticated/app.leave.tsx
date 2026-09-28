@@ -15,9 +15,9 @@ import { toDate } from "@/lib/time";
 export const Route = createFileRoute("/_authenticated/app/leave")({
   head: () => ({
     meta: [
-      { title: "Leave — SavyTimes" },
+      { title: "Leave — SavyTime" },
       { name: "description", content: "Request leave and view history." },
-      { property: "og:title", content: "Leave — SavyTimes" },
+      { property: "og:title", content: "Leave — SavyTime" },
       { property: "og:description", content: "Request leave and view history." },
     ],
   }),

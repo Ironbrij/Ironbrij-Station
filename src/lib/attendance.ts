@@ -217,9 +217,11 @@ export type HolidayContext = Pick<Company, "id" | "state"> | null | undefined;
  */
 export function isHolidayAssignedToEmployee(
   holiday: CompanyHoliday,
-  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">,
+  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds" | "noPublicHolidays">,
   context?: HolidayContext,
 ): boolean {
+  // Someone not entitled to public holidays only gets the ones given to them by name.
+  if (employee.noPublicHolidays && holiday.targetType !== "employees") return false;
   const forCompany =
     context?.id && context.id !== "all" ? normalizeCompanyId(context.id) : null;
   const empCompanyIds = (
@@ -252,13 +254,13 @@ export function isHolidayAssignedToEmployee(
 export function getEmployeeHoliday(
   company: Pick<Company, "id" | "state" | "holidays" | "holidayAssignments"> | null | undefined,
   employee:
-    | Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">
+    | Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds" | "noPublicHolidays">
     | null
     | undefined,
   dateKey: string,
 ): CompanyHoliday | null {
   if (!company || !employee) return null;
-  if (company.holidays?.includes(dateKey)) {
+  if (company.holidays?.includes(dateKey) && !employee.noPublicHolidays) {
     return {
       id: `legacy-${dateKey}`,
       date: dateKey,
@@ -276,9 +278,9 @@ export function getEmployeeHoliday(
 
 export function getEmployeeHolidayDates(
   company: Pick<Company, "id" | "state" | "holidays" | "holidayAssignments"> | null | undefined,
-  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds">,
+  employee: Pick<Employee, "id" | "authUid" | "deptId" | "state" | "companyId" | "companyIds" | "noPublicHolidays">,
 ): string[] {
-  const dates = new Set(company?.holidays ?? []);
+  const dates = new Set(employee.noPublicHolidays ? [] : (company?.holidays ?? []));
   for (const holiday of company?.holidayAssignments ?? []) {
     if (isHolidayAssignedToEmployee(holiday, employee, company)) dates.add(holiday.date);
   }

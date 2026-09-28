@@ -1,3 +1,4 @@
+import { formatEmailDate } from "./email-template.ts";
 import type { Department, Employee, LeaveRequest } from "./types";
 
 /**
@@ -75,18 +76,6 @@ export function resolveLeaveNoticeRecipients(
   return [...emails].sort();
 }
 
-function formatDateKey(dateKey: string): string {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  if (!year || !month || !day) return dateKey;
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-AU", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 type LeavePart = Pick<LeaveRequest, "leaveType" | "halfDayPeriod" | "startTime" | "endTime">;
 
 function partOfDay(part: LeavePart): string {
@@ -101,26 +90,29 @@ function partOfDay(part: LeavePart): string {
   return "";
 }
 
-/** "on Mon, 5 Oct 2026", "from Mon, 5 Oct 2026 to Wed, 7 Oct 2026", or "on" a list of picked dates. */
+/**
+ * "on Monday, 5 October 2026", "from Monday, 5 October 2026 to Wednesday, 7 October 2026",
+ * or "on" a list of picked dates. The dates carry their own commas, so the list uses "; " and "and".
+ */
 export function describeLeaveDates(leave: LeaveRequest): string {
   if (Array.isArray(leave.dates) && leave.dates.length > 0) {
     const days = [...leave.dates].sort((a, b) => a.date.localeCompare(b.date));
-    return `on ${days
-      .map(
-        (day) =>
-          `${formatDateKey(day.date)}${partOfDay({
-            leaveType: day.leaveType || leave.leaveType,
-            halfDayPeriod: day.halfDayPeriod || leave.halfDayPeriod,
-            startTime: day.startTime || leave.startTime,
-            endTime: day.endTime || leave.endTime,
-          })}`,
-      )
-      .join(", ")}`;
+    const listed = days.map(
+      (day) =>
+        `${formatEmailDate(day.date)}${partOfDay({
+          leaveType: day.leaveType || leave.leaveType,
+          halfDayPeriod: day.halfDayPeriod || leave.halfDayPeriod,
+          startTime: day.startTime || leave.startTime,
+          endTime: day.endTime || leave.endTime,
+        })}`,
+    );
+    const last = listed.pop()!;
+    return `on ${listed.length > 0 ? `${listed.join("; ")} and ${last}` : last}`;
   }
   const range =
     leave.dateFrom === leave.dateTo
-      ? `on ${formatDateKey(leave.dateFrom)}`
-      : `from ${formatDateKey(leave.dateFrom)} to ${formatDateKey(leave.dateTo)}`;
+      ? `on ${formatEmailDate(leave.dateFrom)}`
+      : `from ${formatEmailDate(leave.dateFrom)} to ${formatEmailDate(leave.dateTo)}`;
   return `${range}${partOfDay(leave)}`;
 }
 

@@ -4,6 +4,8 @@
  * more than the admin could see.
  */
 
+import { toFirestoreFields } from "./firestore-rest.ts";
+
 type FirestoreValue = Record<string, unknown>;
 
 function fromFirestoreFields(
@@ -124,7 +126,7 @@ export async function isAdmin(identity: { email: string; uid: string }, idToken:
 /** The admin behind a request's login, or the response to send instead. */
 export async function requireAdmin(
   request: Request,
-): Promise<{ idToken: string } | { response: Response }> {
+): Promise<{ idToken: string; email: string } | { response: Response }> {
   const authorization = request.headers.get("authorization");
   const idToken = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   if (!idToken) {
@@ -132,12 +134,32 @@ export async function requireAdmin(
   }
   const identity = await lookupIdentity(idToken);
   if (!identity) {
-    return { response: Response.json({ ok: false, error: "Invalid login token" }, { status: 401 }) };
+    return {
+      response: Response.json({ ok: false, error: "Invalid login token" }, { status: 401 }),
+    };
   }
   if (!(await isAdmin(identity, idToken))) {
     return {
       response: Response.json({ ok: false, error: "Admin access required" }, { status: 403 }),
     };
   }
-  return { idToken };
+  return { idToken, email: identity.email };
+}
+
+/** Creates a document under a chosen id, as the admin. */
+export async function createDocument(
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+  idToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `${firestoreBaseUrl()}/${collection}?documentId=${encodeURIComponent(id)}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: toFirestoreFields(data) }),
+    },
+  );
+  if (!response.ok) throw new Error(`Could not save ${collection}/${id}: ${response.status}`);
 }

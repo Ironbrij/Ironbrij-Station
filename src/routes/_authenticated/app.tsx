@@ -28,7 +28,7 @@ function EmployeeLayout() {
   }
 
   return (
-    <AppShell title="SavyTimes" nav={nav}>
+    <AppShell title="SavyTime" nav={nav}>
       {company && activeCompanyId && activeCompanyId !== "all" ? <Outlet /> : (
         <p role="status" className="rounded-lg border bg-background p-6 text-sm">
           No assigned company is available yet. Please ask your administrator to check your company assignment.

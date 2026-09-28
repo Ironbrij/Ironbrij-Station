@@ -34,7 +34,7 @@ function AdminLayout() {
   ];
 
   return (
-    <AppShell title="SavyTimes — Admin" nav={adminNav}>
+    <AppShell title="SavyTime — Admin" nav={adminNav}>
       <Outlet />
     </AppShell>
   );

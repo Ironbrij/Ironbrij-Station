@@ -87,7 +87,7 @@ export async function sendLeaveTeamNotice({
       event,
       employeeName: employee.name,
       teamName: forClient ? undefined : teamName,
-      companyName: brand.name?.trim() || "SavyTimes",
+      companyName: brand.name?.trim() || "SavyTime",
       leave,
     });
     const html = renderCompanyEmail({
@@ -114,7 +114,7 @@ export async function sendLeaveTeamNotice({
         ],
         accentColor,
       )}</table>`,
-      cta: { label: "Open SavyTimes", url: appUrl },
+      cta: { label: "Open SavyTime", url: appUrl },
       accentColor,
     });
     return { subject: notice.subject, text: notice.text, html };

@@ -43,7 +43,7 @@ import { COMPANY_ID } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/admin/sod-eod")({
   head: () => ({
-    meta: [{ title: "SOD & EOD Reports - SavyTimes Admin" }],
+    meta: [{ title: "SOD & EOD Reports - SavyTime Admin" }],
   }),
   component: AdminSodEodPage,
 });

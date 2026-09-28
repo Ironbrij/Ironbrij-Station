@@ -178,7 +178,7 @@ export async function reconcileEmployeeShift(
               noticeRef,
               cleanFirestoreData({
                 title: "We think you forgot to punch out",
-                message: `You remained clocked in past your scheduled shift, so SavyTimes automatically clocked you out at ${formatInTimezone(
+                message: `You remained clocked in past your scheduled shift, so SavyTime automatically clocked you out at ${formatInTimezone(
                   autoOutDate,
                   timeout.shift.timezone,
                 )} to preserve accurate shift records. If you worked overtime, your extra hours can be approved by your admin in the Overtime tab.`,
@@ -187,7 +187,7 @@ export async function reconcileEmployeeShift(
                 targetEmployeeId: employee.id,
                 companyId: cId,
                 createdAt: attendanceNow().toISOString(),
-                authorName: "SavyTimes",
+                authorName: "SavyTime",
               }),
             );
           } catch (noticeError) {

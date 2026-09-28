@@ -1,5 +1,5 @@
 {
-  "name": "SavyTimes - Punch Out Reminder Email",
+  "name": "SavyTime - Punch Out Reminder Email",
   "nodes": [
     {
       "parameters": {
@@ -23,7 +23,7 @@
         "message": "={{ $json.body.email.html }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "SavyTimes"
+          "senderName": "SavyTime"
         }
       },
       "id": "send-punch-out-reminder",

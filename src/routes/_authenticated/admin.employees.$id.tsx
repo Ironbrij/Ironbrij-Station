@@ -82,9 +82,10 @@ import { getPunchShiftClient } from "@/lib/shift-clients";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { getEmployeeAllShiftDefinitions, findShiftConflicts } from "@/lib/shift-conflict";
 import { ShiftConflictAlert } from "@/components/ShiftConflictAlert";
+import { TemporaryScheduleCard } from "@/components/TemporaryScheduleCard";
 
 export const Route = createFileRoute("/_authenticated/admin/employees/$id")({
-  head: () => ({ meta: [{ title: "Employee Profile — SavyTimes Admin" }] }),
+  head: () => ({ meta: [{ title: "Employee Profile — SavyTime Admin" }] }),
   component: EmployeeDetail,
 });
 
@@ -200,12 +201,7 @@ function EmployeeDetail() {
 
   const punches = useMemo(() => {
     if (!employee || !rawEmployee) return [];
-    return getEmployeePunchesForCompany(
-      allPunches,
-      rawEmployee,
-      profileCompanyId,
-      company?.name,
-    )
+    return getEmployeePunchesForCompany(allPunches, rawEmployee, profileCompanyId, company?.name)
       .filter((punch) => Boolean(punch.timestamp))
       .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
   }, [allPunches, company, employee, profileCompanyId, rawEmployee]);
@@ -508,7 +504,7 @@ function EmployeeDetail() {
       return toast.error("No attendance records for this period.");
     const timezone = getEmployeeTimezone(employee);
     const pdf = await createPdf();
-      if (!pdf) return;
+    if (!pdf) return;
     pdf.setFontSize(16);
     pdf.text(`${employee.name} — Attendance`, 14, 17);
     pdf.setFontSize(9);
@@ -780,6 +776,8 @@ function EmployeeDetail() {
           />
           <DetailRow label="Employee ID" value={employee.id} />
         </div>
+
+        <TemporaryScheduleCard employee={employee} companies={companies} />
 
         {/* Company-specific shift & working days breakdown */}
         {employee.companyMemberships && Object.keys(employee.companyMemberships).length > 0 && (

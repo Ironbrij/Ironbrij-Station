@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { adminMasterKey } from "@/lib/admin-key";
 import type { CompanyEmailBranding } from "@/lib/email-branding";
-import { escapeEmailHtml, renderCompanyEmail, renderEmailDetails } from "@/lib/email-template";
+import {
+  escapeEmailHtml,
+  formatEmailDate,
+  renderCompanyEmail,
+  renderEmailDetails,
+} from "@/lib/email-template";
 import { resolveAppUrl } from "@/lib/app-url";
 
 type LeaveDecisionInput = {
@@ -38,8 +43,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-        const masterKey =
-          adminMasterKey();
+        const masterKey = adminMasterKey();
         const isMasterKey = Boolean(token && token === masterKey);
 
         const candidateKeys = [
@@ -132,11 +136,13 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
           process.env.N8N_LEAVE_DECISION_WEBHOOK_URL ||
           "https://vmi3182726.contaboserver.net/webhook/time-station-leave-decision";
 
-        const company = body.company || { name: "SavyTimes" };
-        const companyName = company.name?.trim() || "SavyTimes";
+        const company = body.company || { name: "SavyTime" };
+        const companyName = company.name?.trim() || "SavyTime";
         const approved = body.status === "approved";
         const dateRange =
-          body.dateFrom === body.dateTo ? body.dateFrom : `${body.dateFrom} to ${body.dateTo}`;
+          body.dateFrom === body.dateTo
+            ? formatEmailDate(body.dateFrom)
+            : `${formatEmailDate(body.dateFrom)} to ${formatEmailDate(body.dateTo)}`;
         const requestType =
           body.leaveType === "timed_break"
             ? `break from ${body.startTime} to ${body.endTime}`
@@ -149,7 +155,7 @@ export const Route = createFileRoute("/api/leave-decision-notification")({
         const decisionText = approved
           ? `Your ${requestType} request for ${dateRange} has been approved.`
           : `Your ${requestType} request for ${dateRange} has been rejected.`;
-        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTimes to view the updated status for ${companyName}.`;
+        const text = `Hi ${body.employeeName},\n\n${decisionText}\n\nYour submitted reason: ${body.reason}\n\nPlease open SavyTime to view the updated status for ${companyName}.`;
         const accentColor = approved ? "#047857" : "#be123c";
         const appUrl = resolveAppUrl(request.url);
         const html = renderCompanyEmail({

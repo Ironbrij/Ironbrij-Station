@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { resolveAppUrl } from "@/lib/app-url";
-import { listCollection, readDocument, requireAdmin } from "@/lib/admin-request";
+import { createDocument, listCollection, readDocument, requireAdmin } from "@/lib/admin-request";
+import { newHolidayResponse, newResponseToken } from "@/lib/holiday-response";
 import { sendHolidayEmails } from "@/lib/holiday-email";
 import { sharedCalendar } from "@/lib/holidays";
 import {
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/api/holiday-notification")({
       POST: async ({ request }) => {
         const admin = await requireAdmin(request);
         if ("response" in admin) return admin.response;
-        const { idToken } = admin;
+        const { idToken, email: adminEmail } = admin;
 
         let body: { holidayIds?: unknown };
         try {
@@ -76,6 +77,13 @@ export const Route = createFileRoute("/api/holiday-notification")({
           companies,
           departments,
           appUrl: resolveAppUrl(request.url),
+          // Each client's Work on Holiday / Do Not Work answer is saved under its own token.
+          saveClientQuestion: async (company, holiday, vas) => {
+            const token = newResponseToken();
+            const record = newHolidayResponse({ company, holiday, vas, notifyEmail: adminEmail });
+            await createDocument("holidayResponses", token, { ...record }, idToken);
+            return token;
+          },
         });
         if (!result.ok) {
           return Response.json({ ok: false, error: result.error }, { status: result.status });

@@ -45,7 +45,12 @@ export interface Company {
   /** Everyone at the client our emails go to (see client-emails.ts). */
   clientEmails?: string[];
   /** Which emails the client gets; each is on unless set to false. */
-  clientEmailTopics?: { weeklyReport?: boolean; holidays?: boolean; leave?: boolean };
+  clientEmailTopics?: {
+    weeklyReport?: boolean;
+    holidays?: boolean;
+    leave?: boolean;
+    daylightSaving?: boolean;
+  };
   /** The client's addresses before clientEmails; still read when that is unset. */
   weeklyReportRecipients?: string[];
   /** Who receives the all-clients weekly report. Only read on the main company. */
@@ -116,6 +121,24 @@ export interface Employee {
   maxDailyBreaks?: number; // Number of breaks allowed per day (e.g., 1, 2, 3; default 1)
   /** Paid leave days credited per calendar year. Unset means no credits are tracked. */
   annualLeaveCredits?: number | null;
+  /**
+   * Not entitled to public holidays: they work as normal on company, state and
+   * national holidays. A holiday given to them by name still applies.
+   */
+  noPublicHolidays?: boolean;
+  /** Shift times moved for a while, such as for daylight saving; see temporary-schedule.ts. */
+  temporarySchedule?: TemporarySchedule | null;
+}
+
+type SavedShiftTimes = Pick<CompanyMembership, "shiftStartTime" | "shiftEndTime" | "shifts">;
+
+export interface TemporarySchedule {
+  /** How far the shifts moved, in minutes: 60 is an hour later, -60 an hour earlier. */
+  minutes: number;
+  companyIds: string[];
+  startedAt: string;
+  /** The times before the move: the profile's own, and each moved company's. */
+  original: { profile: SavedShiftTimes; memberships: Record<string, SavedShiftTimes> };
 }
 
 export interface CompanyMembership {
@@ -226,7 +249,13 @@ export interface Punch {
   attendanceStatus?: AttendanceStatus;
   isEarly?: boolean;
   isAuto?: boolean;
-  autoReason?: "suspension" | "approved_leave" | "company_holiday" | "shift_timeout" | "forgot_punch_out" | "switch_company";
+  autoReason?:
+    | "suspension"
+    | "approved_leave"
+    | "company_holiday"
+    | "shift_timeout"
+    | "forgot_punch_out"
+    | "switch_company";
   punchInId?: string;
   voidedAt?: string;
   voidedBy?: string;

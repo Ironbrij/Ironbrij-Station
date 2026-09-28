@@ -94,8 +94,8 @@ test("the team email says who is away and when, not 'approved' or the reason", (
     companyName: "Ironbrij",
     leave: leave(),
   });
-  assert.equal(notice.subject, "Bibek will be on leave on Mon, 5 Oct 2026");
-  assert.equal(notice.headline, "Bibek (Development) will be on leave on Mon, 5 Oct 2026.");
+  assert.equal(notice.subject, "Bibek will be on leave on Monday, 5 October 2026");
+  assert.equal(notice.headline, "Bibek (Development) will be on leave on Monday, 5 October 2026.");
   assert.doesNotMatch(notice.text, /approv|private/i);
 });
 
@@ -106,7 +106,10 @@ test("ranges, half days and picked dates read naturally", () => {
     companyName: "Ironbrij",
     leave: leave({ dateTo: "2026-10-07" }),
   });
-  assert.equal(range.subject, "Bibek will be on leave from Mon, 5 Oct 2026 to Wed, 7 Oct 2026");
+  assert.equal(
+    range.subject,
+    "Bibek will be on leave from Monday, 5 October 2026 to Wednesday, 7 October 2026",
+  );
 
   const picked = buildLeaveTeamNoticeText({
     event: "approved",
@@ -121,7 +124,7 @@ test("ranges, half days and picked dates read naturally", () => {
   });
   assert.equal(
     picked.subject,
-    "Bibek will be on leave on Mon, 5 Oct 2026, Fri, 9 Oct 2026 (second half of the day)",
+    "Bibek will be on leave on Monday, 5 October 2026 and Friday, 9 October 2026 (second half of the day)",
   );
 });
 
@@ -132,5 +135,8 @@ test("a revoked leave tells the team they are working after all", () => {
     companyName: "Ironbrij",
     leave: leave({ status: "rejected" }),
   });
-  assert.equal(notice.subject, "Update: Bibek will no longer be on leave on Mon, 5 Oct 2026");
+  assert.equal(
+    notice.subject,
+    "Update: Bibek will no longer be on leave on Monday, 5 October 2026",
+  );
 });

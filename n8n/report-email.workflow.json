@@ -1,5 +1,5 @@
 {
-  "name": "SavyTimes - Attendance Report Email",
+  "name": "SavyTime - Attendance Report Email",
   "nodes": [
     {
       "parameters": {
@@ -24,7 +24,7 @@
         "message": "={{ $json.body.email.html }}",
         "options": {
           "appendAttribution": false,
-          "senderName": "SavyTimes"
+          "senderName": "SavyTime"
         }
       },
       "id": "send-report-email",

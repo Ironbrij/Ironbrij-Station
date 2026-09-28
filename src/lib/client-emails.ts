@@ -3,10 +3,11 @@ import type { Company } from "./types.ts";
 /**
  * Who at a client hears from us, and about what. One list of addresses per
  * company, set on the company, used by every email meant for the client: the
- * weekly attendance report, holidays, and team leave. Each can be switched off.
+ * weekly attendance report, holidays, team leave and daylight saving. Each can
+ * be switched off.
  */
 
-export type ClientEmailTopic = "weeklyReport" | "holidays" | "leave";
+export type ClientEmailTopic = "weeklyReport" | "holidays" | "leave" | "daylightSaving";
 
 export const CLIENT_EMAIL_TOPICS: { topic: ClientEmailTopic; label: string; hint: string }[] = [
   {
@@ -17,12 +18,17 @@ export const CLIENT_EMAIL_TOPICS: { topic: ClientEmailTopic; label: string; hint
   {
     topic: "holidays",
     label: "Holidays",
-    hint: "When a holiday gives their people a day off.",
+    hint: "Before a holiday, asking whether their Virtual Assistant should work it.",
   },
   {
     topic: "leave",
     label: "Team leave",
     hint: "When one of their people has leave approved: who and when, never why.",
+  },
+  {
+    topic: "daylightSaving",
+    label: "Daylight saving",
+    hint: "Before their clocks change, with each VA's hours before and after.",
   },
 ];
 
@@ -58,7 +64,10 @@ export function clientWants(
 
 /** The addresses to send this kind of email to, or none. */
 export function clientEmailsFor(
-  company: Pick<Company, "clientEmails" | "weeklyReportRecipients" | "clientEmailTopics"> | null | undefined,
+  company:
+    | Pick<Company, "clientEmails" | "weeklyReportRecipients" | "clientEmailTopics">
+    | null
+    | undefined,
   topic: ClientEmailTopic,
 ): string[] {
   return clientWants(company, topic) ? companyClientEmails(company) : [];

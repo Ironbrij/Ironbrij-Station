@@ -31,9 +31,9 @@ import { getPunchCompanyId } from "@/lib/company-context";
 export const Route = createFileRoute("/_authenticated/app/notices")({
   head: () => ({
     meta: [
-      { title: "Notifications & Notices — SavyTimes" },
+      { title: "Notifications & Notices — SavyTime" },
       { name: "description", content: "View HR announcements and notices." },
-      { property: "og:title", content: "Notifications & Notices — SavyTimes" },
+      { property: "og:title", content: "Notifications & Notices — SavyTime" },
       { property: "og:description", content: "View HR announcements and notices." },
     ],
   }),

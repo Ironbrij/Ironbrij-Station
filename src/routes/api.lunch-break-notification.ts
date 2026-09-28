@@ -19,18 +19,18 @@ export const FOOD_SESSION_WARNING_QUOTES = [
 ];
 
 export const BREAK_OVERDUE_QUOTES = [
-  "⏰ Friendly check-in from SavyTimes: Your scheduled break finished 5 minutes ago! Right now your shift timer is napping while extra break time is ticking — click 'End Break' so all your hard work counts!",
-  "🔔 SavyTimes Alert: Your lunch break wrapped up 5 minutes ago! Remember to click 'End Break & Resume Shift' so your working hours start ticking again.",
-  "⏳ Hey there! Your break ended 5 minutes ago. Your shift timer is still on pause — hop back into SavyTimes and resume your shift!",
+  "⏰ Friendly check-in from SavyTime: Your scheduled break finished 5 minutes ago! Right now your shift timer is napping while extra break time is ticking — click 'End Break' so all your hard work counts!",
+  "🔔 SavyTime Alert: Your lunch break wrapped up 5 minutes ago! Remember to click 'End Break & Resume Shift' so your working hours start ticking again.",
+  "⏳ Hey there! Your break ended 5 minutes ago. Your shift timer is still on pause — hop back into SavyTime and resume your shift!",
   "🚨 Knock knock! Break finished 5 minutes ago. Extra break time is currently counting — hit 'End Break' to switch back to productive paid time.",
   "🍳 Food mission was accomplished 5 minutes ago! Don't let your shift timer stay frozen — click 'End Break' to get back on track.",
   "☕ The coffee has kicked in, but your shift timer is still frozen! Your break ended 5 minutes ago — click 'End Break' to resume work.",
-  "🎯 Break finished 5 minutes ago! Pop over to SavyTimes and click 'End Break' so your active hours are properly logged.",
-  "📢 Attention desk warrior: Your break concluded 5 minutes ago. Make sure to end your break in SavyTimes to keep your attendance spotless!",
+  "🎯 Break finished 5 minutes ago! Pop over to SavyTime and click 'End Break' so your active hours are properly logged.",
+  "📢 Attention desk warrior: Your break concluded 5 minutes ago. Make sure to end your break in SavyTime to keep your attendance spotless!",
   "⚡ Your break officially ended 5 minutes ago. Your working timer is waiting for you — click 'End Break' to jump back in!",
-  "🏆 SavyTimes Reminder: Scheduled break finished 5 minutes ago! Don't forget to resume your shift timer so your time isn't lost.",
-  "🌟 Break time was over 5 minutes ago! Head over to SavyTimes and click 'End Break & Resume Shift'.",
-  "🛑 Break finished 5 minutes ago. Remember, your shift timer is paused until you click 'End Break' in SavyTimes!",
+  "🏆 SavyTime Reminder: Scheduled break finished 5 minutes ago! Don't forget to resume your shift timer so your time isn't lost.",
+  "🌟 Break time was over 5 minutes ago! Head over to SavyTime and click 'End Break & Resume Shift'.",
+  "🛑 Break finished 5 minutes ago. Remember, your shift timer is paused until you click 'End Break' in SavyTime!",
 ];
 
 function getRandomQuote(quotes: string[]): string {
@@ -149,7 +149,7 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
           );
         }
 
-        const company = body.company || { name: "SavyTimes" };
+        const company = body.company || { name: "SavyTime" };
         const isWarning = body.type === "warning_5m";
         const randomQuote =
           body.quote ||
@@ -158,11 +158,11 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
             : getRandomQuote(BREAK_OVERDUE_QUOTES));
 
         const subject = isWarning
-          ? `🍔 Food session ending soon: 5 minutes left on break (${company.name || "SavyTimes"})`
-          : `⏰ Break finished 5 minutes ago — Shift timer paused (${company.name || "SavyTimes"})`;
+          ? `🍔 Food session ending soon: 5 minutes left on break (${company.name || "SavyTime"})`
+          : `⏰ Break finished 5 minutes ago — Shift timer paused (${company.name || "SavyTime"})`;
 
         const text = isWarning
-          ? `Hi ${body.employeeName},\n\n${randomQuote}\n\nYour ${body.allowedMinutes}-minute break has 5 minutes remaining. Please make sure to return and click 'End Break' in SavyTimes to resume your work timer, otherwise time will continue as unpaid lunch break.`
+          ? `Hi ${body.employeeName},\n\n${randomQuote}\n\nYour ${body.allowedMinutes}-minute break has 5 minutes remaining. Please make sure to return and click 'End Break' in SavyTime to resume your work timer, otherwise time will continue as unpaid lunch break.`
           : `Hi ${body.employeeName},\n\n${randomQuote}\n\nYour scheduled ${body.allowedMinutes}-minute break ended 5 minutes ago. Your shift timer remains paused and this extra time is continuing to count as a lunch break until you click 'End Break & Resume Shift'.`;
 
         const quoteBoxHtml = `
@@ -200,8 +200,8 @@ export const Route = createFileRoute("/api/lunch-break-notification")({
               {
                 label: "Action required",
                 value: isWarning
-                  ? "Please return to SavyTimes and click 'End Break' to resume your working shift timer."
-                  : "Your shift timer is currently paused. Please click 'End Break & Resume Shift' in SavyTimes so your hours are recorded.",
+                  ? "Please return to SavyTime and click 'End Break' to resume your working shift timer."
+                  : "Your shift timer is currently paused. Please click 'End Break & Resume Shift' in SavyTime so your hours are recorded.",
               },
             ],
           )}</table>`,

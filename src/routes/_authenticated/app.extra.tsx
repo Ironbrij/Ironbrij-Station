@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 export const Route = createFileRoute("/_authenticated/app/extra")({
   head: () => ({
     meta: [
-      { title: "Overtime & Extra Time — SavyTimes" },
+      { title: "Overtime & Extra Time — SavyTime" },
       { name: "description", content: "Automatic overtime tracking." },
     ],
   }),

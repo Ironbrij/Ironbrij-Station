@@ -68,7 +68,7 @@ export const Route = createFileRoute("/api/leave-team-notification")({
           employees,
           departments,
           companies,
-          company: body.company || { name: "SavyTimes" },
+          company: body.company || { name: "SavyTime" },
           appUrl: resolveAppUrl(request.url),
         });
         if (!result.ok) {

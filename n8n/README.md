@@ -1,4 +1,4 @@
-# SavyTimes - n8n Workflows
+# SavyTime - n8n Workflows
 
 This directory contains pre-configured n8n workflow JSON files that can be directly imported into your n8n instance.
 
@@ -13,7 +13,7 @@ This directory contains pre-configured n8n workflow JSON files that can be direc
 3. Open the **Send Invite with Gmail** node and connect your sending Gmail / SMTP credential.
 4. Toggle the workflow to **Active**.
 5. Copy the Webhook Production URL (e.g. `https://your-n8n-instance.com/webhook/time-station-employee-invite`).
-6. Set `N8N_INVITE_WEBHOOK_URL` in your SavyTimes deployment environment variables.
+6. Set `N8N_INVITE_WEBHOOK_URL` in your SavyTime deployment environment variables.
 
 ---
 
@@ -26,7 +26,7 @@ This directory contains pre-configured n8n workflow JSON files that can be direc
 3. Open the **Send Gmail Notification** node and connect your sending Gmail credential.
 4. Toggle the workflow to **Active**.
 5. Copy the Webhook Production URL (e.g. `https://your-n8n-instance.com/webhook/time-station-sod-mention`).
-6. Set `N8N_SOD_MENTION_WEBHOOK_URL` in the SavyTimes production environment.
+6. Set `N8N_SOD_MENTION_WEBHOOK_URL` in the SavyTime production environment.
 
 When updating an existing production workflow, replace the old **Loop Over Items** node with the
 included **Split Recipients** node. The old node does not split `body.mentions`, so the Gmail node
@@ -91,7 +91,7 @@ has nowhere to post and reports are never delivered.
 1. Import `report-email.workflow.json` into n8n.
 2. Connect the Gmail credential on **Send Report with Gmail**.
 3. Activate the workflow.
-4. Set `N8N_REPORT_WEBHOOK_URL` in the SavyTimes deployment to its production
+4. Set `N8N_REPORT_WEBHOOK_URL` in the SavyTime deployment to its production
    webhook URL, e.g. `https://your-n8n-instance.com/webhook/time-station-report-email`.
 
 ---
@@ -106,8 +106,8 @@ this workflow builds the reports, that one delivers them.
 
 1. Import `weekly-report.workflow.json` into n8n.
 2. Open the **Config** node, the only node you edit:
-   - `baseUrl` — your SavyTimes URL, e.g. `https://station.savykids.com`
-   - `adminKey` — must match `ADMIN_API_KEY` in the SavyTimes deployment
+   - `baseUrl` — your SavyTime URL, e.g. `https://station.savykids.com`
+   - `adminKey` — must match `ADMIN_API_KEY` in the SavyTime deployment
    - `weeksAgo` — leave at `0`
 3. Open **Email The Run Summary**, connect the Gmail credential and set your own
    address. Delete the node if you do not want a summary.
