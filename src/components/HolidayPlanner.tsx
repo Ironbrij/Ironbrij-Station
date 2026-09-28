@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import {
   australianPublicHolidays,
+  qatarPublicHolidays,
   countryInfo,
   describeRegions,
   HOLIDAY_COUNTRIES,
@@ -130,7 +131,9 @@ export function HolidayPlanner({
         ? loaded.list.holidays
         : country === "AU"
           ? australianPublicHolidays(view.year)
-          : [],
+          : country === "QA"
+            ? qatarPublicHolidays(view.year)
+            : [],
     [isLoaded, loaded, view.year, country],
   );
   const countryDetails = countryInfo(country);
@@ -252,7 +255,8 @@ export function HolidayPlanner({
     const match =
       publicHolidays.find(
         (holiday) =>
-          holiday.date === dateKey && (stateFilter === "all" || holiday.states.includes(stateFilter)),
+          holiday.date === dateKey &&
+          (stateFilter === "all" || holiday.states.includes(stateFilter)),
       ) || publicHolidays.find((holiday) => holiday.date === dateKey);
     if (match) openPublicHoliday(match);
     else openDraft([{ date: dateKey, name: "" }], [EVERYONE]);
@@ -260,9 +264,7 @@ export function HolidayPlanner({
 
   function openAllRemaining() {
     const remaining = shownPublicHolidays.filter(
-      (holiday) =>
-        !isAdded(holiday) &&
-        (stateFilter !== "all" || isNationalHoliday(holiday)),
+      (holiday) => !isAdded(holiday) && (stateFilter !== "all" || isNationalHoliday(holiday)),
     );
     if (remaining.length === 0) {
       toast.info("Those holidays are already on the calendar.");
@@ -349,7 +351,9 @@ export function HolidayPlanner({
     }));
     setSaving(false);
     if (!ok) return;
-    toast.success(items.length === 1 ? `${items[0].name} added.` : `${items.length} holidays added.`);
+    toast.success(
+      items.length === 1 ? `${items[0].name} added.` : `${items.length} holidays added.`,
+    );
 
     if (draft.notify) {
       const target =
@@ -370,7 +374,8 @@ export function HolidayPlanner({
                 ? { targetType: "companies" as const, targetCompanyIds: draft.companyIds }
                 : { targetType: "all" as const };
       const lines = items.map(
-        (item) => `${item.name}: ${dayLabel(item.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`,
+        (item) =>
+          `${item.name}: ${dayLabel(item.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`,
       );
       try {
         const now = new Date().toISOString();
@@ -468,8 +473,7 @@ export function HolidayPlanner({
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Click a day, or add a public holiday for Australia, New Zealand or the UK. Pick the
-            states or regions that get it off:
-            it closes the companies in those states.
+            states or regions that get it off: it closes the companies in those states.
           </p>
         </div>
         <button
@@ -659,7 +663,13 @@ export function HolidayPlanner({
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {[{ code: "all", label: `All ${countryDetails.regionWord === "country" ? "countries" : `${countryDetails.regionWord}s`}` }, ...countryDetails.regions].map((region) => (
+          {[
+            {
+              code: "all",
+              label: `All ${countryDetails.regionWord === "country" ? "countries" : `${countryDetails.regionWord}s`}`,
+            },
+            ...countryDetails.regions,
+          ].map((region) => (
             <button
               key={region.code}
               type="button"
@@ -714,11 +724,13 @@ export function HolidayPlanner({
         <p className="text-[11px] text-muted-foreground">
           {publicSource === "nager"
             ? "From Nager.Date (date.nager.at), including the days each state or region proclaims."
-            : publicSource === "built-in"
-              ? "Nager.Date could not be reached, so these are worked out from each state's rules. Proclaimed days (like show days) are missing; add those with Add a holiday."
-              : publicSource === "unavailable"
-                ? "Nager.Date could not be reached. Try again later, or add days with Add a holiday."
-                : "Loading from Nager.Date…"}
+            : publicSource === "built-in" && country === "QA"
+              ? "Qatar's Eid dates follow the moon, so these are the expected dates. Check them when Qatar announces them, and move a day if needed."
+              : publicSource === "built-in"
+                ? "Nager.Date could not be reached, so these are worked out from each state's rules. Proclaimed days (like show days) are missing; add those with Add a holiday."
+                : publicSource === "unavailable"
+                  ? "Nager.Date could not be reached. Try again later, or add days with Add a holiday."
+                  : "Loading from Nager.Date…"}
         </p>
       </div>
 
@@ -798,12 +810,13 @@ export function HolidayPlanner({
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-extrabold text-primary">
-                    Which {countryInfo(draft.country).regionWord === "country"
+                    Which{" "}
+                    {countryInfo(draft.country).regionWord === "country"
                       ? "countries"
                       : `${countryInfo(draft.country).regionWord}s`}{" "}
                     get the holiday?
                   </div>
-                  <div className="flex gap-1 rounded-md border bg-background p-0.5">
+                  <div className="flex flex-wrap gap-1 rounded-md border bg-background p-0.5">
                     {HOLIDAY_COUNTRIES.map((item) => (
                       <button
                         key={item.code}
@@ -821,7 +834,7 @@ export function HolidayPlanner({
                             : "text-muted-foreground"
                         }`}
                       >
-                        {item.code === "GB" ? "UK" : item.code}
+                        {item.short}
                       </button>
                     ))}
                   </div>
@@ -917,7 +930,10 @@ export function HolidayPlanner({
                     key={companyKey(company)}
                     type="button"
                     onClick={() =>
-                      setDraft({ ...draft, companyIds: toggle(draft.companyIds, companyKey(company)) })
+                      setDraft({
+                        ...draft,
+                        companyIds: toggle(draft.companyIds, companyKey(company)),
+                      })
                     }
                     className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
                       draft.companyIds.includes(companyKey(company))
@@ -1092,16 +1108,16 @@ function StateScope({
       </p>
       {unset.length > 0 && (
         <p className="text-amber-700 dark:text-amber-400">
-          No state set on {unset.map((company) => company.name).join(", ")}. Set it with Edit on
-          the company so state holidays reach it.
+          No state set on {unset.map((company) => company.name).join(", ")}. Set it with Edit on the
+          company so state holidays reach it.
         </p>
       )}
       {split.length > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 space-y-1">
           <p className="font-semibold text-amber-800 dark:text-amber-300">
             {split.length} {split.length === 1 ? "person works" : "people work"} in more than one
-            state. They get the holiday for their {describeRegions(states)} work only and work as normal
-            for their other companies:
+            state. They get the holiday for their {describeRegions(states)} work only and work as
+            normal for their other companies:
           </p>
           <div className="flex flex-wrap gap-1.5">
             {split.map(({ employee, states: theirs }) => (
@@ -1135,9 +1151,7 @@ function PeoplePicker({
 }) {
   const term = search.trim().toLowerCase();
   const shown = term
-    ? people.filter((employee) =>
-        `${employee.name} ${employee.email}`.toLowerCase().includes(term),
-      )
+    ? people.filter((employee) => `${employee.name} ${employee.email}`.toLowerCase().includes(term))
     : people;
   const chosen = selected.filter((id) => people.some((employee) => employee.id === id));
   return (

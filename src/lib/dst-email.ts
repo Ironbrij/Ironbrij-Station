@@ -14,6 +14,7 @@ import {
   normalizeCompanyId,
 } from "./company-context.ts";
 import { companyEmailBranding } from "./email-branding.ts";
+import { regionLabel, regionTimezone } from "./holidays.ts";
 import {
   escapeEmailHtml,
   formatEmailDate,
@@ -29,18 +30,6 @@ import type { Company, Employee } from "./types.ts";
  * asked to reply if they would rather keep the VA's current hours.
  */
 
-/** Where a company without a valid timezone keeps its clocks, from its state. */
-const AU_STATE_TIMEZONES: Record<string, string> = {
-  ACT: "Australia/Sydney",
-  NSW: "Australia/Sydney",
-  NT: "Australia/Darwin",
-  QLD: "Australia/Brisbane",
-  SA: "Australia/Adelaide",
-  TAS: "Australia/Hobart",
-  VIC: "Australia/Melbourne",
-  WA: "Australia/Perth",
-};
-
 const AU_STATE_NAMES: Record<string, string> = {
   ACT: "the Australian Capital Territory",
   NSW: "New South Wales",
@@ -53,11 +42,11 @@ const AU_STATE_NAMES: Record<string, string> = {
 };
 
 /**
- * The client's clock. An Australian state decides it, since a company's
- * timezone is often left at the Sydney default even for Queensland or Perth.
+ * The client's clock. Their state or region decides it ("US-CA" is Los
+ * Angeles), since a company's timezone is often left at the Sydney default.
  */
 export function companyClockTimezone(company: Pick<Company, "state" | "timezone">): string {
-  const byState = AU_STATE_TIMEZONES[company.state?.trim() || ""];
+  const byState = regionTimezone(company.state?.trim() || "");
   if (byState) return byState;
   return isValidTimezone(company.timezone) ? company.timezone! : DEFAULT_SHIFT_TIMEZONE;
 }
@@ -242,7 +231,8 @@ export function buildClientDstEmail(plan: ClientDstPlan) {
   const branding = companyEmailBranding(company, company.id);
   const clientName = company.name?.trim() || "there";
   const date = formatEmailDate(change.date);
-  const state = AU_STATE_NAMES[company.state?.trim() || ""] || "";
+  const code = company.state?.trim() || "";
+  const state = AU_STATE_NAMES[code] || (regionTimezone(code) ? regionLabel(code) : "");
   const where = state ? ` in ${state}` : "";
   const amount = change.minutes === 60 ? "1 hour" : `${change.minutes} minutes`;
   const move = change.kind === "start" ? "forward" : "back";

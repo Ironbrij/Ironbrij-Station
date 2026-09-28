@@ -332,3 +332,77 @@ test("someone not entitled to public holidays works them, unless given the day b
     true,
   );
 });
+
+test("US, Canadian and German holidays keep their states, and national ones cover every state", async () => {
+  const { fromNager, regionCodes, isNationalHoliday, regionLabel } =
+    await import("../src/lib/holidays.ts");
+  const us = fromNager(
+    [
+      {
+        date: "2026-07-03",
+        localName: "Independence Day",
+        counties: null,
+        types: ["Public", "Bank"],
+      },
+      {
+        date: "2026-10-12",
+        localName: "Columbus Day",
+        counties: ["US-AZ", "US-GA", "US-MA"],
+        types: ["Public"],
+      },
+      { date: "2026-10-12", localName: "Columbus Day", counties: null, types: ["Bank"] },
+    ],
+    "US",
+  );
+  assert.equal(us.length, 2);
+  assert.ok(isNationalHoliday(us[0]));
+  assert.equal(us[0].states.length, regionCodes("US").length);
+  assert.deepEqual(us[1].states, ["US-AZ", "US-GA", "US-MA"]);
+  assert.equal(regionLabel("US-WA"), "Washington");
+  assert.equal(regionLabel("CA-ON"), "Ontario");
+  assert.equal(regionLabel("FR-BRE"), "Bretagne");
+  const ontario = fromNager(
+    [
+      {
+        date: "2026-08-03",
+        localName: "Civic Holiday",
+        counties: ["CA-MB", "CA-ON"],
+        types: ["Public"],
+      },
+    ],
+    "CA",
+  );
+  assert.deepEqual(ontario[0].states, ["CA-MB", "CA-ON"]);
+});
+
+test("Qatar's holidays are built in, since Nager.Date has none", async () => {
+  const { loadPublicHolidays, qatarPublicHolidays } = await import("../src/lib/holidays.ts");
+  const list = qatarPublicHolidays(2026);
+  const names = list.map((holiday) => `${holiday.date} ${holiday.name}`);
+  assert.ok(names.includes("2026-02-10 National Sports Day"));
+  assert.ok(names.includes("2026-03-20 Eid al-Fitr (expected)"));
+  assert.ok(names.includes("2026-05-29 Eid al-Adha (day 3) (expected)"));
+  assert.ok(names.includes("2026-12-18 Qatar National Day"));
+  assert.equal(list.length, 8);
+  const fetchImpl = (async () => {
+    throw new Error("Qatar is not asked of Nager.Date");
+  }) as unknown as typeof fetch;
+  const loaded = await loadPublicHolidays(2026, "QA", fetchImpl);
+  assert.equal(loaded.source, "built-in");
+  assert.equal(loaded.holidays.length, 8);
+});
+
+test("each state or region keeps its own clock", async () => {
+  const { regionTimezone } = await import("../src/lib/holidays.ts");
+  assert.equal(regionTimezone("NSW"), "Australia/Sydney");
+  assert.equal(regionTimezone("WA"), "Australia/Perth");
+  assert.equal(regionTimezone("US-CA"), "America/Los_Angeles");
+  assert.equal(regionTimezone("US-WA"), "America/Los_Angeles");
+  assert.equal(regionTimezone("US-AZ"), "America/Phoenix");
+  assert.equal(regionTimezone("US-FL"), "America/New_York");
+  assert.equal(regionTimezone("CA-ON"), "America/Toronto");
+  assert.equal(regionTimezone("DE-BY"), "Europe/Berlin");
+  assert.equal(regionTimezone("FR-BRE"), "Europe/Paris");
+  assert.equal(regionTimezone("QA"), "Asia/Qatar");
+  assert.equal(regionTimezone("nowhere"), null);
+});

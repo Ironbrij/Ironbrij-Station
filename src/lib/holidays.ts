@@ -14,38 +14,59 @@ import { COMPANY_ID, type Company, type CompanyHoliday, type Employee } from "./
 export const AU_STATES = ["ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
 export type AuState = (typeof AU_STATES)[number];
 
-export type HolidayCountry = "AU" | "NZ" | "GB";
+export type HolidayCountry = "AU" | "NZ" | "GB" | "US" | "CA" | "DE" | "FR" | "QA";
 
 export interface Region {
   /** Australian states keep their short code ("NSW"); others use ISO codes ("NZ-AUK"). */
   code: string;
   label: string;
+  /** The region's clock, when it differs from its country's. */
+  timezone?: string;
 }
 
 export interface HolidayCountryInfo {
   code: HolidayCountry;
   name: string;
+  /** The country on a small button: "UK", "US". */
+  short: string;
+  /** The clock of the country's main city; a region's own overrides it. */
+  timezone: string;
   /** What the country calls the areas its holidays follow. */
   regionWord: string;
   regions: Region[];
 }
 
+const AU_STATE_TIMEZONES: Record<AuState, string> = {
+  ACT: "Australia/Sydney",
+  NSW: "Australia/Sydney",
+  NT: "Australia/Darwin",
+  QLD: "Australia/Brisbane",
+  SA: "Australia/Adelaide",
+  TAS: "Australia/Hobart",
+  VIC: "Australia/Melbourne",
+  WA: "Australia/Perth",
+};
+
 export const HOLIDAY_COUNTRIES: HolidayCountryInfo[] = [
   {
     code: "AU",
     name: "Australia",
+    short: "AU",
+    timezone: "Australia/Sydney",
     regionWord: "state",
-    regions: AU_STATES.map((code) => ({ code, label: code })),
+    regions: AU_STATES.map((code) => ({ code, label: code, timezone: AU_STATE_TIMEZONES[code] })),
   },
   {
     code: "NZ",
     name: "New Zealand",
+    short: "NZ",
+    timezone: "Pacific/Auckland",
     regionWord: "region",
     regions: [
       { code: "NZ-AUK", label: "Auckland" },
       { code: "NZ-BOP", label: "Bay of Plenty" },
       { code: "NZ-CAN", label: "Canterbury" },
-      { code: "NZ-CIT", label: "Chatham Islands" },
+      { code: "NZ-CIT", label: "Chatham Islands", timezone: "Pacific/Chatham" },
       { code: "NZ-GIS", label: "Gisborne" },
       { code: "NZ-HKB", label: "Hawke's Bay" },
       { code: "NZ-MBH", label: "Marlborough" },
@@ -64,6 +85,8 @@ export const HOLIDAY_COUNTRIES: HolidayCountryInfo[] = [
   {
     code: "GB",
     name: "United Kingdom",
+    short: "UK",
+    timezone: "Europe/London",
     regionWord: "country",
     regions: [
       { code: "GB-ENG", label: "England" },
@@ -71,6 +94,144 @@ export const HOLIDAY_COUNTRIES: HolidayCountryInfo[] = [
       { code: "GB-SCT", label: "Scotland" },
       { code: "GB-WLS", label: "Wales" },
     ],
+  },
+  {
+    code: "US",
+    name: "United States",
+    short: "US",
+    timezone: "America/New_York",
+    regionWord: "state",
+    regions: [
+      { code: "US-AL", label: "Alabama", timezone: "America/Chicago" },
+      { code: "US-AK", label: "Alaska", timezone: "America/Anchorage" },
+      { code: "US-AZ", label: "Arizona", timezone: "America/Phoenix" },
+      { code: "US-AR", label: "Arkansas", timezone: "America/Chicago" },
+      { code: "US-CA", label: "California", timezone: "America/Los_Angeles" },
+      { code: "US-CO", label: "Colorado", timezone: "America/Denver" },
+      { code: "US-CT", label: "Connecticut" },
+      { code: "US-DE", label: "Delaware" },
+      { code: "US-DC", label: "District of Columbia" },
+      { code: "US-FL", label: "Florida" },
+      { code: "US-GA", label: "Georgia" },
+      { code: "US-HI", label: "Hawaii", timezone: "Pacific/Honolulu" },
+      { code: "US-ID", label: "Idaho", timezone: "America/Boise" },
+      { code: "US-IL", label: "Illinois", timezone: "America/Chicago" },
+      { code: "US-IN", label: "Indiana", timezone: "America/Indiana/Indianapolis" },
+      { code: "US-IA", label: "Iowa", timezone: "America/Chicago" },
+      { code: "US-KS", label: "Kansas", timezone: "America/Chicago" },
+      { code: "US-KY", label: "Kentucky" },
+      { code: "US-LA", label: "Louisiana", timezone: "America/Chicago" },
+      { code: "US-ME", label: "Maine" },
+      { code: "US-MD", label: "Maryland" },
+      { code: "US-MA", label: "Massachusetts" },
+      { code: "US-MI", label: "Michigan", timezone: "America/Detroit" },
+      { code: "US-MN", label: "Minnesota", timezone: "America/Chicago" },
+      { code: "US-MS", label: "Mississippi", timezone: "America/Chicago" },
+      { code: "US-MO", label: "Missouri", timezone: "America/Chicago" },
+      { code: "US-MT", label: "Montana", timezone: "America/Denver" },
+      { code: "US-NE", label: "Nebraska", timezone: "America/Chicago" },
+      { code: "US-NV", label: "Nevada", timezone: "America/Los_Angeles" },
+      { code: "US-NH", label: "New Hampshire" },
+      { code: "US-NJ", label: "New Jersey" },
+      { code: "US-NM", label: "New Mexico", timezone: "America/Denver" },
+      { code: "US-NY", label: "New York" },
+      { code: "US-NC", label: "North Carolina" },
+      { code: "US-ND", label: "North Dakota", timezone: "America/Chicago" },
+      { code: "US-OH", label: "Ohio" },
+      { code: "US-OK", label: "Oklahoma", timezone: "America/Chicago" },
+      { code: "US-OR", label: "Oregon", timezone: "America/Los_Angeles" },
+      { code: "US-PA", label: "Pennsylvania" },
+      { code: "US-RI", label: "Rhode Island" },
+      { code: "US-SC", label: "South Carolina" },
+      { code: "US-SD", label: "South Dakota", timezone: "America/Chicago" },
+      { code: "US-TN", label: "Tennessee", timezone: "America/Chicago" },
+      { code: "US-TX", label: "Texas", timezone: "America/Chicago" },
+      { code: "US-UT", label: "Utah", timezone: "America/Denver" },
+      { code: "US-VT", label: "Vermont" },
+      { code: "US-VA", label: "Virginia" },
+      { code: "US-WA", label: "Washington", timezone: "America/Los_Angeles" },
+      { code: "US-WV", label: "West Virginia" },
+      { code: "US-WI", label: "Wisconsin", timezone: "America/Chicago" },
+      { code: "US-WY", label: "Wyoming", timezone: "America/Denver" },
+    ],
+  },
+  {
+    code: "CA",
+    name: "Canada",
+    short: "Canada",
+    timezone: "America/Toronto",
+    regionWord: "province",
+    regions: [
+      { code: "CA-AB", label: "Alberta", timezone: "America/Edmonton" },
+      { code: "CA-BC", label: "British Columbia", timezone: "America/Vancouver" },
+      { code: "CA-MB", label: "Manitoba", timezone: "America/Winnipeg" },
+      { code: "CA-NB", label: "New Brunswick", timezone: "America/Moncton" },
+      { code: "CA-NL", label: "Newfoundland and Labrador", timezone: "America/St_Johns" },
+      { code: "CA-NS", label: "Nova Scotia", timezone: "America/Halifax" },
+      { code: "CA-NT", label: "Northwest Territories", timezone: "America/Yellowknife" },
+      { code: "CA-NU", label: "Nunavut", timezone: "America/Iqaluit" },
+      { code: "CA-ON", label: "Ontario" },
+      { code: "CA-PE", label: "Prince Edward Island", timezone: "America/Halifax" },
+      { code: "CA-QC", label: "Quebec" },
+      { code: "CA-SK", label: "Saskatchewan", timezone: "America/Regina" },
+      { code: "CA-YT", label: "Yukon", timezone: "America/Whitehorse" },
+    ],
+  },
+  {
+    code: "DE",
+    name: "Germany",
+    short: "Germany",
+    timezone: "Europe/Berlin",
+    regionWord: "state",
+    regions: [
+      { code: "DE-BW", label: "Baden-Württemberg" },
+      { code: "DE-BY", label: "Bavaria" },
+      { code: "DE-BE", label: "Berlin" },
+      { code: "DE-BB", label: "Brandenburg" },
+      { code: "DE-HB", label: "Bremen" },
+      { code: "DE-HH", label: "Hamburg" },
+      { code: "DE-HE", label: "Hesse" },
+      { code: "DE-MV", label: "Mecklenburg-Vorpommern" },
+      { code: "DE-NI", label: "Lower Saxony" },
+      { code: "DE-NW", label: "North Rhine-Westphalia" },
+      { code: "DE-RP", label: "Rhineland-Palatinate" },
+      { code: "DE-SL", label: "Saarland" },
+      { code: "DE-SN", label: "Saxony" },
+      { code: "DE-ST", label: "Saxony-Anhalt" },
+      { code: "DE-SH", label: "Schleswig-Holstein" },
+      { code: "DE-TH", label: "Thuringia" },
+    ],
+  },
+  {
+    code: "FR",
+    name: "France",
+    short: "France",
+    timezone: "Europe/Paris",
+    regionWord: "region",
+    // Metropolitan France keeps the same public holidays in every region.
+    regions: [
+      { code: "FR-ARA", label: "Auvergne-Rhône-Alpes" },
+      { code: "FR-BFC", label: "Bourgogne-Franche-Comté" },
+      { code: "FR-BRE", label: "Bretagne" },
+      { code: "FR-CVL", label: "Centre-Val de Loire" },
+      { code: "FR-COR", label: "Corse" },
+      { code: "FR-GES", label: "Grand Est" },
+      { code: "FR-HDF", label: "Hauts-de-France" },
+      { code: "FR-IDF", label: "Île-de-France" },
+      { code: "FR-NOR", label: "Normandie" },
+      { code: "FR-NAQ", label: "Nouvelle-Aquitaine" },
+      { code: "FR-OCC", label: "Occitanie" },
+      { code: "FR-PDL", label: "Pays de la Loire" },
+      { code: "FR-PAC", label: "Provence-Alpes-Côte d'Azur" },
+    ],
+  },
+  {
+    code: "QA",
+    name: "Qatar",
+    short: "Qatar",
+    timezone: "Asia/Qatar",
+    regionWord: "country",
+    regions: [{ code: "QA", label: "Qatar" }],
   },
 ];
 
@@ -91,6 +252,13 @@ export function regionCodes(country: HolidayCountry): string[] {
 /** "NSW", "Auckland", "Scotland"; unknown codes as they are. */
 export function regionLabel(code: string): string {
   return REGIONS.get(code)?.label ?? code;
+}
+
+/** The clock a state or region keeps ("NSW" -> Sydney, "US-CA" -> Los Angeles), or null. */
+export function regionTimezone(code: string): string | null {
+  const region = REGIONS.get(code);
+  if (!region) return null;
+  return region.timezone ?? countryInfo(region.country).timezone;
 }
 
 export function regionCountry(code: string): HolidayCountry | null {
@@ -120,7 +288,10 @@ export function findHolidaySource(companies: Company[]): Company | null {
 }
 
 /** One company with the saved calendar added to any holidays of its own. */
-export function withSharedHolidays<T extends Company>(company: T, source: Company | null | undefined): T {
+export function withSharedHolidays<T extends Company>(
+  company: T,
+  source: Company | null | undefined,
+): T {
   if (!source || company === source) return company;
   const own = company.holidayAssignments ?? [];
   const ownIds = new Set(own.map((holiday) => holiday.id));
@@ -193,7 +364,9 @@ export function employeeWorkStates(
 
 /** "NSW · Auckland", or a prompt to set the companies' states. */
 export function describeWorkStates(states: string[]): string {
-  return states.length > 0 ? states.map(regionLabel).join(" · ") : "No state set on their companies";
+  return states.length > 0
+    ? states.map(regionLabel).join(" · ")
+    : "No state set on their companies";
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +502,38 @@ interface NagerHoliday {
   types?: string[];
 }
 
+/**
+ * Eid al-Fitr and Eid al-Adha follow the moon and are announced shortly before;
+ * these are the expected first days, to check when Qatar announces them.
+ */
+const QATAR_EID: Record<number, { fitr: string; adha: string }> = {
+  2025: { fitr: "2025-03-30", adha: "2025-06-06" },
+  2026: { fitr: "2026-03-20", adha: "2026-05-27" },
+  2027: { fitr: "2027-03-10", adha: "2027-05-16" },
+  2028: { fitr: "2028-02-26", adha: "2028-05-05" },
+};
+
+/**
+ * Qatar's public holidays, which Nager.Date does not list: National Sports Day
+ * (second Tuesday of February), three days each for Eid al-Fitr and Eid
+ * al-Adha, and National Day on 18 December.
+ */
+export function qatarPublicHolidays(year: number): PublicHoliday[] {
+  const list: PublicHoliday[] = [];
+  const add = (date: string, name: string) =>
+    list.push({ date, name, country: "QA", states: ["QA"] });
+  add(nthWeekday(year, 2, 2, 2), "National Sports Day");
+  const eid = QATAR_EID[year];
+  if (eid) {
+    for (let day = 0; day < 3; day += 1) {
+      add(shift(eid.fitr, day), `Eid al-Fitr${day ? ` (day ${day + 1})` : ""} (expected)`);
+      add(shift(eid.adha, day), `Eid al-Adha${day ? ` (day ${day + 1})` : ""} (expected)`);
+    }
+  }
+  add(key(year, 12, 18), "Qatar National Day");
+  return list.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export interface PublicHolidayList {
   holidays: PublicHoliday[];
   /**
@@ -375,6 +580,7 @@ export function loadPublicHolidays(
   const cached = nagerCache.get(cacheKey);
   if (cached) return cached;
   const loading = (async (): Promise<PublicHolidayList> => {
+    if (country === "QA") return { holidays: qatarPublicHolidays(year), source: "built-in" };
     try {
       const response = await fetchImpl(
         `https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`,
@@ -402,7 +608,9 @@ export function loadAustralianPublicHolidays(
 }
 
 /** Every state or region of its country takes the day off. */
-export function isNationalHoliday(holiday: Pick<PublicHoliday, "states"> & { country?: HolidayCountry }): boolean {
+export function isNationalHoliday(
+  holiday: Pick<PublicHoliday, "states"> & { country?: HolidayCountry },
+): boolean {
   return holiday.states.length === regionCodes(holiday.country ?? "AU").length;
 }
 
@@ -413,7 +621,12 @@ export function holidaysOnDate(
 ): CompanyHoliday[] {
   const found: CompanyHoliday[] = [];
   if (company?.holidays?.includes(dateKey)) {
-    found.push({ id: `legacy-${dateKey}`, date: dateKey, name: "Company Holiday", targetType: "all" });
+    found.push({
+      id: `legacy-${dateKey}`,
+      date: dateKey,
+      name: "Company Holiday",
+      targetType: "all",
+    });
   }
   for (const holiday of company?.holidayAssignments ?? []) {
     if (holiday.date === dateKey) found.push(holiday);
