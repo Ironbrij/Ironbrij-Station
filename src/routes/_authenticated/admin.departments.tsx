@@ -13,6 +13,7 @@ import {
 import { computeDay, COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import {
   computeEmployeeLateness,
+  scopeEmployeeToPunchSchedule,
   formatEmployeeShiftSummary,
   formatInTimezone,
   getActiveEmployeeLeave,
@@ -331,7 +332,7 @@ function DepartmentsPage() {
           const isExcused = Boolean(firstIn.isExcused);
           const lateness = computeEmployeeLateness(
             toDate(firstIn.timestamp) ?? new Date(),
-            emp,
+            scopeEmployeeToPunchSchedule(emp, firstIn),
             company?.lateGraceMinutes ?? 5,
             isExcused,
           );
@@ -468,7 +469,7 @@ function DepartmentsPage() {
           firstIn && !holiday && !approvedLeave
             ? computeEmployeeLateness(
                 toDate(firstIn.timestamp) ?? new Date(),
-                employee,
+                scopeEmployeeToPunchSchedule(employee, firstIn),
                 company?.lateGraceMinutes ?? 5,
                 isExcused,
               )

@@ -702,6 +702,29 @@ export function formatEmployeeShiftSummary(employee: Employee, instant = new Dat
   };
 }
 
+/**
+ * Every punch stores the schedule it was taken against. Reusing it keeps the
+ * late log and the dashboard judging the same clock-in against the same shift,
+ * so excusing or correcting a punch in one place lands in the other.
+ */
+export function scopeEmployeeToPunchSchedule(employee: Employee, punch?: Punch | null): Employee {
+  const start = toDate(punch?.scheduledShiftStart);
+  const end = toDate(punch?.scheduledShiftEnd);
+  if (!start || !end) return employee;
+  const timezone = punch?.shiftTimezone || getShiftTimezone(employee);
+  const clockTime = (value: Date) =>
+    formatInTimezone(value, timezone, { hour: "2-digit", minute: "2-digit", hour12: false });
+  return {
+    ...employee,
+    isMultipleShift: false,
+    shifts: undefined,
+    shiftTimezone: timezone,
+    shiftStartTime: clockTime(start),
+    shiftEndTime: clockTime(end),
+    requiredWorkMinutes: punch?.requiredWorkMinutes ?? employee.requiredWorkMinutes,
+  };
+}
+
 export function computeEmployeeLateness(
   punchValue: Date,
   employee: Employee,
@@ -904,7 +927,8 @@ export function getLiveAttendanceStatus(
     firstIn && isScheduledDay
       ? computeEmployeeLateness(
           toDate(firstIn.timestamp) ?? now,
-          employee,
+          // Changing someone's shift later must not make this clock-in late.
+          scopeEmployeeToPunchSchedule(employee, firstIn),
           effectiveGraceMinutes,
           isExcused,
         )

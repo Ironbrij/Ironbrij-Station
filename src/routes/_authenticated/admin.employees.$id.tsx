@@ -267,7 +267,9 @@ function EmployeeDetail() {
         firstIn && isScheduledDay
           ? computeEmployeeLateness(
               toDate(firstIn.timestamp) ?? new Date(),
-              employee,
+              // The shift that day, not today's: a later shift change must not
+              // make earlier days late.
+              scopeEmployeeToPunchSchedule(employee, firstIn),
               graceMinutes,
               isExcused,
             )
@@ -275,7 +277,7 @@ function EmployeeDetail() {
       const isAutoPunchOut = Boolean(lastOut?.isAuto);
       const attendanceCalculation = firstIn
         ? calculateAttendanceSession({
-            employee,
+            employee: scopeEmployeeToPunchSchedule(employee, firstIn),
             company,
             punchIn: toDate(firstIn.timestamp) ?? new Date(),
             punchOut: toDate(lastOut?.timestamp) || null,
