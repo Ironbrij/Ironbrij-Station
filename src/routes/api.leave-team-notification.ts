@@ -4,7 +4,7 @@ import { resolveAppUrl } from "@/lib/app-url";
 import { sendLeaveTeamNotice } from "@/lib/leave-team-email";
 import type { LeaveTeamNoticeEvent } from "@/lib/leave-team-notice";
 import { listCollection, readDocument, requireAdmin } from "@/lib/admin-request";
-import type { Department, Employee, LeaveRequest } from "@/lib/types";
+import type { Company, Department, Employee, LeaveRequest } from "@/lib/types";
 
 /**
  * Tells the teams a department has chosen (for example the Creative Team) that
@@ -46,11 +46,13 @@ export const Route = createFileRoute("/api/leave-team-notification")({
         let leave: LeaveRequest | null;
         let employees: Employee[];
         let departments: Department[];
+        let companies: Company[];
         try {
-          [leave, employees, departments] = await Promise.all([
+          [leave, employees, departments, companies] = await Promise.all([
             readDocument<LeaveRequest>(`leaveRequests/${body.leaveRequestId}`, idToken),
             listCollection<Employee>("employees", idToken),
             listCollection<Department>("departments", idToken),
+            listCollection<Company>("companies", idToken),
           ]);
         } catch (error) {
           return Response.json({ ok: false, error: (error as Error).message }, { status: 502 });
@@ -65,13 +67,14 @@ export const Route = createFileRoute("/api/leave-team-notification")({
           leave,
           employees,
           departments,
+          companies,
           company: body.company || { name: "SavyTimes" },
           appUrl: resolveAppUrl(request.url),
         });
         if (!result.ok) {
           return Response.json({ ok: false, error: result.error }, { status: result.status });
         }
-        return Response.json({ ok: true, sent: result.sent });
+        return Response.json({ ok: true, sent: result.sent, clients: result.clients ?? 0 });
       },
     },
   },

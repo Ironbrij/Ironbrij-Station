@@ -36,7 +36,7 @@ test("each person given the holiday gets their own email through the webhook", a
     appUrl: "https://example.com",
     fetchImpl,
   });
-  assert.deepEqual(result, { ok: true, sent: 1, failed: 0 });
+  assert.deepEqual(result, { ok: true, sent: 1, failed: 0, clients: 0 });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].to, "maria@example.com");
   assert.equal(calls[0].event, "holiday_notice");
@@ -57,4 +57,37 @@ test("a webhook that refuses every email is reported", async () => {
     fetchImpl,
   });
   assert.equal(result.ok, false);
+});
+
+test("each client with people off gets one email naming them", async () => {
+  const posts: { event: string; to: string; text: string }[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    posts.push({ event: body.event, to: body.email.to, text: body.email.text });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const withClients = companies.map((company) =>
+    company.id === "alpha"
+      ? { ...company, clientEmails: ["boss@alpha.com", "ops@alpha.com"] }
+      : company.id === "beta"
+        ? { ...company, clientEmails: ["boss@beta.com"] }
+        : company,
+  );
+  const result = await sendHolidayEmails({
+    holidays: sharedCalendar(withClients)!.holidayAssignments!,
+    employees: [
+      person("maria", "maria@example.com", ["alpha", "beta"]),
+      person("ram", "ram@example.com", ["alpha"]),
+    ],
+    companies: withClients,
+    departments: [],
+    appUrl: "https://example.com",
+    fetchImpl,
+  });
+  assert.equal(result.ok && result.clients, 1);
+  const client = posts.filter((post) => post.event === "holiday_client_notice");
+  // NSW Labour Day closes Alpha only; Beta (VIC) keeps working and is not told.
+  assert.equal(client.length, 1);
+  assert.equal(client[0].to, "boss@alpha.com,ops@alpha.com");
+  assert.match(client[0].text, /Labour Day.*maria Person, ram Person/);
 });

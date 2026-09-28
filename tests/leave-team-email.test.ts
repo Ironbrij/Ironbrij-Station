@@ -50,7 +50,7 @@ test("an approved leave emails the person's own team without any setup", async (
     appUrl: "https://station.example.com",
     fetchImpl,
   });
-  assert.deepEqual(result, { ok: true, sent: 1 });
+  assert.deepEqual(result, { ok: true, sent: 1, clients: 0 });
   assert.equal(posts.length, 1);
   const email = posts[0].body.email as { to: string; subject: string; text: string };
   assert.equal(email.to, "ann@example.com");
@@ -108,7 +108,7 @@ test("the MCP path reads people and teams with the server key, then sends", asyn
     appUrl: "https://station.example.com",
     fetchImpl,
   });
-  assert.deepEqual(result, { ok: true, sent: 1 });
+  assert.deepEqual(result, { ok: true, sent: 1, clients: 0 });
   assert.equal((posts[0].body.email as { to: string }).to, "ann@example.com");
 });
 
@@ -124,4 +124,49 @@ test("the MCP path reports a failed read instead of throwing", async () => {
     fetchImpl,
   });
   assert.equal(result.ok, false);
+});
+
+test("the client the person works for is told on its own email, without the reason", async () => {
+  const { posts, fetchImpl } = recordingFetch();
+  const worker = { ...employee("bibek", "dev"), companyId: "alpha", companyIds: ["alpha", "beta"] };
+  const result = await sendLeaveTeamNotice({
+    event: "approved",
+    leaveRequestId: "l1",
+    leave: { ...leave, companyId: "alpha" },
+    employees: [worker, employee("ann", "dev")],
+    departments,
+    companies: [
+      { id: "alpha", name: "Alpha", clientEmails: ["boss@alpha.com"], defaultShiftHours: 8, workingDays: [1], holidays: [] },
+      { id: "beta", name: "Beta", clientEmails: ["boss@beta.com"], defaultShiftHours: 8, workingDays: [1], holidays: [] },
+    ],
+    company: { name: "Ironbrij" },
+    appUrl: "https://station.example.com",
+    fetchImpl,
+  });
+  assert.deepEqual(result, { ok: true, sent: 1, clients: 1 });
+  const client = posts.find((post) => post.body.event === "leave_client_notice")!;
+  const email = client.body.email as { to: string; text: string; html: string };
+  // The leave was for Alpha, so Beta is not told; nor does Alpha see our team.
+  assert.equal(email.to, "boss@alpha.com");
+  assert.doesNotMatch(email.text, /private|Development/);
+  assert.doesNotMatch(email.html, /ann@example.com/);
+});
+
+test("a client that switched leave emails off is not told", async () => {
+  const { posts, fetchImpl } = recordingFetch();
+  const worker = { ...employee("bibek", "dev"), companyId: "alpha", companyIds: ["alpha"] };
+  await sendLeaveTeamNotice({
+    event: "approved",
+    leaveRequestId: "l1",
+    leave,
+    employees: [worker],
+    departments,
+    companies: [
+      { id: "alpha", name: "Alpha", clientEmails: ["boss@alpha.com"], clientEmailTopics: { leave: false }, defaultShiftHours: 8, workingDays: [1], holidays: [] },
+    ],
+    company: { name: "Ironbrij" },
+    appUrl: "https://station.example.com",
+    fetchImpl,
+  });
+  assert.equal(posts.length, 0);
 });

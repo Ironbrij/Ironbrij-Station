@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { companyClientEmails } from "@/lib/client-emails";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot, runTransaction } from "firebase/firestore";
 import {
@@ -927,7 +928,9 @@ function ReportsPage() {
   function openSendEmailModal() {
     setEmailSubject(`${companyDisplayName} Attendance & Work Report (${periodLabel})`);
     setClientName(selectedCompany?.name || "");
-    setRecipientEmailsText("");
+    setRecipientEmailsText(
+      companyFilter === "all" ? "" : companyClientEmails(selectedCompany).join(", "),
+    );
     setCustomNote("");
     setIsCoverNoteEdited(false);
     setShowEmailPreview(false);
