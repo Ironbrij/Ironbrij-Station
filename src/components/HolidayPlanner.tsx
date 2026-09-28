@@ -407,12 +407,16 @@ export function HolidayPlanner({
       const result = (await response.json().catch(() => ({}))) as {
         sent?: number;
         failed?: number;
+        clients?: number;
       };
       if (!response.ok) {
         toast.warning("Holiday saved, but the emails could not be sent.");
-      } else if (result.sent) {
+      } else if (result.sent || result.clients) {
         toast.success(
-          `Emailed ${result.sent} ${result.sent === 1 ? "person" : "people"}` +
+          `Emailed ${result.sent ?? 0} ${result.sent === 1 ? "person" : "people"}` +
+            (result.clients
+              ? ` and ${result.clients} ${result.clients === 1 ? "client" : "clients"}`
+              : "") +
             (result.failed ? ` (${result.failed} could not be sent)` : ""),
         );
       } else {

@@ -80,7 +80,12 @@ export const Route = createFileRoute("/api/holiday-notification")({
         if (!result.ok) {
           return Response.json({ ok: false, error: result.error }, { status: result.status });
         }
-        return Response.json({ ok: true, sent: result.sent, failed: result.failed });
+        return Response.json({
+          ok: true,
+          sent: result.sent,
+          failed: result.failed,
+          clients: result.clients,
+        });
       },
     },
   },

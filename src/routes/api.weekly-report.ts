@@ -4,6 +4,7 @@ import { buildReportRows, type ReportRow } from "@/lib/report-rows";
 import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { shareHolidays } from "@/lib/holidays";
+import { clientEmailsFor } from "@/lib/client-emails";
 import { deliverReportEmail } from "@/lib/report-email";
 import { buildReportCoverMessage } from "@/lib/report-cover-message";
 import { fromFirestoreFields, type FirestoreValue } from "@/lib/firestore-rest";
@@ -256,9 +257,7 @@ async function runWeeklyReport(request: Request): Promise<Response> {
       .map((item) => ({
         companyId: normalizeCompanyId(item.id),
         companyName: item.name,
-        recipients: parseRecipients(
-          (item as unknown as Record<string, unknown>).weeklyReportRecipients,
-        ),
+        recipients: clientEmailsFor(item, "weeklyReport"),
       }))
       .filter((item) => item.recipients.length > 0);
     const allRecipients = parseRecipients(
@@ -312,11 +311,9 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const rows = saved.edits ? applyReportEdits(calculatedRows, saved.edits) : calculatedRows;
 
   const companyName = isAll ? "All Companies" : company?.name || requestedCompany;
-  const configured = parseRecipients(
-    isAll
-      ? (company as unknown as Record<string, unknown>)?.weeklyReportAllRecipients
-      : (company as unknown as Record<string, unknown>)?.weeklyReportRecipients,
-  );
+  const configured = isAll
+    ? parseRecipients((company as unknown as Record<string, unknown>)?.weeklyReportAllRecipients)
+    : clientEmailsFor(company, "weeklyReport");
   const recipients = overrideRecipients.length ? overrideRecipients : configured;
   const summary = summarise(rows);
 

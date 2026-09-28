@@ -31,6 +31,12 @@ import {
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 import { HolidayPlanner } from "@/components/HolidayPlanner";
 import {
+  CLIENT_EMAIL_TOPICS,
+  clientWants,
+  companyClientEmails,
+  type ClientEmailTopic,
+} from "@/lib/client-emails";
+import {
   companyState,
   countryInfo,
   HOLIDAY_COUNTRIES,
@@ -431,6 +437,12 @@ function CompanyPage() {
                         <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
                           <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
                         </div>
+                        <div className="text-[11px] mt-0.5 text-muted-foreground truncate">
+                          ✉{" "}
+                          {companyClientEmails(c).length > 0
+                            ? companyClientEmails(c).join(", ")
+                            : "No client email"}
+                        </div>
                         <div className="text-[11px] mt-0.5 font-semibold flex items-center gap-1">
                           <MapPin className="h-3 w-3 text-muted-foreground" />
                           {companyState(c) ? (
@@ -680,8 +692,13 @@ function CompanyModal({
   const [autoDeductUnloggedBreak, setAutoDeductUnloggedBreak] = useState(
     companyToEdit?.autoDeductUnloggedBreak !== false,
   );
-  const [weeklyReportRecipients, setWeeklyReportRecipients] = useState(
-    (companyToEdit?.weeklyReportRecipients || []).join(", "),
+  const [clientEmails, setClientEmails] = useState(
+    companyClientEmails(companyToEdit).join(", "),
+  );
+  const [clientTopics, setClientTopics] = useState(() =>
+    Object.fromEntries(
+      CLIENT_EMAIL_TOPICS.map(({ topic }) => [topic, clientWants(companyToEdit, topic)]),
+    ) as Record<ClientEmailTopic, boolean>,
   );
   const [weeklyReportAllRecipients, setWeeklyReportAllRecipients] = useState(
     (companyToEdit?.weeklyReportAllRecipients || []).join(", "),
@@ -727,7 +744,9 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           autoDeductUnloggedBreak,
-          weeklyReportRecipients: splitEmails(weeklyReportRecipients),
+          clientEmails: splitEmails(clientEmails),
+          clientEmailTopics: clientTopics,
+          weeklyReportRecipients: splitEmails(clientEmails),
           ...(isMain
             ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
             : {}),
@@ -748,7 +767,9 @@ function CompanyModal({
           lateGraceMinutes: Math.max(5, Number(lateGraceMinutes) || 5),
           punchOutGraceMinutes: Math.max(0, Number(punchOutGraceMinutes) || 0),
           autoDeductUnloggedBreak,
-          weeklyReportRecipients: splitEmails(weeklyReportRecipients),
+          clientEmails: splitEmails(clientEmails),
+          clientEmailTopics: clientTopics,
+          weeklyReportRecipients: splitEmails(clientEmails),
           ...(isMain
             ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
             : {}),
@@ -899,18 +920,37 @@ function CompanyModal({
 
         <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
           <div>
-            <label className="text-sm font-medium">Weekly report recipients</label>
+            <label className="text-sm font-medium">Client email</label>
             <p className="text-xs text-muted-foreground">
-              Who receives this client's Monday-to-Friday report. Separate addresses with commas.
-              Leave empty to switch the automation off for this client.
+              Everyone at this client our emails go to. Separate addresses with commas. Leave
+              empty and the client gets no emails.
             </p>
             <input
               type="text"
-              value={weeklyReportRecipients}
-              onChange={(event) => setWeeklyReportRecipients(event.target.value)}
+              value={clientEmails}
+              onChange={(event) => setClientEmails(event.target.value)}
               placeholder="client@example.com, manager@example.com"
               className="mt-1.5 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
             />
+          </div>
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold text-muted-foreground">Send the client</div>
+            {CLIENT_EMAIL_TOPICS.map(({ topic, label, hint }) => (
+              <label key={topic} className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={clientTopics[topic]}
+                  onChange={(event) =>
+                    setClientTopics({ ...clientTopics, [topic]: event.target.checked })
+                  }
+                />
+                <span>
+                  <span className="font-medium">{label}</span>
+                  <span className="block text-xs text-muted-foreground">{hint}</span>
+                </span>
+              </label>
+            ))}
           </div>
           {isMain && (
             <div className="border-t pt-2.5">

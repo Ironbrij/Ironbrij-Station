@@ -12,16 +12,38 @@ import {
   resolveLeaveNoticeRecipients,
   type LeaveTeamNoticeEvent,
 } from "./leave-team-notice.ts";
+import { clientEmailsFor } from "./client-emails.ts";
+import { getEmployeeCompanyIds, normalizeCompanyId } from "./company-context.ts";
 import type { Company, Department, Employee, LeaveRequest } from "./types.ts";
 
 /**
- * Sends the team email about a colleague's leave. The admin screen's endpoint
- * and the MCP tools both come through here, so an approval tells the team
- * whichever way it was made.
+ * Sends the team email about a colleague's leave, and tells the clients they
+ * work for. The admin screen's endpoint and the MCP tools both come through
+ * here, so an approval tells everyone whichever way it was made. Nobody is
+ * told why or whether the leave is paid.
  */
 
 export type LeaveTeamNoticeResult =
-  { ok: true; sent: number } | { ok: false; status: number; error: string };
+  | { ok: true; sent: number; clients?: number }
+  | { ok: false; status: number; error: string };
+
+/** The clients to tell: the leave's company, or every company the person works for. */
+export function leaveClientCompanies(
+  leave: Pick<LeaveRequest, "companyId">,
+  employee: Employee,
+  companies: Company[],
+): Company[] {
+  const ids = leave.companyId
+    ? [normalizeCompanyId(leave.companyId)]
+    : getEmployeeCompanyIds(employee);
+  return companies.filter(
+    (company) =>
+      ids.includes(normalizeCompanyId(company.id)) &&
+      !company.archived &&
+      company.status !== "archived" &&
+      clientEmailsFor(company, "leave").length > 0,
+  );
+}
 
 export async function sendLeaveTeamNotice({
   event,
@@ -29,6 +51,7 @@ export async function sendLeaveTeamNotice({
   leave,
   employees,
   departments,
+  companies = [],
   company,
   appUrl,
   fetchImpl = fetch,
@@ -38,6 +61,8 @@ export async function sendLeaveTeamNotice({
   leave: LeaveRequest;
   employees: Employee[];
   departments: Department[];
+  /** Every company, so the clients this person works for can be told. */
+  companies?: Company[];
   company: CompanyEmailBranding;
   appUrl: string;
   fetchImpl?: typeof fetch;
@@ -51,30 +76,36 @@ export async function sendLeaveTeamNotice({
   const employee = findLeaveEmployee(leave, employees);
   if (!employee) return { ok: false, status: 404, error: "Employee not found" };
   const recipients = resolveLeaveNoticeRecipients(employee, departments, employees);
-  if (recipients.length === 0) return { ok: true, sent: 0 };
+  const clientCompanies = leaveClientCompanies(leave, employee, companies);
+  if (recipients.length === 0 && clientCompanies.length === 0) return { ok: true, sent: 0 };
 
-  const companyName = company.name?.trim() || "SavyTimes";
   const teamName = departments.find((item) => item.id === employee.deptId)?.name;
-  const notice = buildLeaveTeamNoticeText({
-    event,
-    employeeName: employee.name,
-    teamName,
-    companyName,
-    leave,
-  });
   const accentColor = event === "approved" ? "#7c3aed" : "#475569";
   const when = describeLeaveDates(leave);
-  const html = renderCompanyEmail({
-    company,
-    preheader: notice.headline,
-    label: event === "approved" ? "Team leave" : "Leave update",
-    title: event === "approved" ? "A teammate will be away" : "Leave cancelled",
-    introHtml: escapeEmailHtml(notice.headline),
-    contentHtml: `
+  const render = (brand: CompanyEmailBranding, forClient: boolean) => {
+    const notice = buildLeaveTeamNoticeText({
+      event,
+      employeeName: employee.name,
+      teamName: forClient ? undefined : teamName,
+      companyName: brand.name?.trim() || "SavyTimes",
+      leave,
+    });
+    const html = renderCompanyEmail({
+      company: brand,
+      preheader: notice.headline,
+      label: event === "approved" ? (forClient ? "Leave" : "Team leave") : "Leave update",
+      title:
+        event === "approved"
+          ? forClient
+            ? "Someone on your team will be away"
+            : "A teammate will be away"
+          : "Leave cancelled",
+      introHtml: escapeEmailHtml(notice.headline),
+      contentHtml: `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
         [
           { label: "Who", value: employee.name },
-          ...(teamName ? [{ label: "Team", value: teamName }] : []),
+          ...(teamName && !forClient ? [{ label: "Team", value: teamName }] : []),
           {
             label: "When",
             value: when.charAt(0).toUpperCase() + when.slice(1),
@@ -83,37 +114,59 @@ export async function sendLeaveTeamNotice({
         ],
         accentColor,
       )}</table>`,
-    cta: { label: "Open SavyTimes", url: appUrl },
-    accentColor,
-  });
+      cta: { label: "Open SavyTimes", url: appUrl },
+      accentColor,
+    });
+    return { subject: notice.subject, text: notice.text, html };
+  };
 
   // Any n8n workflow that mails email.to works; the report workflow is one.
   const webhookUrl =
     process.env.N8N_LEAVE_TEAM_WEBHOOK_URL ||
     process.env.N8N_REPORT_WEBHOOK_URL ||
     "https://vmi3182726.contaboserver.net/webhook/time-station-report-email";
-  const response = await fetchImpl(webhookUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
+  const post = (payload: Record<string, unknown>) =>
+    fetchImpl(webhookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+  if (recipients.length > 0) {
+    const email = render(company, false);
+    const response = await post({
       event: event === "approved" ? "leave_team_notice" : "leave_team_revoked",
       company,
       leaveRequestId,
       employeeId: employee.id,
       employeeName: employee.name,
       team: teamName,
-      email: {
-        to: recipients.join(","),
-        subject: notice.subject,
-        text: notice.text,
-        html,
-      },
-    }),
-  });
-  if (!response.ok) {
-    return { ok: false, status: 502, error: `n8n webhook returned ${response.status}` };
+      email: { to: recipients.join(","), ...email },
+    });
+    if (!response.ok) {
+      return { ok: false, status: 502, error: `n8n webhook returned ${response.status}` };
+    }
   }
-  return { ok: true, sent: recipients.length };
+
+  // Each client on its own email, so a client never sees our team's addresses.
+  let clients = 0;
+  for (const client of clientCompanies) {
+    const brand = companyEmailBranding(client, client.id);
+    try {
+      const response = await post({
+        event: event === "approved" ? "leave_client_notice" : "leave_client_revoked",
+        company: brand,
+        leaveRequestId,
+        employeeId: employee.id,
+        employeeName: employee.name,
+        email: { to: clientEmailsFor(client, "leave").join(","), ...render(brand, true) },
+      });
+      if (response.ok) clients += 1;
+    } catch {
+      // The team was told; a client email that fails is reported by the count.
+    }
+  }
+  return { ok: true, sent: recipients.length, clients };
 }
 
 async function listDocuments<T>(
@@ -183,6 +236,7 @@ export async function sendLeaveTeamNoticeWithKey({
       leave,
       employees,
       departments,
+      companies,
       company,
       appUrl,
       fetchImpl,
@@ -195,6 +249,11 @@ export async function sendLeaveTeamNoticeWithKey({
 /** One line for an MCP reply saying whether the team was told. */
 export function describeLeaveTeamNoticeResult(result: LeaveTeamNoticeResult): string {
   if (!result.ok) return `The team leave email could not be sent (${result.error}).`;
-  if (result.sent === 0) return "No team is set to be emailed for this department.";
-  return `Team notified (${result.sent} ${result.sent === 1 ? "person" : "people"}).`;
+  const clients = result.clients
+    ? ` ${result.clients} ${result.clients === 1 ? "client" : "clients"} told.`
+    : "";
+  if (result.sent === 0) {
+    return clients ? `No team is set to be emailed.${clients}` : "No team is set to be emailed for this department.";
+  }
+  return `Team notified (${result.sent} ${result.sent === 1 ? "person" : "people"}).${clients}`;
 }

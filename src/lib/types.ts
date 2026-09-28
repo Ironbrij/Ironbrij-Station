@@ -42,7 +42,11 @@ export interface Company {
   maxDailyBreaks?: number;
   /** Deduct the configured break from a shift that never punched one. Default on. */
   autoDeductUnloggedBreak?: boolean;
-  /** Who receives this client's automated Monday-to-Friday report. */
+  /** Everyone at the client our emails go to (see client-emails.ts). */
+  clientEmails?: string[];
+  /** Which emails the client gets; each is on unless set to false. */
+  clientEmailTopics?: { weeklyReport?: boolean; holidays?: boolean; leave?: boolean };
+  /** The client's addresses before clientEmails; still read when that is unset. */
   weeklyReportRecipients?: string[];
   /** Who receives the all-clients weekly report. Only read on the main company. */
   weeklyReportAllRecipients?: string[];

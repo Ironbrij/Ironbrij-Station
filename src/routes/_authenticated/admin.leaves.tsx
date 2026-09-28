@@ -289,11 +289,18 @@ function LeaveRequestsPage() {
         },
         body: JSON.stringify({ leaveRequestId: leaveId, event, company }),
       });
-      const result = (await response.json().catch(() => ({}))) as { sent?: number };
+      const result = (await response.json().catch(() => ({}))) as {
+        sent?: number;
+        clients?: number;
+      };
       if (!response.ok) {
         toast.warning("Saved, but the team leave email could not be sent.");
-      } else if (result.sent) {
-        toast.success(`Team notified (${result.sent} ${result.sent === 1 ? "person" : "people"})`);
+      } else if (result.sent || result.clients) {
+        const told = [
+          result.sent ? `team (${result.sent} ${result.sent === 1 ? "person" : "people"})` : "",
+          result.clients ? `${result.clients} ${result.clients === 1 ? "client" : "clients"}` : "",
+        ].filter(Boolean);
+        toast.success(`Notified ${told.join(" and ")}`);
       }
     } catch {
       toast.warning("Saved, but the team leave email could not be sent.");

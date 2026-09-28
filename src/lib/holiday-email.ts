@@ -1,4 +1,5 @@
 import { isHolidayAssignedToEmployee } from "./attendance.ts";
+import { clientEmailsFor } from "./client-emails.ts";
 import { getEmployeeCompanyIds, normalizeCompanyId } from "./company-context.ts";
 import {
   companyEmailBranding,
@@ -15,7 +16,8 @@ import type { Company, CompanyHoliday, Department, Employee } from "./types.ts";
  */
 
 export type HolidayEmailResult =
-  { ok: true; sent: number; failed: number } | { ok: false; status: number; error: string };
+  | { ok: true; sent: number; failed: number; clients: number }
+  | { ok: false; status: number; error: string };
 
 export interface HolidayEmailPlan {
   employee: Employee;
@@ -143,6 +145,98 @@ export function buildHolidayEmail(
   return { company, subject, text, html };
 }
 
+export interface ClientHolidayPlan {
+  company: Company;
+  to: string[];
+  /** Each holiday that closes this client, with the people it gives the day off. */
+  days: { holiday: CompanyHoliday; people: string[] }[];
+}
+
+/**
+ * Which clients to tell: every company whose client email wants holidays, with
+ * the holidays that give its people a day off for their work there.
+ */
+export function planClientHolidayEmails(
+  holidays: CompanyHoliday[],
+  employees: Employee[],
+  companies: Company[],
+): ClientHolidayPlan[] {
+  const plans: ClientHolidayPlan[] = [];
+  for (const company of companies) {
+    if (company.archived || company.status === "archived") continue;
+    const to = clientEmailsFor(company, "holidays");
+    if (to.length === 0) continue;
+    const id = normalizeCompanyId(company.id);
+    const staff = employees.filter(
+      (employee) =>
+        employee.status === "active" && getEmployeeCompanyIds(employee).includes(id),
+    );
+    const days = holidays
+      .map((holiday) => ({
+        holiday,
+        people: staff
+          .filter((employee) =>
+            isHolidayAssignedToEmployee(
+              holiday,
+              { ...employee, companyIds: getEmployeeCompanyIds(employee) },
+              company,
+            ),
+          )
+          .map((employee) => employee.name?.trim() || employee.email)
+          .sort((a, b) => a.localeCompare(b)),
+      }))
+      .filter((day) => day.people.length > 0)
+      .sort((a, b) => a.holiday.date.localeCompare(b.holiday.date));
+    if (days.length > 0) plans.push({ company, to, days });
+  }
+  return plans;
+}
+
+export function buildClientHolidayEmail(plan: ClientHolidayPlan, appUrl: string) {
+  const company = companyEmailBranding(plan.company, plan.company.id);
+  const name = (holiday: CompanyHoliday) => holiday.name?.trim() || "Company Holiday";
+  const one = plan.days.length === 1;
+  const first = plan.days[0];
+  const subject = one
+    ? `${name(first.holiday)}: your team is off on ${formatHolidayDate(first.holiday.date)}`
+    : `Your team has ${plan.days.length} days off coming up`;
+  const headline = one
+    ? `${first.people.length === 1 ? first.people[0] : `${first.people.length} of your team`} will be off on ${formatHolidayDate(first.holiday.date)} for ${name(first.holiday)}.`
+    : `Your team has ${plan.days.length} days off coming up.`;
+  const lines = plan.days.map(
+    (day) => `${name(day.holiday)}, ${formatHolidayDate(day.holiday.date)}: ${day.people.join(", ")}`,
+  );
+  const text = [
+    "Hello,",
+    "",
+    headline,
+    "",
+    ...lines,
+    "",
+    "Their work for you resumes on the next working day.",
+  ].join("\n");
+  const accentColor = "#7c3aed";
+  const html = renderCompanyEmail({
+    company,
+    preheader: headline,
+    label: "Holiday",
+    title: one ? "Your team has a day off" : "Days off coming up",
+    introHtml: escapeEmailHtml(headline),
+    contentHtml: `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
+        plan.days.flatMap((day) => [
+          { label: name(day.holiday), value: formatHolidayDate(day.holiday.date) },
+          { label: "Who is off", value: day.people.join(", ") },
+        ]),
+        accentColor,
+      )}</table>
+      <p style="margin: 18px 0 0; font-size: 14px; line-height: 21px; color: #4a5568;">Their work for you resumes on the next working day.</p>`,
+    cta: { label: "Open SavyTimes", url: appUrl },
+    accentColor,
+  });
+  return { company, subject, text, html };
+}
+
 export async function sendHolidayEmails({
   holidays,
   employees,
@@ -160,6 +254,7 @@ export async function sendHolidayEmails({
 }): Promise<HolidayEmailResult> {
   if (holidays.length === 0) return { ok: false, status: 404, error: "Holiday not found" };
   const plans = planHolidayEmails(holidays, employees);
+  const clientPlans = planClientHolidayEmails(holidays, employees, companies);
   // Any n8n workflow that mails email.to works; the report workflow is one.
   const webhookUrl =
     process.env.N8N_HOLIDAY_WEBHOOK_URL ||
@@ -200,8 +295,33 @@ export async function sendHolidayEmails({
       }),
     );
   }
-  if (plans.length > 0 && sent === 0) {
+  // Each client that has people off, told once, on its own client email.
+  let clients = 0;
+  for (const plan of clientPlans) {
+    const email = buildClientHolidayEmail(plan, appUrl);
+    try {
+      const response = await fetchImpl(webhookUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          event: "holiday_client_notice",
+          company: email.company,
+          holidays: plan.days.map(({ holiday }) => ({
+            id: holiday.id,
+            date: holiday.date,
+            name: holiday.name,
+          })),
+          email: { to: plan.to.join(","), subject: email.subject, text: email.text, html: email.html },
+        }),
+      });
+      if (response.ok) clients += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  if (plans.length + clientPlans.length > 0 && sent + clients === 0) {
     return { ok: false, status: 502, error: "The n8n webhook did not accept the holiday emails" };
   }
-  return { ok: true, sent, failed };
+  return { ok: true, sent, failed, clients };
 }
