@@ -30,7 +30,13 @@ import {
 } from "@/lib/types";
 import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/WorkingDaysPicker";
 import { HolidayPlanner } from "@/components/HolidayPlanner";
-import { AU_STATES, companyState } from "@/lib/holidays";
+import {
+  companyState,
+  countryInfo,
+  HOLIDAY_COUNTRIES,
+  regionCountry,
+  regionLabel,
+} from "@/lib/holidays";
 
 export const Route = createFileRoute("/_authenticated/admin/company")({
   head: () => ({
@@ -428,7 +434,10 @@ function CompanyPage() {
                         <div className="text-[11px] mt-0.5 font-semibold flex items-center gap-1">
                           <MapPin className="h-3 w-3 text-muted-foreground" />
                           {companyState(c) ? (
-                            <span className="text-foreground">{companyState(c)}</span>
+                            <span className="text-foreground">
+                              {regionLabel(companyState(c))},{" "}
+                              {countryInfo(regionCountry(companyState(c)) ?? "AU").name}
+                            </span>
                           ) : (
                             <span className="text-amber-600 dark:text-amber-400">
                               No state set — state holidays won&apos;t reach it
@@ -805,10 +814,14 @@ function CompanyModal({
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background font-medium"
           >
             <option value="">Not set</option>
-            {AU_STATES.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
+            {HOLIDAY_COUNTRIES.map((country) => (
+              <optgroup key={country.code} label={country.name}>
+                {country.regions.map((region) => (
+                  <option key={region.code} value={region.code}>
+                    {region.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           <p className="mt-1 text-xs text-muted-foreground">

@@ -6,6 +6,9 @@ import {
   australianPublicHolidays,
   employeeWorkStates,
   fromNager,
+  isNationalHoliday,
+  regionCodes,
+  regionLabel,
   loadAustralianPublicHolidays,
   shareHolidays,
 } from "../src/lib/holidays.ts";
@@ -124,6 +127,7 @@ test("Australian public holidays for 2026 fall on the right days", () => {
   assert.deepEqual(find("Anzac Day (observed)")[0], {
     date: "2026-04-27",
     name: "Anzac Day (observed)",
+    country: "AU",
     states: ["WA"],
   });
   assert.equal(find("King's Birthday", "NSW")[0].date, "2026-06-08");
@@ -220,4 +224,45 @@ test("a holiday for some people in a state covers only their work there", () => 
   assert.equal(getEmployeeHoliday(nsw, twoStates, DATE)?.name, "Maria's day");
   assert.equal(getEmployeeHoliday(vic, twoStates, DATE), null);
   assert.equal(getEmployeeHoliday(nsw, { ...twoStates, id: "someone-else" }, DATE), null);
+});
+
+test("New Zealand and UK holidays keep their regions", () => {
+  const nz = fromNager(
+    [
+      { date: "2026-02-06", localName: "Waitangi Day", counties: null, types: ["Public"] },
+      { date: "2026-01-26", localName: "Auckland Anniversary Day", counties: ["NZ-AUK", "NZ-NTL"], types: ["Public"] },
+    ],
+    "NZ",
+  );
+  assert.equal(nz[0].name, "Auckland Anniversary Day");
+  assert.deepEqual(nz[0].states, ["NZ-AUK", "NZ-NTL"]);
+  assert.equal(nz[1].states.length, 17);
+  assert.equal(isNationalHoliday(nz[1]), true);
+  const uk = fromNager([{ date: "2026-11-30", localName: "Saint Andrew's Day", counties: ["GB-SCT"] }], "GB");
+  assert.deepEqual(uk[0].states, ["GB-SCT"]);
+  assert.equal(regionLabel("GB-SCT"), "Scotland");
+  assert.equal(regionLabel("NZ-TAS"), "Tasman");
+  assert.equal(regionLabel("TAS"), "TAS");
+});
+
+test("a New Zealand holiday closes New Zealand companies, not Australian ones", () => {
+  const calendar = shareHolidays([
+    { ...saved[0], holidayAssignments: [
+      { id: "wai", date: DATE, name: "Waitangi Day", targetType: "states", stateCodes: regionCodes("NZ") },
+    ] },
+    { ...saved[1], state: "NZ-AUK" },
+    { ...saved[2], state: "NSW" },
+  ] as Company[]);
+  const [, auckland, sydney] = calendar;
+  const kiwi = { ...twoStates };
+  assert.equal(getEmployeeHoliday(auckland, kiwi, DATE)?.name, "Waitangi Day");
+  assert.equal(getEmployeeHoliday(sydney, kiwi, DATE), null);
+  assert.deepEqual(employeeWorkStates(kiwi, calendar), ["NSW", "NZ-AUK"]);
+});
+
+test("a whole country is named as the country", async () => {
+  const { describeRegions } = await import("../src/lib/holidays.ts");
+  assert.equal(describeRegions(regionCodes("NZ")), "New Zealand");
+  assert.equal(describeRegions(["NSW", "VIC"]), "NSW, VIC");
+  assert.equal(describeRegions([...regionCodes("GB"), "NSW"]), "United Kingdom, NSW");
 });

@@ -18,7 +18,7 @@ import {
   zonedDateTimeToDate,
 } from "./attendance.ts";
 import { buildAttendanceSessions } from "./attendance-sessions.ts";
-import { companyState } from "./holidays.ts";
+import { companyState, regionLabel } from "./holidays.ts";
 import {
   describePunchShiftSlot,
   getPunchShiftSlot,
@@ -122,7 +122,7 @@ export function buildAttendanceLog({
         companyName: slot?.client || parentCompanyName,
         parentCompanyName,
         shiftLabel: describePunchShiftSlot(slot),
-        state: companyState(company) || employee.state || employee.country || "",
+        state: regionLabel(companyState(company)) || employee.state || employee.country || "",
         date: attendanceDate,
         timezone,
         scheduleStart: toDate(session.start.scheduledShiftStart) || shift.start,
@@ -196,7 +196,7 @@ export function buildAttendanceLog({
         companyName: slot?.client || parentCompanyName,
         parentCompanyName,
         shiftLabel: describePunchShiftSlot(slot),
-        state: companyState(company) || employee.state || employee.country || "",
+        state: regionLabel(companyState(company)) || employee.state || employee.country || "",
         date: rowDate,
         timezone,
         scheduleStart: shift.start,
