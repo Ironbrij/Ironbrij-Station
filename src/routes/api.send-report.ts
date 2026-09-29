@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { adminMasterKey } from "@/lib/admin-key";
 
 import { deliverReportEmail, type SendReportInput } from "@/lib/report-email";
+import { createDocument } from "@/lib/admin-request";
+import { newReportHistoryEntry, reportHistoryId } from "@/lib/report-history";
 
 export const Route = createFileRoute("/api/send-report")({
   server: {
@@ -14,8 +16,7 @@ export const Route = createFileRoute("/api/send-report")({
       POST: async ({ request }) => {
         const authorization = request.headers.get("authorization");
         const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-        const masterKey =
-          adminMasterKey();
+        const masterKey = adminMasterKey();
         const isMasterKey = Boolean(token && token === masterKey);
 
         const candidateKeys = [
@@ -79,7 +80,28 @@ export const Route = createFileRoute("/api/send-report")({
         if (!delivery.ok) {
           return Response.json({ ok: false, error: delivery.error }, { status: delivery.status });
         }
-        return Response.json({ ok: true, recipientCount: delivery.recipientCount });
+        // Kept in the report history, saved as the admin who sent it. The master
+        // key has no login to save with; the weekly automation saves its own.
+        let historySaved = false;
+        if (!isMasterKey) {
+          const now = new Date();
+          const entry = newReportHistoryEntry({
+            report: body,
+            recipients: delivery.recipients ?? [],
+            sentBy: authenticatedEmail,
+            source: "screen",
+            now,
+          });
+          historySaved = await createDocument(
+            "reportHistory",
+            reportHistoryId(entry.companyId, entry.from, now),
+            { ...entry },
+            token,
+          )
+            .then(() => true)
+            .catch(() => false);
+        }
+        return Response.json({ ok: true, recipientCount: delivery.recipientCount, historySaved });
       },
     },
   },

@@ -146,6 +146,33 @@ export async function requireAdmin(
   return { idToken, email: identity.email };
 }
 
+/**
+ * A login for scheduled jobs that run with no admin present, such as the weekly
+ * report: a Firebase account set in AUTOMATION_EMAIL and AUTOMATION_PASSWORD,
+ * which must be an admin. Null when none is set or it cannot sign in.
+ */
+export async function automationIdToken(): Promise<string | null> {
+  const email = process.env.AUTOMATION_EMAIL?.trim();
+  const password = process.env.AUTOMATION_PASSWORD;
+  if (!email || !password) return null;
+  const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw";
+  try {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password, returnSecureToken: true }),
+      },
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { idToken?: string };
+    return payload.idToken || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Creates a document under a chosen id, as the admin. */
 export async function createDocument(
   collection: string,

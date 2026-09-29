@@ -168,6 +168,14 @@ service cloud.firestore {
       allow read, write: if isAuthed();
     }
 
+    // Every report that was sent, kept as it was sent. Admins read it; sending
+    // adds to it, as the admin or the weekly automation's admin login. A record
+    // is never changed.
+    match /reportHistory/{id} {
+      allow read, create, delete: if isAdmin();
+      allow update: if false;
+    }
+
     // Edits an admin makes on the Reports page, one document per company and period.
     match /reportEdits/{id} {
       allow read, write: if isAdmin();
