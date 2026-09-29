@@ -1,13 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  runTransaction,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { collection, doc, onSnapshot, runTransaction, setDoc, updateDoc } from "firebase/firestore";
 import { DEFAULT_SHIFT_TIMEZONE, zonedDateKey } from "@/lib/attendance";
 import {
   Archive,
@@ -32,6 +25,7 @@ import { formatWorkingDaysSummary, WorkingDaysPicker } from "@/components/Workin
 import { HolidayPlanner } from "@/components/HolidayPlanner";
 import { DaylightSavingCard } from "@/components/DaylightSavingCard";
 import { HolidayAnswersCard } from "@/components/HolidayAnswersCard";
+import { CompanyOverviewCard } from "@/components/CompanyOverviewCard";
 import { EmailChipsInput } from "@/components/EmailChipsInput";
 import {
   CLIENT_EMAIL_TOPICS,
@@ -210,7 +204,10 @@ function CompanyPage() {
    * list on screen follows the saved company; a failed save changes nothing.
    */
   async function updateHolidays(
-    change: (holidays: string[], assignments: CompanyHoliday[]) => {
+    change: (
+      holidays: string[],
+      assignments: CompanyHoliday[],
+    ) => {
       holidays: string[];
       assignments: CompanyHoliday[];
     },
@@ -294,7 +291,7 @@ function CompanyPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
@@ -316,292 +313,311 @@ function CompanyPage() {
         </button>
       </div>
 
-      {/* Companies List */}
-      <div className="rounded-xl border bg-card p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
-          <div>
-            <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" /> Registered Companies (
-              {companies.length})
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Manage client companies, logos, working days, and status.
-            </p>
-          </div>
+      {/* Wide screens: companies and holidays on the left, the overview beside them. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-6">
+          {/* Companies List */}
+          <div className="rounded-xl border bg-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+              <div>
+                <h3 className="font-semibold text-base text-foreground flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-muted-foreground" /> Registered Companies (
+                  {companies.length})
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Manage client companies, logos, working days, and status.
+                </p>
+              </div>
 
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setCompanyFilterTab("active")}
-              className={`px-3 py-1 rounded-md transition-colors ${
-                companyFilterTab === "active"
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Active ({companies.filter((c) => !c.archived && c.status !== "archived").length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setCompanyFilterTab("archived")}
-              className={`px-3 py-1 rounded-md transition-colors ${
-                companyFilterTab === "archived"
-                  ? "bg-background text-amber-600 dark:text-amber-400 font-bold shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Archived (
-              {companies.filter((c) => Boolean(c.archived || c.status === "archived")).length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setCompanyFilterTab("all")}
-              className={`px-3 py-1 rounded-md transition-colors ${
-                companyFilterTab === "all"
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              All ({companies.length})
-            </button>
-          </div>
-        </div>
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setCompanyFilterTab("active")}
+                  className={`px-3 py-1 rounded-md transition-colors ${
+                    companyFilterTab === "active"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Active ({companies.filter((c) => !c.archived && c.status !== "archived").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompanyFilterTab("archived")}
+                  className={`px-3 py-1 rounded-md transition-colors ${
+                    companyFilterTab === "archived"
+                      ? "bg-background text-amber-600 dark:text-amber-400 font-bold shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Archived (
+                  {companies.filter((c) => Boolean(c.archived || c.status === "archived")).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompanyFilterTab("all")}
+                  className={`px-3 py-1 rounded-md transition-colors ${
+                    companyFilterTab === "all"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  All ({companies.length})
+                </button>
+              </div>
+            </div>
 
-        {companies.filter((c) => {
-          const isArchived = Boolean(c.archived || c.status === "archived");
-          if (companyFilterTab === "active") return !isArchived;
-          if (companyFilterTab === "archived") return isArchived;
-          return true;
-        }).length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">
-            No {companyFilterTab === "archived" ? "archived" : "active"} companies found.
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {companies
-              .filter((c) => {
-                const isArchived = Boolean(c.archived || c.status === "archived");
-                if (companyFilterTab === "active") return !isArchived;
-                if (companyFilterTab === "archived") return isArchived;
-                return true;
-              })
-              .map((c) => {
-                const compDepts = departments.filter(
-                  (d) =>
-                    d.companyId === c.id || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
-                ).length;
-                const compEmps = employees.filter(
-                  (e) =>
-                    e.companyId === c.id ||
-                    e.companyIds?.includes(c.id || "") ||
-                    (!e.companyId && (c.id === COMPANY_ID || c.isMain)),
-                ).length;
-                const isArchived = Boolean(c.archived || c.status === "archived");
-                const isMainCompany = c.id === COMPANY_ID || c.isMain;
+            {companies.filter((c) => {
+              const isArchived = Boolean(c.archived || c.status === "archived");
+              if (companyFilterTab === "active") return !isArchived;
+              if (companyFilterTab === "archived") return isArchived;
+              return true;
+            }).length === 0 ? (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                No {companyFilterTab === "archived" ? "archived" : "active"} companies found.
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {companies
+                  .filter((c) => {
+                    const isArchived = Boolean(c.archived || c.status === "archived");
+                    if (companyFilterTab === "active") return !isArchived;
+                    if (companyFilterTab === "archived") return isArchived;
+                    return true;
+                  })
+                  .map((c) => {
+                    const compDepts = departments.filter(
+                      (d) =>
+                        d.companyId === c.id || (!d.companyId && (c.id === COMPANY_ID || c.isMain)),
+                    ).length;
+                    const compEmps = employees.filter(
+                      (e) =>
+                        e.companyId === c.id ||
+                        e.companyIds?.includes(c.id || "") ||
+                        (!e.companyId && (c.id === COMPANY_ID || c.isMain)),
+                    ).length;
+                    const isArchived = Boolean(c.archived || c.status === "archived");
+                    const isMainCompany = c.id === COMPANY_ID || c.isMain;
 
-                return (
-                  <div
-                    key={c.id || c.name}
-                    className={`flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors ${
-                      isArchived ? "bg-muted/20 border-dashed opacity-80" : "hover:bg-muted/40"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <img
-                        src={c.logoUrl || DEFAULT_LOGO}
-                        alt={c.name}
-                        className="h-9 w-9 rounded-lg border bg-background object-contain shrink-0 mt-0.5"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = DEFAULT_LOGO;
-                        }}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-sm text-foreground truncate block">
-                            {c.name}
-                          </span>
-                          {isMainCompany && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-primary/15 text-primary border border-primary/20 shrink-0">
-                              Main
-                            </span>
-                          )}
-                          {isArchived && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 shrink-0">
-                              Archived
-                            </span>
-                          )}
+                    return (
+                      <div
+                        key={c.id || c.name}
+                        className={`flex items-start justify-between gap-3 rounded-lg border p-4 transition-colors ${
+                          isArchived ? "bg-muted/20 border-dashed opacity-80" : "hover:bg-muted/40"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <img
+                            src={c.logoUrl || DEFAULT_LOGO}
+                            alt={c.name}
+                            className="h-9 w-9 rounded-lg border bg-background object-contain shrink-0 mt-0.5"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src = DEFAULT_LOGO;
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-sm text-foreground truncate block">
+                                {c.name}
+                              </span>
+                              {isMainCompany && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-primary/15 text-primary border border-primary/20 shrink-0">
+                                  Main
+                                </span>
+                              )}
+                              {isArchived && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 shrink-0">
+                                  Archived
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {compEmps} Employees · {compDepts} Departments
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                              Shift: {c.defaultShiftHours || 8}h · Grace: {c.lateGraceMinutes || 5}m
+                            </div>
+                            <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
+                              <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
+                            </div>
+                            <div className="text-[11px] mt-0.5 text-muted-foreground truncate">
+                              ✉{" "}
+                              {companyClientEmails(c).length > 0
+                                ? companyClientEmails(c).join(", ")
+                                : "No client email"}
+                            </div>
+                            <div className="text-[11px] mt-0.5 font-semibold flex items-center gap-1">
+                              <MapPin className="h-3 w-3 text-muted-foreground" />
+                              {companyState(c) ? (
+                                <span className="text-foreground">
+                                  {regionLabel(companyState(c))},{" "}
+                                  {countryInfo(regionCountry(companyState(c)) ?? "AU").name}
+                                </span>
+                              ) : (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  No state set — state holidays won&apos;t reach it
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {compEmps} Employees · {compDepts} Departments
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-                          Shift: {c.defaultShiftHours || 8}h · Grace: {c.lateGraceMinutes || 5}m
-                        </div>
-                        <div className="text-[11px] text-primary mt-1 font-semibold flex items-center gap-1">
-                          <span>📅 {formatWorkingDaysSummary(c.workingDays)}</span>
-                        </div>
-                        <div className="text-[11px] mt-0.5 text-muted-foreground truncate">
-                          ✉{" "}
-                          {companyClientEmails(c).length > 0
-                            ? companyClientEmails(c).join(", ")
-                            : "No client email"}
-                        </div>
-                        <div className="text-[11px] mt-0.5 font-semibold flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-muted-foreground" />
-                          {companyState(c) ? (
-                            <span className="text-foreground">
-                              {regionLabel(companyState(c))},{" "}
-                              {countryInfo(regionCountry(companyState(c)) ?? "AU").name}
-                            </span>
-                          ) : (
-                            <span className="text-amber-600 dark:text-amber-400">
-                              No state set — state holidays won&apos;t reach it
-                            </span>
+
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCompany(c);
+                              setShowAddCompanyModal(true);
+                            }}
+                            className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors"
+                          >
+                            Edit
+                          </button>
+
+                          {!isMainCompany && (
+                            <button
+                              type="button"
+                              onClick={() => toggleArchiveCompany(c)}
+                              className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors flex items-center gap-1 ${
+                                isArchived
+                                  ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                                  : "text-muted-foreground hover:text-amber-600 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
+                              }`}
+                              title={isArchived ? "Restore / Unarchive Company" : "Archive Company"}
+                            >
+                              {isArchived ? (
+                                <>
+                                  <ArchiveRestore className="h-3 w-3" /> Unarchive
+                                </>
+                              ) : (
+                                <>
+                                  <Archive className="h-3 w-3" /> Archive
+                                </>
+                              )}
+                            </button>
                           )}
                         </div>
                       </div>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingCompany(c);
-                          setShowAddCompanyModal(true);
-                        }}
-                        className="rounded-lg border px-2.5 py-1 text-xs font-bold text-primary hover:bg-background transition-colors"
-                      >
-                        Edit
-                      </button>
-
-                      {!isMainCompany && (
-                        <button
-                          type="button"
-                          onClick={() => toggleArchiveCompany(c)}
-                          className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors flex items-center gap-1 ${
-                            isArchived
-                              ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
-                              : "text-muted-foreground hover:text-amber-600 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
-                          }`}
-                          title={isArchived ? "Restore / Unarchive Company" : "Archive Company"}
-                        >
-                          {isArchived ? (
-                            <>
-                              <ArchiveRestore className="h-3 w-3" /> Unarchive
-                            </>
-                          ) : (
-                            <>
-                              <Archive className="h-3 w-3" /> Archive
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
-              <PartyPopper className="h-5 w-5 text-purple-600" /> Today&apos;s Company Off Status
-            </h3>
-            <p className="text-xs text-muted-foreground font-medium mt-0.5">
-              This quick action assigns today as a holiday to everyone.
-            </p>
-          </div>
-          <button
-            disabled={busy}
-            onClick={() => setShowTodayHolidayConfirmModal(true)}
-            className={`btn-lift px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-2 shadow-sm ${
-              isTodayHoliday ? "bg-rose-600 text-white" : "bg-purple-600 text-white"
-            }`}
-          >
-            {isTodayHoliday ? (
-              <>
-                <X className="h-4 w-4" /> Cancel Today&apos;s Holiday
-              </>
-            ) : (
-              <>
-                <PartyPopper className="h-4 w-4" /> Holiday for Everyone ({todayStr})
-              </>
+                    );
+                  })}
+              </div>
             )}
-          </button>
-        </div>
-        {isTodayHoliday && (
-          <div className="p-3.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-300 text-xs font-bold flex items-center gap-2">
-            <Check className="h-4 w-4 text-purple-600" />
-            Today is a holiday for every employee.
           </div>
-        )}
-      </div>
 
-      <HolidayPlanner
-        calendar={company}
-        companies={companies}
-        departments={departments}
-        employees={employees}
-        todayStr={todayStr}
-        updateHolidays={updateHolidays}
-      />
+          <div className="rounded-xl border bg-card p-6 shadow-lift space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
+                  <PartyPopper className="h-5 w-5 text-purple-600" /> Today&apos;s Company Off
+                  Status
+                </h3>
+                <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                  This quick action assigns today as a holiday to everyone.
+                </p>
+              </div>
+              <button
+                disabled={busy}
+                onClick={() => setShowTodayHolidayConfirmModal(true)}
+                className={`btn-lift px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-2 shadow-sm ${
+                  isTodayHoliday ? "bg-rose-600 text-white" : "bg-purple-600 text-white"
+                }`}
+              >
+                {isTodayHoliday ? (
+                  <>
+                    <X className="h-4 w-4" /> Cancel Today&apos;s Holiday
+                  </>
+                ) : (
+                  <>
+                    <PartyPopper className="h-4 w-4" /> Holiday for Everyone ({todayStr})
+                  </>
+                )}
+              </button>
+            </div>
+            {isTodayHoliday && (
+              <div className="p-3.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-300 text-xs font-bold flex items-center gap-2">
+                <Check className="h-4 w-4 text-purple-600" />
+                Today is a holiday for every employee.
+              </div>
+            )}
+          </div>
 
-      <HolidayAnswersCard todayStr={todayStr} />
-
-      <DaylightSavingCard />
-
-      <div className="rounded-xl border bg-card p-6 space-y-4 shadow-lift">
-        <h2 className="font-bold text-primary flex items-center gap-2">
-          <ImageIcon className="h-4 w-4" /> Company Settings
-        </h2>
-        <div>
-          <label className="text-sm font-semibold">Company Name</label>
-          <input
-            value={company.name}
-            onChange={(event) => editSettings({ ...company, name: event.target.value })}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+          <HolidayPlanner
+            calendar={company}
+            companies={companies}
+            departments={departments}
+            employees={employees}
+            todayStr={todayStr}
+            updateHolidays={updateHolidays}
           />
         </div>
-        <div>
-          <label className="text-sm font-semibold">Logo Image URL</label>
-          <input
-            value={company.logoUrl ?? ""}
-            onChange={(event) => editSettings({ ...company, logoUrl: event.target.value })}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+
+        <aside className="min-w-0 space-y-6">
+          <CompanyOverviewCard
+            calendar={company}
+            companies={companies}
+            employees={employees}
+            todayStr={todayStr}
+            onEdit={(target) => {
+              setEditingCompany(target);
+              setShowAddCompanyModal(true);
+            }}
           />
-        </div>
-        <div>
-          <label className="text-sm font-semibold">Default Shift Duration (Hours)</label>
-          <input
-            type="number"
-            value={company.defaultShiftHours}
-            onChange={(event) =>
-              editSettings({
-                ...company,
-                defaultShiftHours: Number(event.target.value) || 8,
-              })
-            }
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
-          />
-        </div>
-        <div className="pt-2 border-t">
-          <WorkingDaysPicker
-            label="Company Default Working Days"
-            value={company.workingDays}
-            onChange={(days) => editSettings({ ...company, workingDays: days })}
-          />
-        </div>
-        <button
-          disabled={busy}
-          onClick={() => save()}
-          className="btn-lift rounded-md bg-primary text-primary-foreground px-8 py-3 text-sm font-bold"
-        >
-          {busy ? "Saving Settings..." : "Save Company Settings"}
-        </button>
+
+          <HolidayAnswersCard todayStr={todayStr} />
+
+          <DaylightSavingCard />
+
+          <div className="rounded-xl border bg-card p-6 space-y-4 shadow-lift">
+            <h2 className="font-bold text-primary flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" /> Company Settings
+            </h2>
+            <div>
+              <label className="text-sm font-semibold">Company Name</label>
+              <input
+                value={company.name}
+                onChange={(event) => editSettings({ ...company, name: event.target.value })}
+                className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold">Logo Image URL</label>
+              <input
+                value={company.logoUrl ?? ""}
+                onChange={(event) => editSettings({ ...company, logoUrl: event.target.value })}
+                className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold">Default Shift Duration (Hours)</label>
+              <input
+                type="number"
+                value={company.defaultShiftHours}
+                onChange={(event) =>
+                  editSettings({
+                    ...company,
+                    defaultShiftHours: Number(event.target.value) || 8,
+                  })
+                }
+                className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background"
+              />
+            </div>
+            <div className="pt-2 border-t">
+              <WorkingDaysPicker
+                label="Company Default Working Days"
+                value={company.workingDays}
+                onChange={(days) => editSettings({ ...company, workingDays: days })}
+              />
+            </div>
+            <button
+              disabled={busy}
+              onClick={() => save()}
+              className="btn-lift rounded-md bg-primary text-primary-foreground px-8 py-3 text-sm font-bold"
+            >
+              {busy ? "Saving Settings..." : "Save Company Settings"}
+            </button>
+          </div>
+        </aside>
       </div>
 
       {(showAddCompanyModal || editingCompany !== null) && (
@@ -704,13 +720,12 @@ function CompanyModal({
   const [autoDeductUnloggedBreak, setAutoDeductUnloggedBreak] = useState(
     companyToEdit?.autoDeductUnloggedBreak !== false,
   );
-  const [clientEmails, setClientEmails] = useState<string[]>(
-    companyClientEmails(companyToEdit),
-  );
-  const [clientTopics, setClientTopics] = useState(() =>
-    Object.fromEntries(
-      CLIENT_EMAIL_TOPICS.map(({ topic }) => [topic, clientWants(companyToEdit, topic)]),
-    ) as Record<ClientEmailTopic, boolean>,
+  const [clientEmails, setClientEmails] = useState<string[]>(companyClientEmails(companyToEdit));
+  const [clientTopics, setClientTopics] = useState(
+    () =>
+      Object.fromEntries(
+        CLIENT_EMAIL_TOPICS.map(({ topic }) => [topic, clientWants(companyToEdit, topic)]),
+      ) as Record<ClientEmailTopic, boolean>,
   );
   const [weeklyReportAllRecipients, setWeeklyReportAllRecipients] = useState<string[]>(
     parseClientEmails(companyToEdit?.weeklyReportAllRecipients),
@@ -752,9 +767,7 @@ function CompanyModal({
           clientEmails: splitEmails(clientEmails),
           clientEmailTopics: clientTopics,
           weeklyReportRecipients: splitEmails(clientEmails),
-          ...(isMain
-            ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
-            : {}),
+          ...(isMain ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) } : {}),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           archived: isMain ? false : archived,
@@ -775,9 +788,7 @@ function CompanyModal({
           clientEmails: splitEmails(clientEmails),
           clientEmailTopics: clientTopics,
           weeklyReportRecipients: splitEmails(clientEmails),
-          ...(isMain
-            ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) }
-            : {}),
+          ...(isMain ? { weeklyReportAllRecipients: splitEmails(weeklyReportAllRecipients) } : {}),
           punchOutReminderMinutes: Math.max(0, Number(punchOutReminderMinutes) || 0),
           workingDays: workingDays && workingDays.length > 0 ? workingDays : [0, 1, 2, 3, 4, 5],
           holidays: [],
@@ -851,8 +862,8 @@ function CompanyModal({
             ))}
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
-            Holidays for this state give everyone the holiday for their work here. People who
-            also work for a company in another state keep working there as normal.
+            Holidays for this state give everyone the holiday for their work here. People who also
+            work for a company in another state keep working there as normal.
           </p>
         </div>
 
@@ -927,8 +938,8 @@ function CompanyModal({
           <div>
             <label className="text-sm font-medium">Client email</label>
             <p className="text-xs text-muted-foreground">
-              Everyone at this client our emails go to. Type an address and press Enter or +.
-              Leave empty and the client gets no emails.
+              Everyone at this client our emails go to. Type an address and press Enter or +. Leave
+              empty and the client gets no emails.
             </p>
             <div className="mt-1.5">
               <EmailChipsInput

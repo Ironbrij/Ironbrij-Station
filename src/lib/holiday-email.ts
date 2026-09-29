@@ -94,7 +94,8 @@ export function buildHolidayEmail(
   plan: HolidayEmailPlan,
   companies: Company[],
   departments: Department[],
-  appUrl: string,
+  /** Whether their client is being asked if they should work, so a decision will follow. */
+  clientAsked = false,
 ) {
   const company = brandingFor(plan, companies, departments);
   const firstName = plan.employee.name?.trim().split(/\s+/)[0] || "there";
@@ -104,6 +105,7 @@ export function buildHolidayEmail(
   const subject = one
     ? `Holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
     : `You have ${holidays.length} holidays coming up`;
+  const title = one ? "You Have a Holiday" : "You Have Holidays Coming Up";
   const headline = one
     ? `You have a holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
     : `You have ${holidays.length} holidays coming up.`;
@@ -115,38 +117,49 @@ export function buildHolidayEmail(
     return closed ? ` (your work for ${closed.map(companyName).join(", ")} only)` : "";
   };
   const partly = holidays.some((holiday) => closedCompanyIds(holiday, plan.employee));
-  const lines = holidays.map(
-    (holiday) => `${name(holiday)}: ${formatHolidayDate(holiday.date)}${scope(holiday)}`,
-  );
+  const details = holidays.map((holiday) => ({
+    label: "Holiday",
+    value: `${name(holiday)}, ${formatHolidayDate(holiday.date)}${scope(holiday)}`,
+  }));
+  const it = one ? "this holiday" : "these holidays";
+  const paragraphs = [
+    ...(clientAsked
+      ? [
+          `This is a reminder about your upcoming ${one ? "holiday" : "holidays"}. Your client will let us know if they would like you to work on ${it}. The system or Accounts Team will notify you once their decision is confirmed.`,
+          "If your client requests you to work, please log in and work your usual hours. If they do not request you to work, please do not punch in.",
+        ]
+      : [
+          `This is a reminder about your upcoming ${one ? "holiday" : "holidays"}. Please do not punch in on ${one ? "this day" : "these days"}.`,
+        ]),
+    ...(partly ? ["Work for your other companies on the same day is a normal working day."] : []),
+  ];
   const text = [
+    title,
+    "",
     `Hi ${firstName},`,
     "",
     headline,
     "",
-    ...lines,
+    ...details.map((detail) => `${detail.label}: ${detail.value}`),
     "",
-    `You don't need to punch in on ${one ? "this day" : "these days"}. Work done on a holiday is counted as holiday work, not regular hours.`,
-    ...(partly ? ["Work for your other companies on the same day is a normal working day."] : []),
-    "",
-    `Open SavyTime: ${appUrl}`,
+    ...paragraphs.flatMap((paragraph) => [paragraph, ""]),
+    "Best regards,",
+    "Accounts Team",
   ].join("\n");
   const accentColor = "#7c3aed";
+  const paragraph = (value: string) =>
+    `<p style="margin: 0 0 16px; font-size: 15px; line-height: 24px; color: #2d3748;">${escapeEmailHtml(value)}</p>`;
   const html = renderCompanyEmail({
     company,
     preheader: headline,
     label: "Holiday",
-    title: one ? "You have a holiday" : "Holidays coming up",
-    introHtml: `Hi ${escapeEmailHtml(firstName)}, ${escapeEmailHtml(headline.charAt(0).toLowerCase() + headline.slice(1))}`,
-    contentHtml: `
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${renderEmailDetails(
-        holidays.map((holiday) => ({
-          label: name(holiday),
-          value: `${formatHolidayDate(holiday.date)}${scope(holiday)}`,
-        })),
-        accentColor,
-      )}</table>
-      <p style="margin: 18px 0 0; font-size: 14px; line-height: 21px; color: #4a5568;">You don't need to punch in on ${one ? "this day" : "these days"}.${partly ? " Work for your other companies on the same day is a normal working day." : ""}</p>`,
-    cta: { label: "Open SavyTime", url: appUrl },
+    title,
+    introHtml: `Hi ${escapeEmailHtml(firstName)},<br>${escapeEmailHtml(headline)}`,
+    contentHtml: [
+      `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 16px;">${renderEmailDetails(details, accentColor)}</table>`,
+      ...paragraphs.map(paragraph),
+      `<p style="margin: 8px 0 0; font-size: 15px; line-height: 24px; color: #2d3748;">Best regards,<br><strong>Accounts Team</strong></p>`,
+    ].join(""),
     accentColor,
   });
   return { company, subject, text, html };
@@ -309,13 +322,23 @@ export async function sendHolidayEmails({
     process.env.N8N_REPORT_WEBHOOK_URL ||
     "https://vmi3182726.contaboserver.net/webhook/time-station-report-email";
 
+  // People whose client is asked whether they work: they are told a decision will follow.
+  const askedAbout = new Set(
+    clientPlans.flatMap((plan) => plan.days.flatMap((day) => day.vas.map((va) => va.id))),
+  );
+
   let sent = 0;
   let failed = 0;
   // A few at a time, so a big team does not flood the webhook.
   for (let index = 0; index < plans.length; index += 5) {
     await Promise.all(
       plans.slice(index, index + 5).map(async (plan) => {
-        const email = buildHolidayEmail(plan, companies, departments, appUrl);
+        const email = buildHolidayEmail(
+          plan,
+          companies,
+          departments,
+          askedAbout.has(plan.employee.id),
+        );
         try {
           const response = await fetchImpl(webhookUrl, {
             method: "POST",

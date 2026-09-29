@@ -241,6 +241,20 @@ service cloud.firestore {
       );
     }
 
+    // A client's daylight saving choice: follow their new DST schedule, or keep
+    // the VA's current hours. Like a holiday answer, read by its random token and
+    // answered once without signing in. Only admins make or list them.
+    match /dstResponses/{token} {
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        resource.data.decision == null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['decision', 'decidedAt']) &&
+        request.resource.data.decision in ['follow', 'keep'] &&
+        request.resource.data.decidedAt is string
+      );
+    }
+
     // Admin API Tokens
     match /adminApiTokens/{token} {
       allow read: if isAdmin();

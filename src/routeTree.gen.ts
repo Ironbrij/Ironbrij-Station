@@ -17,6 +17,7 @@ import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/ap
 import { Route as ApiAutoPunchOutNotificationRouteImport } from './routes/api.auto-punch-out-notification'
 import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation-status'
 import { Route as ApiDstNotificationRouteImport } from './routes/api.dst-notification'
+import { Route as ApiDstResponseRouteImport } from './routes/api.dst-response'
 import { Route as ApiHolidayNotificationRouteImport } from './routes/api.holiday-notification'
 import { Route as ApiHolidayResponseRouteImport } from './routes/api.holiday-response'
 import { Route as ApiInviteNotificationRouteImport } from './routes/api.invite-notification'
@@ -31,6 +32,7 @@ import { Route as ApiScheduleChangeNotificationRouteImport } from './routes/api.
 import { Route as ApiSendReportRouteImport } from './routes/api.send-report'
 import { Route as ApiSodMentionNotificationRouteImport } from './routes/api.sod-mention-notification'
 import { Route as ApiWeeklyReportRouteImport } from './routes/api.weekly-report'
+import { Route as DstResponseTokenRouteImport } from './routes/dst-response.$token'
 import { Route as HolidayResponseTokenRouteImport } from './routes/holiday-response.$token'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
@@ -92,6 +94,11 @@ const ApiAutomationStatusRoute = ApiAutomationStatusRouteImport.update({
 const ApiDstNotificationRoute = ApiDstNotificationRouteImport.update({
   id: '/api/dst-notification',
   path: '/api/dst-notification',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDstResponseRoute = ApiDstResponseRouteImport.update({
+  id: '/api/dst-response',
+  path: '/api/dst-response',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHolidayNotificationRoute = ApiHolidayNotificationRouteImport.update({
@@ -167,6 +174,11 @@ const ApiSodMentionNotificationRoute =
 const ApiWeeklyReportRoute = ApiWeeklyReportRouteImport.update({
   id: '/api/weekly-report',
   path: '/api/weekly-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DstResponseTokenRoute = DstResponseTokenRouteImport.update({
+  id: '/dst-response/$token',
+  path: '/dst-response/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HolidayResponseTokenRoute = HolidayResponseTokenRouteImport.update({
@@ -300,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
+  '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
   '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
@@ -314,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/dst-response/$token': typeof DstResponseTokenRoute
   '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -344,6 +358,7 @@ export interface FileRoutesByTo {
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
+  '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
   '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
@@ -358,6 +373,7 @@ export interface FileRoutesByTo {
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/dst-response/$token': typeof DstResponseTokenRoute
   '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -391,6 +407,7 @@ export interface FileRoutesById {
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
+  '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
   '/api/holiday-response': typeof ApiHolidayResponseRoute
   '/api/invite-notification': typeof ApiInviteNotificationRoute
@@ -405,6 +422,7 @@ export interface FileRoutesById {
   '/api/send-report': typeof ApiSendReportRoute
   '/api/sod-mention-notification': typeof ApiSodMentionNotificationRoute
   '/api/weekly-report': typeof ApiWeeklyReportRoute
+  '/dst-response/$token': typeof DstResponseTokenRoute
   '/holiday-response/$token': typeof HolidayResponseTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/admin/company': typeof AuthenticatedAdminCompanyRoute
@@ -438,6 +456,7 @@ export interface FileRouteTypes {
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/dst-notification'
+    | '/api/dst-response'
     | '/api/holiday-notification'
     | '/api/holiday-response'
     | '/api/invite-notification'
@@ -452,6 +471,7 @@ export interface FileRouteTypes {
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/dst-response/$token'
     | '/holiday-response/$token'
     | '/invite/$token'
     | '/admin/company'
@@ -482,6 +502,7 @@ export interface FileRouteTypes {
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/dst-notification'
+    | '/api/dst-response'
     | '/api/holiday-notification'
     | '/api/holiday-response'
     | '/api/invite-notification'
@@ -496,6 +517,7 @@ export interface FileRouteTypes {
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/dst-response/$token'
     | '/holiday-response/$token'
     | '/invite/$token'
     | '/admin/company'
@@ -528,6 +550,7 @@ export interface FileRouteTypes {
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
     | '/api/dst-notification'
+    | '/api/dst-response'
     | '/api/holiday-notification'
     | '/api/holiday-response'
     | '/api/invite-notification'
@@ -542,6 +565,7 @@ export interface FileRouteTypes {
     | '/api/send-report'
     | '/api/sod-mention-notification'
     | '/api/weekly-report'
+    | '/dst-response/$token'
     | '/holiday-response/$token'
     | '/invite/$token'
     | '/_authenticated/admin/company'
@@ -573,6 +597,7 @@ export interface RootRouteChildren {
   ApiAutoPunchOutNotificationRoute: typeof ApiAutoPunchOutNotificationRoute
   ApiAutomationStatusRoute: typeof ApiAutomationStatusRoute
   ApiDstNotificationRoute: typeof ApiDstNotificationRoute
+  ApiDstResponseRoute: typeof ApiDstResponseRoute
   ApiHolidayNotificationRoute: typeof ApiHolidayNotificationRoute
   ApiHolidayResponseRoute: typeof ApiHolidayResponseRoute
   ApiInviteNotificationRoute: typeof ApiInviteNotificationRoute
@@ -587,6 +612,7 @@ export interface RootRouteChildren {
   ApiSendReportRoute: typeof ApiSendReportRoute
   ApiSodMentionNotificationRoute: typeof ApiSodMentionNotificationRoute
   ApiWeeklyReportRoute: typeof ApiWeeklyReportRoute
+  DstResponseTokenRoute: typeof DstResponseTokenRoute
   HolidayResponseTokenRoute: typeof HolidayResponseTokenRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
@@ -647,6 +673,13 @@ declare module '@tanstack/react-router' {
       path: '/api/dst-notification'
       fullPath: '/api/dst-notification'
       preLoaderRoute: typeof ApiDstNotificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/dst-response': {
+      id: '/api/dst-response'
+      path: '/api/dst-response'
+      fullPath: '/api/dst-response'
+      preLoaderRoute: typeof ApiDstResponseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/holiday-notification': {
@@ -745,6 +778,13 @@ declare module '@tanstack/react-router' {
       path: '/api/weekly-report'
       fullPath: '/api/weekly-report'
       preLoaderRoute: typeof ApiWeeklyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dst-response/$token': {
+      id: '/dst-response/$token'
+      path: '/dst-response/$token'
+      fullPath: '/dst-response/$token'
+      preLoaderRoute: typeof DstResponseTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/holiday-response/$token': {
@@ -996,6 +1036,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoPunchOutNotificationRoute: ApiAutoPunchOutNotificationRoute,
   ApiAutomationStatusRoute: ApiAutomationStatusRoute,
   ApiDstNotificationRoute: ApiDstNotificationRoute,
+  ApiDstResponseRoute: ApiDstResponseRoute,
   ApiHolidayNotificationRoute: ApiHolidayNotificationRoute,
   ApiHolidayResponseRoute: ApiHolidayResponseRoute,
   ApiInviteNotificationRoute: ApiInviteNotificationRoute,
@@ -1010,6 +1051,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSendReportRoute: ApiSendReportRoute,
   ApiSodMentionNotificationRoute: ApiSodMentionNotificationRoute,
   ApiWeeklyReportRoute: ApiWeeklyReportRoute,
+  DstResponseTokenRoute: DstResponseTokenRoute,
   HolidayResponseTokenRoute: HolidayResponseTokenRoute,
   InviteTokenRoute: InviteTokenRoute,
 }

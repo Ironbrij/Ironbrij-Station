@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { listCollection, requireAdmin } from "@/lib/admin-request";
+import { createDocument, listCollection, requireAdmin } from "@/lib/admin-request";
+import { resolveAppUrl } from "@/lib/app-url";
+import { newResponseToken } from "@/lib/holiday-response";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { formatEmailDate } from "@/lib/email-template";
-import { planClientDstEmails, sendClientDstEmails } from "@/lib/dst-email";
+import { newDstResponse, planClientDstEmails, sendClientDstEmails } from "@/lib/dst-email";
 import type { Company, Employee } from "@/lib/types";
 
 /**
@@ -20,7 +22,7 @@ export const Route = createFileRoute("/api/dst-notification")({
       POST: async ({ request }) => {
         const admin = await requireAdmin(request);
         if ("response" in admin) return admin.response;
-        const { idToken } = admin;
+        const { idToken, email: adminEmail } = admin;
 
         let body: { dryRun?: unknown; companyIds?: unknown };
         try {
@@ -69,7 +71,21 @@ export const Route = createFileRoute("/api/dst-notification")({
 
         const wanted = new Set((companyIds as string[]).map(normalizeCompanyId));
         const chosen = plans.filter((plan) => wanted.has(normalizeCompanyId(plan.company.id)));
-        const result = await sendClientDstEmails({ plans: chosen });
+        const result = await sendClientDstEmails({
+          plans: chosen,
+          appUrl: resolveAppUrl(request.url),
+          // Each client's Follow / Keep choice is saved under its own token.
+          saveClientQuestion: async (plan) => {
+            const token = newResponseToken();
+            await createDocument(
+              "dstResponses",
+              token,
+              { ...newDstResponse(plan, adminEmail) },
+              idToken,
+            );
+            return token;
+          },
+        });
         if (chosen.length > 0 && result.sent === 0) {
           return Response.json(
             { ok: false, error: "The n8n webhook did not accept the daylight saving emails" },

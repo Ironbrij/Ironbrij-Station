@@ -260,3 +260,59 @@ test("a client whose answer link could not be saved is asked to reply instead", 
   assert.doesNotMatch(client.text, /holiday-response/);
   assert.match(client.text, /kindly let us know if you'd like your VA to work on this day\./);
 });
+
+test("the VA's holiday email says their client will decide, when their client is asked", async () => {
+  const posts: { event: string; to: string; text: string }[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    posts.push({ event: body.event, to: body.email.to, text: body.email.text });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const withClient = companies.map((company) =>
+    company.id === "alpha" ? { ...company, clientEmails: ["boss@alpha.com"] } : company,
+  );
+  await sendHolidayEmails({
+    holidays: sharedCalendar(withClient)!.holidayAssignments!,
+    employees: [{ ...person("ann", "ann@example.com", ["alpha"]), name: "Ann Cataring" }],
+    companies: withClient,
+    departments: [],
+    appUrl: "https://example.com",
+    fetchImpl,
+  });
+  const va = posts.find((post) => post.event === "holiday_notice")!;
+  assert.equal(
+    va.text,
+    [
+      "You Have a Holiday",
+      "",
+      "Hi Ann,",
+      "",
+      "You have a holiday on Monday, 5 October 2026 for Labour Day.",
+      "",
+      "Holiday: Labour Day, Monday, 5 October 2026",
+      "",
+      "This is a reminder about your upcoming holiday. Your client will let us know if they would like you to work on this holiday. The system or Accounts Team will notify you once their decision is confirmed.",
+      "",
+      "If your client requests you to work, please log in and work your usual hours. If they do not request you to work, please do not punch in.",
+      "",
+      "Best regards,",
+      "Accounts Team",
+    ].join("\n"),
+  );
+
+  // No client email saved for Alpha: nobody will decide, so they are simply off.
+  posts.length = 0;
+  await sendHolidayEmails({
+    holidays: sharedCalendar(companies)!.holidayAssignments!,
+    employees: [{ ...person("ann", "ann@example.com", ["alpha"]), name: "Ann Cataring" }],
+    companies,
+    departments: [],
+    appUrl: "https://example.com",
+    fetchImpl,
+  });
+  assert.match(
+    posts[0].text,
+    /This is a reminder about your upcoming holiday\. Please do not punch in on this day\./,
+  );
+  assert.doesNotMatch(posts[0].text, /Your client will let us know/);
+});

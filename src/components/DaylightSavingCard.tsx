@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
 import { Clock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { db } from "@/lib/firebase";
+import { formatEmailDate } from "@/lib/email-template";
+import type { DstResponse } from "@/lib/dst-response";
 
 interface DstClient {
   companyId: string;
@@ -23,6 +27,28 @@ export function DaylightSavingCard() {
   const [clients, setClients] = useState<DstClient[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [answers, setAnswers] = useState<(DstResponse & { id: string })[]>([]);
+
+  // Each client's choice, for changes still to come.
+  useEffect(
+    () =>
+      onSnapshot(
+        collection(db(), "dstResponses"),
+        (snapshot) =>
+          setAnswers(
+            snapshot.docs.map((item) => ({ ...(item.data() as DstResponse), id: item.id })),
+          ),
+        () => setAnswers([]),
+      ),
+    [],
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const upcomingAnswers = answers
+    .filter((answer) => answer.change?.date >= today)
+    .sort(
+      (a, b) =>
+        a.change.date.localeCompare(b.change.date) || a.companyName.localeCompare(b.companyName),
+    );
 
   useEffect(() => {
     if (!user) return;
@@ -74,7 +100,8 @@ export function DaylightSavingCard() {
       } else {
         toast.success(
           `Emailed ${result.sent ?? 0} ${result.sent === 1 ? "client" : "clients"}` +
-            ` and ${result.vas ?? 0} ${result.vas === 1 ? "VA" : "VAs"}` +
+            (result.vas ? ` and ${result.vas} ${result.vas === 1 ? "VA" : "VAs"}` : "") +
+            ". VAs are emailed once their client chooses." +
             (result.failed ? ` (${result.failed} could not be sent)` : ""),
         );
         setPicked(new Set());
@@ -100,10 +127,9 @@ export function DaylightSavingCard() {
           <Clock className="h-4 w-4" /> Daylight saving
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          When a client&apos;s clocks move, their VA works the same hours on the client&apos;s
-          clock, so the VA&apos;s own start time moves by an hour. One click emails each client
-          their VAs&apos; hours before and after, so they can reply if they want a change, and
-          emails each VA their new start and finish times.
+          Before a client&apos;s clocks move, email them their VAs&apos; hours under both choices:
+          follow the client&apos;s new DST schedule, or keep the VA&apos;s current schedule. The
+          client picks one from the email; the VA and you are told automatically.
         </p>
       </div>
 
@@ -151,6 +177,49 @@ export function DaylightSavingCard() {
               : `Email ${picked.size} ${picked.size === 1 ? "client" : "clients"}`}
           </button>
         </>
+      )}
+
+      {upcomingAnswers.length > 0 && (
+        <div className="space-y-1.5 border-t pt-3">
+          <div className="text-xs font-bold">Client choices</div>
+          <div className="divide-y rounded-md border">
+            {upcomingAnswers.map((answer) => (
+              <div key={answer.id} className="p-2.5 text-xs space-y-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-sm">{answer.companyName}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 font-bold ${
+                      answer.decision === "follow"
+                        ? "bg-cyan-500/15 text-cyan-800"
+                        : answer.decision === "keep"
+                          ? "bg-violet-500/15 text-violet-800"
+                          : "bg-amber-500/15 text-amber-700"
+                    }`}
+                  >
+                    {answer.decision === "follow"
+                      ? "Follow new DST schedule"
+                      : answer.decision === "keep"
+                        ? answer.keepLabel
+                        : "Waiting for answer"}
+                  </span>
+                </div>
+                <div className="text-muted-foreground">
+                  {answer.change.kind === "start" ? "Starts" : "Ends"}{" "}
+                  {formatEmailDate(answer.change.date)} ·{" "}
+                  {[...new Set(answer.lines.map((line) => line.name))].join(", ")}
+                </div>
+                {answer.decision === "keep" && (
+                  <div className="font-medium text-violet-800 dark:text-violet-300">
+                    Update in SavyTime:{" "}
+                    {answer.lines
+                      .map((line) => `${line.name} to ${line.clientKeep} (client's clock)`)
+                      .join("; ")}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
