@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { companyClientEmails, parseClientEmails } from "@/lib/client-emails";
 import { EmailChipsInput } from "@/components/EmailChipsInput";
+import { ReportHistoryPanel } from "@/components/ReportHistoryPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, onSnapshot, runTransaction, updateDoc } from "firebase/firestore";
 import {
@@ -176,7 +177,7 @@ function ReportsPage() {
   const [search, setSearch] = useState("");
 
   // Report view mode: 'summary' = Interactive Company & VA Report, 'daily' = Raw Daily Logs
-  const [viewMode, setViewMode] = useState<"summary" | "daily">("summary");
+  const [viewMode, setViewMode] = useState<"summary" | "daily" | "history">("summary");
 
   // The admin's edits to this report, saved by themselves; the rows shown are
   // the calculated ones with these laid on top.
@@ -993,6 +994,7 @@ function ReportsPage() {
           authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
+          companyId: companyFilter === "all" ? "all" : normalizeCompanyId(companyFilter),
           recipientEmails: emailList,
           subject: emailSubject,
           customMessage: coverNote,
@@ -1268,8 +1270,8 @@ function ReportsPage() {
     toast.success("Downloaded Daily Logs PDF");
   }
 
-  return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+  const pageHeader = (
+    <>
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -1304,8 +1306,33 @@ function ReportsPage() {
           >
             Raw Daily Punch Logs
           </button>
+          <button
+            onClick={() => setViewMode("history")}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+              viewMode === "history"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Sent Reports History
+          </button>
         </div>
       </div>
+    </>
+  );
+
+  if (viewMode === "history") {
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto pb-16">
+        {pageHeader}
+        <ReportHistoryPanel companies={companies} initialCompany={companyFilter} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {pageHeader}
 
       {syncError && (
         <div

@@ -5,7 +5,9 @@ import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { shareHolidays } from "@/lib/holidays";
 import { clientEmailsFor } from "@/lib/client-emails";
-import { deliverReportEmail } from "@/lib/report-email";
+import { deliverReportEmail, type SendReportInput } from "@/lib/report-email";
+import { automationIdToken, createDocument } from "@/lib/admin-request";
+import { newReportHistoryEntry, reportHistoryId } from "@/lib/report-history";
 import { buildReportCoverMessage } from "@/lib/report-cover-message";
 import { fromFirestoreFields, type FirestoreValue } from "@/lib/firestore-rest";
 import { applyReportEdits, readReportEdits, reportEditsDocId } from "@/lib/report-edits";
@@ -30,8 +32,7 @@ import type {
 
 function getFirestoreConfig() {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "ironbrij-timestation";
-  const apiKey =
-    process.env.VITE_FIREBASE_API_KEY || "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw";
+  const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw";
   return {
     apiKey,
     baseUrl: `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`,
@@ -164,8 +165,7 @@ function parseRecipients(value: unknown): string[] {
  */
 async function isAuthorisedKey(token: string): Promise<boolean> {
   if (!token || token.length < 20) return false;
-  const masterKey =
-    adminMasterKey();
+  const masterKey = adminMasterKey();
   if (token === masterKey) return true;
   const { baseUrl, apiKey } = getFirestoreConfig();
   const response = await fetch(
@@ -226,9 +226,11 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const read = (name: string) =>
     (body[name] as string | undefined) ?? url.searchParams.get(name) ?? "";
 
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  const token =
-    request.headers.get("x-admin-key")?.trim() || bearer || read("token").trim() || "";
+  const bearer = request.headers
+    .get("authorization")
+    ?.replace(/^Bearer\s+/i, "")
+    .trim();
+  const token = request.headers.get("x-admin-key")?.trim() || bearer || read("token").trim() || "";
   if (!(await isAuthorisedKey(token))) {
     return Response.json({ ok: false, error: "Not found" }, { status: 404 });
   }
@@ -350,45 +352,44 @@ async function runWeeklyReport(request: Request): Promise<Response> {
 
   // The same renderer and workflow as the report screen's Send button, called
   // directly: this endpoint has already authenticated the scheduler.
-  const delivery = await deliverReportEmail(
-    {
-      recipientEmails: recipients,
-      subject: `${companyName} weekly report (${week.label})`,
-      // The same letter an admin gets pre-written on the report screen.
-      customMessage: buildReportCoverMessage({
-        clientName: isAll ? "" : companyName,
-        from: week.from,
-        to: week.to,
-        rows,
-      }),
-      companyName,
+  const report: SendReportInput = {
+    companyId: isAll ? "all" : normalizeCompanyId(requestedCompany) || COMPANY_ID,
+    recipientEmails: recipients,
+    subject: `${companyName} weekly report (${week.label})`,
+    // The same letter an admin gets pre-written on the report screen.
+    customMessage: buildReportCoverMessage({
       clientName: isAll ? "" : companyName,
-      periodLabel: week.label,
-      periodFrom: week.from,
-      periodTo: week.to,
-      summary,
-      rows: rows.map((row) => ({
-        employeeName: row.employeeName,
-        employeeEmail: row.employeeEmail,
-        role: row.role,
-        department: row.department,
-        client: row.client,
-        status: row.status,
-        hoursPerDay: row.hoursPerDay,
-        workedDays: row.workedDays,
-        regularHours: row.regularHours,
-        overtimeHours: row.overtimeHours,
-        overtimeDates: row.overtimeDates,
-        paidLeaveDays: row.paidLeaveDays,
-        unpaidLeaveDays: row.unpaidLeaveDays,
-        paidLeaveUsed: row.paidLeaveUsed,
-        unpaidLeaveUsed: row.unpaidLeaveUsed,
-        availableLeaveCredit: row.availableLeaveCredit,
-        remarks: row.remarks,
-      })),
-    },
-    "automation@savytimes",
-  );
+      from: week.from,
+      to: week.to,
+      rows,
+    }),
+    companyName,
+    clientName: isAll ? "" : companyName,
+    periodLabel: week.label,
+    periodFrom: week.from,
+    periodTo: week.to,
+    summary,
+    rows: rows.map((row) => ({
+      employeeName: row.employeeName,
+      employeeEmail: row.employeeEmail,
+      role: row.role,
+      department: row.department,
+      client: row.client,
+      status: row.status,
+      hoursPerDay: row.hoursPerDay,
+      workedDays: row.workedDays,
+      regularHours: row.regularHours,
+      overtimeHours: row.overtimeHours,
+      overtimeDates: row.overtimeDates,
+      paidLeaveDays: row.paidLeaveDays,
+      unpaidLeaveDays: row.unpaidLeaveDays,
+      paidLeaveUsed: row.paidLeaveUsed,
+      unpaidLeaveUsed: row.unpaidLeaveUsed,
+      availableLeaveCredit: row.availableLeaveCredit,
+      remarks: row.remarks,
+    })),
+  };
+  const delivery = await deliverReportEmail(report, "automation@savytimes");
 
   if (!delivery.ok) {
     return Response.json(
@@ -397,7 +398,39 @@ async function runWeeklyReport(request: Request): Promise<Response> {
     );
   }
 
-  return Response.json({ ...result, sent: true });
+  // Kept in the report history when the automation has a login to save with.
+  const idToken = await automationIdToken();
+  let historySaved = false;
+  if (idToken) {
+    const now = new Date();
+    const entry = newReportHistoryEntry({
+      report,
+      recipients: delivery.recipients ?? recipients,
+      sentBy: "Weekly automation",
+      source: "automation",
+      now,
+    });
+    historySaved = await createDocument(
+      "reportHistory",
+      reportHistoryId(entry.companyId, entry.from, now),
+      { ...entry },
+      idToken,
+    )
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  return Response.json({
+    ...result,
+    sent: true,
+    historySaved,
+    ...(idToken
+      ? {}
+      : {
+          historyNote:
+            "Set AUTOMATION_EMAIL and AUTOMATION_PASSWORD to keep automated reports in the history.",
+        }),
+  });
 }
 
 export const Route = createFileRoute("/api/weekly-report")({

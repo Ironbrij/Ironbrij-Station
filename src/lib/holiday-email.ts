@@ -103,11 +103,11 @@ export function buildHolidayEmail(
   const one = holidays.length === 1;
   const name = (holiday: CompanyHoliday) => holiday.name?.trim() || "Company Holiday";
   const subject = one
-    ? `Holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
+    ? `Upcoming holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
     : `You have ${holidays.length} holidays coming up`;
-  const title = one ? "You Have a Holiday" : "You Have Holidays Coming Up";
+  const title = one ? "You Have an Upcoming Holiday" : "You Have Holidays Coming Up";
   const headline = one
-    ? `You have a holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
+    ? `You have an upcoming holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
     : `You have ${holidays.length} holidays coming up.`;
   // Someone working for companies in two states is only off for the closed one.
   const companyName = (id: string) =>
@@ -118,7 +118,7 @@ export function buildHolidayEmail(
   };
   const partly = holidays.some((holiday) => closedCompanyIds(holiday, plan.employee));
   const details = holidays.map((holiday) => ({
-    label: "Holiday",
+    label: "Upcoming Holiday",
     value: `${name(holiday)}, ${formatHolidayDate(holiday.date)}${scope(holiday)}`,
   }));
   const it = one ? "this holiday" : "these holidays";
@@ -152,7 +152,7 @@ export function buildHolidayEmail(
   const html = renderCompanyEmail({
     company,
     preheader: headline,
-    label: "Holiday",
+    label: "Upcoming Holiday",
     title,
     introHtml: `Hi ${escapeEmailHtml(firstName)},<br>${escapeEmailHtml(headline)}`,
     contentHtml: [

@@ -1,6 +1,6 @@
-import type { CompanyEmailBranding } from "./email-branding";
-import { escapeEmailHtml, renderCompanyEmail } from "./email-template";
-import { formatAmount, formatCovered, formatDaysAndHours } from "./report-format";
+import type { CompanyEmailBranding } from "./email-branding.ts";
+import { escapeEmailHtml, renderCompanyEmail } from "./email-template.ts";
+import { formatAmount, formatCovered, formatDaysAndHours } from "./report-format.ts";
 
 export interface ReportEmployeeRowPayload {
   employeeName: string;
@@ -28,6 +28,8 @@ export interface ReportEmployeeRowPayload {
 }
 
 export interface SendReportInput {
+  /** The company the report is for, or "all"; kept with the report's history. */
+  companyId?: string;
   recipientEmails: string[];
   subject: string;
   customMessage?: string;
@@ -140,32 +142,11 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], covered: string
   </table>`;
 }
 
-export interface ReportDeliveryResult {
-  ok: boolean;
-  status: number;
-  recipientCount?: number;
-  error?: string;
-}
-
 /**
- * Renders an attendance report and hands it to the report email workflow.
- *
- * The Reports screen's Send button and the weekly automation both call this
- * directly. The automation used to reach it over HTTP, which meant passing a
- * credential that endpoint did not accept, plus a request to its own origin.
+ * The report email itself: subject, HTML and plain text. Kept apart from
+ * sending so a report in the history can be shown again exactly as it was sent.
  */
-export async function deliverReportEmail(
-  body: SendReportInput,
-  authenticatedEmail: string,
-): Promise<ReportDeliveryResult> {
-  const validEmails = body.recipientEmails
-    .map((e) => e.trim().toLowerCase())
-    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-
-  if (validEmails.length === 0) {
-    return { ok: false, error: "No valid recipient email addresses provided", status: 400 };
-  }
-
+export function buildReportEmail(body: SendReportInput, authenticatedEmail: string) {
   const companyName = body.companyName || body.company?.name || "SavyTime";
   const periodLabel = body.periodLabel || "Recent Period";
   const subject =
@@ -268,6 +249,45 @@ export async function deliverReportEmail(
     })
     .join("\n\n")}`;
 
+  return { companyName, periodLabel, subject, html, text: plaintext };
+}
+
+export interface ReportDeliveryResult {
+  ok: boolean;
+  status: number;
+  recipientCount?: number;
+  /** The checked addresses it went to, for the report's history. */
+  recipients?: string[];
+  error?: string;
+}
+
+/**
+ * Renders an attendance report and hands it to the report email workflow.
+ *
+ * The Reports screen's Send button and the weekly automation both call this
+ * directly. The automation used to reach it over HTTP, which meant passing a
+ * credential that endpoint did not accept, plus a request to its own origin.
+ */
+export async function deliverReportEmail(
+  body: SendReportInput,
+  authenticatedEmail: string,
+): Promise<ReportDeliveryResult> {
+  const validEmails = body.recipientEmails
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+  if (validEmails.length === 0) {
+    return { ok: false, error: "No valid recipient email addresses provided", status: 400 };
+  }
+
+  const {
+    companyName,
+    periodLabel,
+    subject,
+    html,
+    text: plaintext,
+  } = buildReportEmail(body, authenticatedEmail);
+
   // Reports have their own workflow. Falling back to the leave webhook sent
   // every report to a workflow that cannot render one, which looked like
   // reports simply never arriving.
@@ -313,5 +333,5 @@ export async function deliverReportEmail(
     };
   }
 
-  return { ok: true, status: 200, recipientCount: validEmails.length };
+  return { ok: true, status: 200, recipientCount: validEmails.length, recipients: validEmails };
 }

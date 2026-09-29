@@ -73,8 +73,8 @@ test("each person given the holiday gets their own email through the webhook", a
   assert.equal(calls.length, 1);
   assert.equal(calls[0].to, "maria@example.com");
   assert.equal(calls[0].event, "holiday_notice");
-  assert.equal(calls[0].subject, "Holiday: Labour Day, Monday, 5 October 2026");
-  assert.match(calls[0].text, /You have a holiday on Monday, 5 October 2026 for Labour Day\./);
+  assert.equal(calls[0].subject, "Upcoming holiday: Labour Day, Monday, 5 October 2026");
+  assert.match(calls[0].text, /You have an upcoming holiday on Monday, 5 October 2026 for Labour Day./);
   // She also works for Beta in VIC, so the email says which work is off.
   assert.match(calls[0].text, /your work for Alpha only/);
   assert.match(calls[0].text, /other companies on the same day is a normal working day/);
@@ -283,13 +283,13 @@ test("the VA's holiday email says their client will decide, when their client is
   assert.equal(
     va.text,
     [
-      "You Have a Holiday",
+      "You Have an Upcoming Holiday",
       "",
       "Hi Ann,",
       "",
-      "You have a holiday on Monday, 5 October 2026 for Labour Day.",
+      "You have an upcoming holiday on Monday, 5 October 2026 for Labour Day.",
       "",
-      "Holiday: Labour Day, Monday, 5 October 2026",
+      "Upcoming Holiday: Labour Day, Monday, 5 October 2026",
       "",
       "This is a reminder about your upcoming holiday. Your client will let us know if they would like you to work on this holiday. The system or Accounts Team will notify you once their decision is confirmed.",
       "",
