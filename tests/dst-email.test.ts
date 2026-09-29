@@ -4,6 +4,7 @@ import {
   buildClientDstEmail,
   companyClockTimezone,
   findDstChange,
+  newDstResponse,
   planClientDstEmails,
   sendClientDstEmails,
 } from "../src/lib/dst-email.ts";
@@ -68,7 +69,7 @@ test("a Queensland client left on the Sydney timezone is not told its clocks cha
   );
 });
 
-test("the client sees each VA's hours on both clocks, before and after", () => {
+test("the client sees each VA's hours now, and under both choices", () => {
   const [plan] = planClientDstEmails(
     [company("nsw", "NSW")],
     [va("maria", ["nsw"]), va("gone", ["nsw"], { status: "inactive" })],
@@ -76,6 +77,7 @@ test("the client sees each VA's hours on both clocks, before and after", () => {
   );
   assert.deepEqual(plan.schedules, [
     {
+      id: "maria",
       name: "maria VA",
       email: "maria@example.com",
       clientBefore: "9:00 AM – 5:00 PM",
@@ -83,24 +85,82 @@ test("the client sees each VA's hours on both clocks, before and after", () => {
       vaBefore: "7:00 AM – 3:00 PM",
       vaAfter: "6:00 AM – 2:00 PM",
       vaPlace: "Manila",
+      vaZone: "PHT",
+      // Keeping her Manila hours means an hour later on Sydney's new clock.
+      clientKeep: "10:00 AM – 6:00 PM",
     },
   ]);
-  const email = buildClientDstEmail(plan);
+  const email = buildClientDstEmail(plan, { appUrl: "https://example.com", token: "t".repeat(40) });
   assert.equal(
     email.subject,
-    "Daylight Saving Time starts on Sunday, 4 October 2026: your VA's hours",
+    "Daylight Saving Time starts on Sunday, 4 October 2026: please choose your VA's schedule",
   );
   assert.match(email.text, /^Dear NSW,/);
   assert.match(
     email.text,
     /starts in New South Wales on Sunday, 4 October 2026, when clocks move forward by 1 hour\./,
   );
-  assert.match(
-    email.text,
-    /maria VA: 9:00 AM – 5:00 PM your time from Sunday, 4 October 2026 \(6:00 AM – 2:00 PM Manila time/,
+  assert.ok(
+    email.text.includes("- maria VA: now 9:00 AM – 5:00 PM your time (7:00 AM – 3:00 PM PHT)"),
+  );
+  assert.ok(
+    email.text.includes(
+      "Follow my new DST schedule: 9:00 AM – 5:00 PM your time (6:00 AM – 2:00 PM PHT)",
+    ),
+  );
+  assert.ok(
+    email.text.includes(
+      "Keep current PHT schedule: 10:00 AM – 6:00 PM your time (7:00 AM – 3:00 PM PHT)",
+    ),
+  );
+  assert.ok(
+    email.text.includes(
+      `Follow my new DST schedule: https://example.com/dst-response/${"t".repeat(40)}?choice=follow`,
+    ),
+  );
+  assert.ok(
+    email.text.includes(
+      `Keep current PHT schedule: https://example.com/dst-response/${"t".repeat(40)}?choice=keep`,
+    ),
   );
   assert.match(email.text, /Best regards,\nAccounts Team$/);
+  assert.match(email.html, />Follow my new DST schedule</);
+  assert.match(email.html, />Keep current PHT schedule</);
   assert.doesNotMatch(email.html, /do not reply/);
+
+  // Without a saved choice, the client is asked to reply instead.
+  const reply = buildClientDstEmail(plan);
+  assert.match(reply.text, /Simply reply to this email to let us know which you prefer\./);
+  assert.doesNotMatch(reply.text, /dst-response/);
+});
+
+test("a client given the choice chooses first; their VAs are only told afterwards", async () => {
+  const posts: { event: string }[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    posts.push({ event: JSON.parse(String(init.body)).event });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const plans = planClientDstEmails(
+    [company("nsw", "NSW")],
+    [va("maria", ["nsw"])],
+    new Date("2026-09-29T00:00:00Z"),
+  );
+  const saved: string[] = [];
+  const result = await sendClientDstEmails({
+    plans,
+    appUrl: "https://example.com",
+    saveClientQuestion: async (plan) => {
+      saved.push(newDstResponse(plan, "ann@example.com").keepLabel);
+      return "t".repeat(40);
+    },
+    fetchImpl,
+  });
+  assert.deepEqual(saved, ["Keep current PHT schedule"]);
+  assert.deepEqual(result, { sent: 1, failed: 0, vas: 0 });
+  assert.deepEqual(
+    posts.map((post) => post.event),
+    ["dst_client_notice"],
+  );
 });
 
 test("a client with daylight saving switched off is not emailed", () => {

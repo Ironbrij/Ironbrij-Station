@@ -15,6 +15,7 @@ import {
 } from "./company-context.ts";
 import { companyEmailBranding } from "./email-branding.ts";
 import { regionLabel, regionTimezone } from "./holidays.ts";
+import { dstResponseUrl, type DstResponse } from "./dst-response.ts";
 import {
   escapeEmailHtml,
   formatEmailDate,
@@ -99,6 +100,8 @@ export function placeName(timezone: string): string {
 }
 
 export interface DstScheduleLine {
+  /** The VA's employee id. */
+  id: string;
   name: string;
   /** The VA's own address, for their notice. */
   email: string;
@@ -109,6 +112,30 @@ export interface DstScheduleLine {
   vaBefore: string;
   vaAfter: string;
   vaPlace: string;
+  /** "PHT", "NPT", or "Manila time": what the VA's clock is called. */
+  vaZone: string;
+  /**
+   * If the client keeps the VA on their current hours instead: the VA's clock
+   * stays at vaBefore, and this is the same work on the client's clock.
+   */
+  clientKeep: string;
+}
+
+const ZONE_NAMES: Record<string, string> = {
+  "Asia/Manila": "PHT",
+  "Asia/Kathmandu": "NPT",
+  "Asia/Kolkata": "IST",
+};
+
+/** "PHT" for Manila, "NPT" for Kathmandu, otherwise "Manila time". */
+export function zoneName(timezone: string): string {
+  return ZONE_NAMES[timezone] ?? `${placeName(timezone)} time`;
+}
+
+/** "07:00": an instant on a timezone's clock, as a saved shift time. */
+function clockTime(instant: Date, timezone: string): string {
+  const parts = getZonedParts(instant, timezone);
+  return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
 }
 
 /** Each of a VA's shifts for this client, as start and end times in its timezone. */
@@ -149,7 +176,7 @@ export function formatShiftOn(
   return `${formatInTimezone(startAt, to)} – ${formatInTimezone(endAt, to)}`;
 }
 
-/** A VA's hours around the change, on both clocks. */
+/** A VA's hours around the change, on both clocks, and under both choices. */
 export function describeDstSchedules(
   employee: Employee,
   companyId: string,
@@ -158,27 +185,28 @@ export function describeDstSchedules(
   const vaTimezone = getEmployeeTimezone(employee);
   const before = shiftDateKey(change.date, -1);
   const after = shiftDateKey(change.date, 1);
-  return shiftsFor(employee, companyId, change.timezone).map((shift) => ({
-    name: employee.name?.trim() || employee.email,
-    email: employee.email?.trim() || "",
-    clientBefore: formatShiftOn(
-      before,
-      shift.startTime,
-      shift.endTime,
-      shift.timezone,
-      change.timezone,
-    ),
-    clientAfter: formatShiftOn(
-      after,
-      shift.startTime,
-      shift.endTime,
-      shift.timezone,
-      change.timezone,
-    ),
-    vaBefore: formatShiftOn(before, shift.startTime, shift.endTime, shift.timezone, vaTimezone),
-    vaAfter: formatShiftOn(after, shift.startTime, shift.endTime, shift.timezone, vaTimezone),
-    vaPlace: placeName(vaTimezone),
-  }));
+  return shiftsFor(employee, companyId, change.timezone).map((shift) => {
+    // Their current hours on their own clock, carried over the change unmoved.
+    const vaStart = clockTime(
+      zonedDateTimeToDate(before, shift.startTime, shift.timezone),
+      vaTimezone,
+    );
+    const vaEnd = clockTime(zonedDateTimeToDate(before, shift.endTime, shift.timezone), vaTimezone);
+    const on = (dateKey: string, to: string) =>
+      formatShiftOn(dateKey, shift.startTime, shift.endTime, shift.timezone, to);
+    return {
+      id: employee.id,
+      name: employee.name?.trim() || employee.email,
+      email: employee.email?.trim() || "",
+      clientBefore: on(before, change.timezone),
+      clientAfter: on(after, change.timezone),
+      vaBefore: on(before, vaTimezone),
+      vaAfter: on(after, vaTimezone),
+      vaPlace: placeName(vaTimezone),
+      vaZone: zoneName(vaTimezone),
+      clientKeep: formatShiftOn(after, vaStart, vaEnd, vaTimezone, change.timezone),
+    };
+  });
 }
 
 export interface ClientDstPlan {
@@ -226,7 +254,24 @@ export function planClientDstEmails(
   return plans;
 }
 
-export function buildClientDstEmail(plan: ClientDstPlan) {
+/** "Keep current PHT schedule", or a plain version when the VAs are in different places. */
+export function keepLabel(lines: Pick<DstScheduleLine, "vaZone">[]): string {
+  const zones = [...new Set(lines.map((line) => line.vaZone))];
+  return zones.length === 1 && !zones[0].endsWith(" time")
+    ? `Keep current ${zones[0]} schedule`
+    : "Keep their current schedule";
+}
+
+export const FOLLOW_LABEL = "Follow my new DST schedule";
+
+/**
+ * The client's notice. With `answer`, it carries the two choices as buttons;
+ * without (the answer could not be saved) the client is asked to reply.
+ */
+export function buildClientDstEmail(
+  plan: ClientDstPlan,
+  answer?: { appUrl: string; token: string },
+) {
   const { company, change } = plan;
   const branding = companyEmailBranding(company, company.id);
   const clientName = company.name?.trim() || "there";
@@ -238,16 +283,26 @@ export function buildClientDstEmail(plan: ClientDstPlan) {
   const move = change.kind === "start" ? "forward" : "back";
   const what =
     change.kind === "start" ? "Daylight Saving Time starts" : "Daylight Saving Time ends";
+  const keep = keepLabel(plan.schedules);
   const intro = `I hope this email finds you well. ${what}${where} on ${date}, when clocks move ${move} by ${amount}.`;
-  const same =
-    "Your Virtual Assistant will still work the same number of hours. Because they work from a different time zone, their schedule may change by 1 hour. Here is how their hours will look:";
-  const ask =
-    "If you would like your VA's schedule to stay as it is on their side, or you would like any other change, simply reply to this email and we will arrange it before the change.";
+  const same = `Your Virtual Assistant will still work the same number of hours. Because they work from a different time zone, please choose which schedule you would like them to follow from ${date}:`;
+  const options = [
+    `${FOLLOW_LABEL}: your VA keeps the same hours on your clock, so their own start time moves by 1 hour.`,
+    `${keep}: your VA keeps the same hours on their own clock, so their hours on your clock move by 1 hour.`,
+  ];
+  const ask = answer
+    ? "Simply press one of the buttons below to let us know."
+    : "Simply reply to this email to let us know which you prefer.";
   const close =
     "Thank you for your understanding. Should you have any questions or need further assistance, please feel free to reach out.";
-  const lineText = (line: DstScheduleLine) =>
-    `${line.name}: ${line.clientAfter} your time from ${date} (${line.vaAfter} ${line.vaPlace} time; before the change ${line.clientBefore} your time, ${line.vaBefore} ${line.vaPlace} time)`;
-  const subject = `${what} on ${date}: your VA's hours`;
+  const followUrl = answer ? dstResponseUrl(answer.appUrl, answer.token, "follow") : "";
+  const keepUrl = answer ? dstResponseUrl(answer.appUrl, answer.token, "keep") : "";
+  const lineText = (line: DstScheduleLine) => [
+    `- ${line.name}: now ${line.clientBefore} your time (${line.vaBefore} ${line.vaZone})`,
+    `    ${FOLLOW_LABEL}: ${line.clientAfter} your time (${line.vaAfter} ${line.vaZone})`,
+    `    ${keep}: ${line.clientKeep} your time (${line.vaBefore} ${line.vaZone})`,
+  ];
+  const subject = `${what} on ${date}: please choose your VA's schedule`;
   const text = [
     `Dear ${clientName},`,
     "",
@@ -255,10 +310,13 @@ export function buildClientDstEmail(plan: ClientDstPlan) {
     "",
     same,
     "",
-    ...plan.schedules.map((line) => `- ${lineText(line)}`),
+    ...options.map((option) => `- ${option}`),
+    "",
+    ...plan.schedules.flatMap(lineText),
     ...plan.unscheduled.map((name) => `- ${name}`),
     "",
     ask,
+    ...(answer ? ["", `${FOLLOW_LABEL}: ${followUrl}`, `${keep}: ${keepUrl}`] : []),
     "",
     close,
     "",
@@ -272,26 +330,34 @@ export function buildClientDstEmail(plan: ClientDstPlan) {
     "padding: 8px 10px; border-bottom: 1px solid #e7edf4; font-size: 13px; line-height: 19px; color: #2d3748; vertical-align: top;";
   const head =
     "padding: 8px 10px; border-bottom: 2px solid #dfe7f0; font-size: 11px; line-height: 16px; color: #718096; text-align: left; text-transform: uppercase; letter-spacing: 0.04em;";
+  const hours = (client: string, va: string, zone: string, bold = false) =>
+    `${bold ? `<strong>${escapeEmailHtml(client)}</strong>` : escapeEmailHtml(client)}<br><span style="color: #718096;">${escapeEmailHtml(`${va} ${zone}`)}</span>`;
   const rows = [
     ...plan.schedules.map(
       (line) => `<tr>
         <td style="${cell} font-weight: 700;">${escapeEmailHtml(line.name)}</td>
-        <td style="${cell}">${escapeEmailHtml(line.clientBefore)}<br><span style="color: #718096;">${escapeEmailHtml(`${line.vaBefore} ${line.vaPlace}`)}</span></td>
-        <td style="${cell}"><strong>${escapeEmailHtml(line.clientAfter)}</strong><br><span style="color: #718096;">${escapeEmailHtml(`${line.vaAfter} ${line.vaPlace}`)}</span></td>
+        <td style="${cell}">${hours(line.clientBefore, line.vaBefore, line.vaZone)}</td>
+        <td style="${cell}">${hours(line.clientAfter, line.vaAfter, line.vaZone, true)}</td>
+        <td style="${cell}">${hours(line.clientKeep, line.vaBefore, line.vaZone, true)}</td>
       </tr>`,
     ),
     ...plan.unscheduled.map(
       (name) =>
-        `<tr><td style="${cell} font-weight: 700;">${escapeEmailHtml(name)}</td><td style="${cell}" colspan="2">Same hours as agreed</td></tr>`,
+        `<tr><td style="${cell} font-weight: 700;">${escapeEmailHtml(name)}</td><td style="${cell}" colspan="3">Same hours as agreed</td></tr>`,
     ),
   ].join("");
   const table = `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 18px; border-collapse: collapse;">
-      <tr><th style="${head}">VA</th><th style="${head}">Before (your time)</th><th style="${head}">From ${escapeEmailHtml(date)}</th></tr>
+      <tr><th style="${head}">VA</th><th style="${head}">Now (your time)</th><th style="${head}">${escapeEmailHtml(FOLLOW_LABEL)}</th><th style="${head}">${escapeEmailHtml(keep)}</th></tr>
       ${rows}
     </table>`;
+  const button = (url: string, label: string, background: string) =>
+    `<td style="padding: 0 10px 10px 0;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${background}" style="border-radius: 8px;"><a href="${escapeEmailHtml(url)}" style="display: inline-block; padding: 13px 20px; color: #ffffff; font-size: 14px; line-height: 18px; font-weight: 700; text-decoration: none;">${escapeEmailHtml(label)}</a></td></tr></table></td>`;
+  const buttons = answer
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 14px;"><tr>${button(followUrl, FOLLOW_LABEL, "#0e7490")}${button(keepUrl, keep, "#475569")}</tr></table>`
+    : "";
   const html = renderCompanyEmail({
     company: branding,
-    preheader: `Clocks move ${move} ${amount} on ${date}. Here is how your VA's hours look.`,
+    preheader: `Clocks move ${move} ${amount} on ${date}. Please choose your VA's schedule.`,
     label: "Daylight saving",
     title: what,
     introHtml: escapeEmailHtml(`${date}: clocks move ${move} ${amount}${where}`),
@@ -299,13 +365,15 @@ export function buildClientDstEmail(plan: ClientDstPlan) {
       paragraph(`Dear ${clientName},`),
       paragraph(intro),
       paragraph(same),
+      ...options.map(paragraph),
       table,
       paragraph(ask),
+      buttons,
       paragraph(close),
       `<p style="margin: 8px 0 0; font-size: 15px; line-height: 24px; color: #2d3748;">Best regards,<br><strong>Accounts Team</strong></p>`,
     ].join(""),
     accentColor: "#0e7490",
-    maxWidth: 680,
+    maxWidth: 720,
     repliesWelcome: true,
   });
   return { company: branding, subject, text, html };
@@ -414,11 +482,50 @@ export function buildVaDstEmail(plan: VaDstPlan) {
   return { company: branding, subject, text, html };
 }
 
+/** The record saved for one client's choice when their notice goes out. */
+export function newDstResponse(
+  plan: ClientDstPlan,
+  notifyEmail?: string,
+  now = new Date(),
+): DstResponse {
+  return {
+    companyId: plan.company.id || "",
+    companyName: plan.company.name?.trim() || "Your client",
+    company: companyEmailBranding(plan.company, plan.company.id),
+    change: { ...plan.change },
+    keepLabel: keepLabel(plan.schedules),
+    lines: plan.schedules.map(
+      ({ id, name, email, clientBefore, clientAfter, vaBefore, vaAfter, vaZone, clientKeep }) => ({
+        id,
+        name,
+        email,
+        clientBefore,
+        clientAfter,
+        vaBefore,
+        vaAfter,
+        vaZone,
+        clientKeep,
+      }),
+    ),
+    ...(notifyEmail ? { notifyEmail } : {}),
+    decision: null,
+    createdAt: now.toISOString(),
+  };
+}
+
 export async function sendClientDstEmails({
   plans,
+  appUrl = "",
+  saveClientQuestion,
   fetchImpl = fetch,
 }: {
   plans: ClientDstPlan[];
+  appUrl?: string;
+  /**
+   * Saves where the client's choice goes and returns its token, or null. A
+   * client with a saved question chooses first; their VAs are told after.
+   */
+  saveClientQuestion?: (plan: ClientDstPlan) => Promise<string | null>;
   fetchImpl?: typeof fetch;
 }): Promise<{ sent: number; failed: number; vas: number }> {
   // Any n8n workflow that mails email.to works; the report workflow is one.
@@ -429,8 +536,12 @@ export async function sendClientDstEmails({
     "https://vmi3182726.contaboserver.net/webhook/time-station-report-email";
   let sent = 0;
   let failed = 0;
+  // Clients who could not be given a choice: their VAs are told the new hours now.
+  const unasked: ClientDstPlan[] = [];
   for (const plan of plans) {
-    const email = buildClientDstEmail(plan);
+    const token = appUrl ? await saveClientQuestion?.(plan).catch(() => null) : null;
+    if (!token) unasked.push(plan);
+    const email = buildClientDstEmail(plan, token ? { appUrl, token } : undefined);
     try {
       const response = await fetchImpl(webhookUrl, {
         method: "POST",
@@ -453,9 +564,9 @@ export async function sendClientDstEmails({
       failed += 1;
     }
   }
-  // Then each VA whose own start time moves, once, for all their clients.
+  // Then each VA whose own start time moves, once, for all their unasked clients.
   let vas = 0;
-  for (const plan of planVaDstEmails(plans)) {
+  for (const plan of planVaDstEmails(unasked)) {
     const email = buildVaDstEmail(plan);
     try {
       const response = await fetchImpl(webhookUrl, {
