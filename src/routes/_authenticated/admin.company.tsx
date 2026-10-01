@@ -566,7 +566,7 @@ function CompanyPage() {
 
           <HolidayAnswersCard todayStr={todayStr} />
 
-          <DaylightSavingCard />
+          <DaylightSavingCard companies={companies} employees={employees} />
 
           <div className="rounded-xl border bg-card p-6 space-y-4 shadow-lift">
             <h2 className="font-bold text-primary flex items-center gap-2">

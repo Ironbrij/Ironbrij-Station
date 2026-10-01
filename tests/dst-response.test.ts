@@ -48,13 +48,56 @@ test("keeping the current schedule keeps the VA's own hours", () => {
 });
 
 test("the office is told what to change in SavyTime when the VA keeps their hours", () => {
+  // Older records, with no saved-shift details: their shifts follow the client.
   const keep = buildDstDecisionNoticeEmail(response, "keep", 1);
   assert.equal(keep.subject, "Ironbrij: VA keeps current schedule from Sunday, 4 October 2026");
   assert.match(keep.text, /^Client Chose: Keep current PHT schedule/);
-  assert.match(keep.text, /Ann Cataring: 10:00 AM – 6:00 PM \(was 9:00 AM – 5:00 PM\)/);
+  assert.match(
+    keep.text,
+    /Ann Cataring: 10:00 AM – 6:00 PM on Ironbrij's clock \(was 9:00 AM – 5:00 PM\)/,
+  );
   assert.match(keep.text, /The VA has been notified by email\.$/);
 
   const follow = buildDstDecisionNoticeEmail(response, "follow", 0);
   assert.match(follow.text, /Nothing needs to change in SavyTime/);
   assert.match(follow.text, /The VA has not been emailed/);
+});
+
+test("the office gets the exact saved times to set, on the clock the shift is saved on", () => {
+  const onSydney = {
+    ...response,
+    lines: [
+      {
+        ...response.lines[0],
+        savedZone: "Sydney time",
+        automatic: "follow" as const,
+        savedFollow: "9:00 AM – 5:00 PM",
+        savedKeep: "10:00 AM – 6:00 PM",
+      },
+    ],
+  };
+  assert.match(
+    buildDstDecisionNoticeEmail(onSydney, "keep", 1).text,
+    /Ann Cataring: Set to 10:00 AM – 6:00 PM Sydney time \(10:00 AM – 6:00 PM on Ironbrij's clock\)/,
+  );
+  assert.match(buildDstDecisionNoticeEmail(onSydney, "follow", 1).text, /Nothing needs to change/);
+
+  // Saved on Manila time, the shift keeps PHT by itself; following Sydney needs a change.
+  const onManila = {
+    ...response,
+    lines: [
+      {
+        ...response.lines[0],
+        savedZone: "Manila time",
+        automatic: "keep" as const,
+        savedFollow: "6:00 AM – 2:00 PM",
+        savedKeep: "7:00 AM – 3:00 PM",
+      },
+    ],
+  };
+  assert.match(buildDstDecisionNoticeEmail(onManila, "keep", 1).text, /Nothing needs to change/);
+  assert.match(
+    buildDstDecisionNoticeEmail(onManila, "follow", 1).text,
+    /Ann Cataring: Set to 6:00 AM – 2:00 PM Manila time \(9:00 AM – 5:00 PM on Ironbrij's clock\)/,
+  );
 });

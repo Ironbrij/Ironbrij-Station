@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ShiftTimezoneSelect } from "@/components/ShiftTimezoneSelect";
 import { useEffect, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -10,7 +11,7 @@ import {
   type Employee,
 } from "@/lib/types";
 import { COUNTRY_TIMEZONES } from "@/lib/time";
-import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
+import { DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth-context";
@@ -498,17 +499,11 @@ function MakeEmployeeModal({
               <label className="text-xs font-semibold uppercase text-muted-foreground">
                 Shift Timezone
               </label>
-              <select
+              <ShiftTimezoneSelect
                 value={shiftTimezone}
-                onChange={(e) => setShiftTimezone(e.target.value)}
+                onChange={setShiftTimezone}
                 className="mt-1 w-full rounded-md border px-3 py-2 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                {ATTENDANCE_TIMEZONES.map((zone) => (
-                  <option key={zone.value} value={zone.value}>
-                    {zone.short}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

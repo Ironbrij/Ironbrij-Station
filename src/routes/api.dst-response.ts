@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { patchIfUnchanged } from "@/lib/firestore-rest";
+import { automationIdToken, patchDocument, readDocument } from "@/lib/admin-request";
+import { chosenClockUpdate, linesToApply } from "@/lib/shift-clock";
+import type { Employee } from "@/lib/types";
 import { isResponseToken } from "@/lib/holiday-response";
 import {
   buildDstDecisionNoticeEmail,
@@ -99,12 +102,53 @@ export const Route = createFileRoute("/api/dst-response")({
             vasTold += 1;
         }
 
+        // Put the choice into SavyTime: each VA's shift re-saved on the chosen clock.
+        // Needs the automation's admin login; without it the office applies it in the app.
+        let applied = false;
+        const toApply = linesToApply(response.lines ?? [], decision);
+        if (toApply.size > 0) {
+          const idToken = await automationIdToken();
+          if (idToken) {
+            try {
+              for (const [employeeId, lines] of toApply) {
+                const employee = await readDocument<Employee>(`employees/${employeeId}`, idToken);
+                if (!employee) continue;
+                const update = chosenClockUpdate(
+                  { ...employee, id: employeeId },
+                  response.companyId,
+                  lines,
+                  response.change.timezone,
+                  decision,
+                );
+                if (update) {
+                  await patchDocument(
+                    `employees/${employeeId}`,
+                    { ...update, updatedAt: new Date().toISOString() },
+                    idToken,
+                  );
+                }
+              }
+              await patchDocument(
+                `dstResponses/${token}`,
+                { appliedAt: new Date().toISOString(), appliedBy: "Automation" },
+                idToken,
+              );
+              applied = true;
+            } catch {
+              applied = false;
+            }
+          }
+        }
+
         const office =
           response.notifyEmail || process.env.LEAVE_MANAGER_EMAIL || "pabibek9@gmail.com";
         await send({
           event: "dst_client_answer",
           company: response.company,
-          email: { to: office, ...buildDstDecisionNoticeEmail(response, decision, vasTold) },
+          email: {
+            to: office,
+            ...buildDstDecisionNoticeEmail(response, decision, vasTold, applied),
+          },
         });
 
         return Response.json({ ok: true, decision, vasTold });

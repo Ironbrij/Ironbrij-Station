@@ -94,31 +94,66 @@ function shiftDateKey(dateKey: string, days: number): string {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
+/** Where a VA's clock is, as a client would say it. */
+const COUNTRY_OF_ZONE: Record<string, string> = {
+  "Asia/Manila": "the Philippines",
+  "Asia/Kathmandu": "Nepal",
+  "Asia/Kolkata": "India",
+};
+
 /** "Asia/Manila" -> "Manila". */
 export function placeName(timezone: string): string {
   return (timezone.split("/").pop() || timezone).replace(/_/g, " ");
 }
 
+/**
+ * One VA shift around a clock change. The two choices are worked out from the
+ * clocks themselves, whatever timezone the shift happens to be saved in:
+ *
+ * - follow: the hours stay the same on the client's clock, so the VA's own
+ *   times move by the change;
+ * - keep: the hours stay the same on the VA's own clock (PHT, NPT), so the
+ *   hours on the client's clock move instead.
+ *
+ * Example: a Nepal VA on 8:00 AM – 2:00 PM Sydney time works 3:45 AM – 9:45 AM
+ * NPT. When Sydney's clocks go forward, following Sydney means 2:45 AM – 8:45 AM
+ * NPT; keeping NPT means 9:00 AM – 3:00 PM Sydney time.
+ */
 export interface DstScheduleLine {
   /** The VA's employee id. */
   id: string;
+  /** Which of their shifts for this client, for a VA with several. */
+  shiftIndex: number;
   name: string;
   /** The VA's own address, for their notice. */
   email: string;
-  /** "9:00 AM – 5:00 PM", on the client's clock, before and after the change. */
+  /** "9:00 AM – 5:00 PM" on the client's clock now. */
   clientBefore: string;
+  /** Follow: the same hours on the client's clock (so equal to clientBefore). */
   clientAfter: string;
-  /** The same hours on the VA's own clock, before and after. */
+  /** The VA's own clock now. */
   vaBefore: string;
+  /** Follow: the VA's own clock after the change. */
   vaAfter: string;
   vaPlace: string;
+  /** The VA's own clock, e.g. "Asia/Manila". */
+  vaTimezone: string;
   /** "PHT", "NPT", or "Manila time": what the VA's clock is called. */
   vaZone: string;
-  /**
-   * If the client keeps the VA on their current hours instead: the VA's clock
-   * stays at vaBefore, and this is the same work on the client's clock.
-   */
+  /** Keep: the VA's hours (vaBefore) on the client's clock after the change. */
   clientKeep: string;
+  /** The clock the shift is saved on in SavyTime, e.g. "Sydney time". */
+  savedZone: string;
+  /** What SavyTime does by itself when the clocks change, from where the shift is saved. */
+  automatic: "follow" | "keep" | "neither";
+  /** The saved shift times that give each choice, on the saved clock. */
+  savedFollow: string;
+  savedKeep: string;
+  /** "08:00": the shift's start and end now, on the client's clock and on the VA's. */
+  clientStart: string;
+  clientEnd: string;
+  vaStart: string;
+  vaEnd: string;
 }
 
 const ZONE_NAMES: Record<string, string> = {
@@ -156,10 +191,22 @@ export function shiftsFor(employee: Employee, companyId: string, clientTimezone:
           },
         ];
   return intervals
+    .map((shift, index) => ({ ...shift, timezone, index }))
     .filter(
       (shift) => /^\d{1,2}:\d{2}$/.test(shift.startTime) && /^\d{1,2}:\d{2}$/.test(shift.endTime),
-    )
-    .map((shift) => ({ ...shift, timezone }));
+    );
+}
+
+/** A shift's start and end instants on a day, read from one timezone's clock. */
+function shiftInstants(dateKey: string, start: string, end: string, timezone: string) {
+  const startAt = zonedDateTimeToDate(dateKey, start, timezone);
+  let endAt = zonedDateTimeToDate(dateKey, end, timezone);
+  if (endAt <= startAt) endAt = new Date(endAt.getTime() + 86400000);
+  return { startAt, endAt };
+}
+
+function rangeOn(span: { startAt: Date; endAt: Date }, timezone: string): string {
+  return `${formatInTimezone(span.startAt, timezone)} – ${formatInTimezone(span.endAt, timezone)}`;
 }
 
 /** "9:00 AM – 5:00 PM": a shift saved in one timezone, read on another's clock. */
@@ -170,10 +217,23 @@ export function formatShiftOn(
   from: string,
   to: string,
 ): string {
-  const startAt = zonedDateTimeToDate(dateKey, start, from);
-  let endAt = zonedDateTimeToDate(dateKey, end, from);
-  if (endAt <= startAt) endAt = new Date(endAt.getTime() + 86400000);
-  return `${formatInTimezone(startAt, to)} – ${formatInTimezone(endAt, to)}`;
+  return rangeOn(shiftInstants(dateKey, start, end, from), to);
+}
+
+/** "2 hours", "4 hours 15 minutes": how far one clock is ahead of another at an instant. */
+export function clockGap(ahead: string, behind: string, at: Date): string {
+  const minutes = offsetMinutes(ahead, at) - offsetMinutes(behind, at);
+  const sign = minutes < 0 ? "behind" : "ahead of";
+  const total = Math.abs(minutes);
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  const words = [
+    hours ? `${hours} ${hours === 1 ? "hour" : "hours"}` : "",
+    rest ? `${rest} minutes` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return total === 0 ? "the same time as" : `${words} ${sign}`;
 }
 
 /** A VA's hours around the change, on both clocks, and under both choices. */
@@ -182,59 +242,86 @@ export function describeDstSchedules(
   companyId: string,
   change: DstChange,
 ): DstScheduleLine[] {
-  const vaTimezone = getEmployeeTimezone(employee);
+  const client = change.timezone;
+  const va = getEmployeeTimezone(employee);
   const before = shiftDateKey(change.date, -1);
   const after = shiftDateKey(change.date, 1);
-  return shiftsFor(employee, companyId, change.timezone).map((shift) => {
-    // Their current hours on their own clock, carried over the change unmoved.
-    const vaStart = clockTime(
-      zonedDateTimeToDate(before, shift.startTime, shift.timezone),
-      vaTimezone,
+  return shiftsFor(employee, companyId, client).map((shift) => {
+    const now = shiftInstants(before, shift.startTime, shift.endTime, shift.timezone);
+    // Follow: the client's clock times now, on the day after the change.
+    const follow = shiftInstants(
+      after,
+      clockTime(now.startAt, client),
+      clockTime(now.endAt, client),
+      client,
     );
-    const vaEnd = clockTime(zonedDateTimeToDate(before, shift.endTime, shift.timezone), vaTimezone);
-    const on = (dateKey: string, to: string) =>
-      formatShiftOn(dateKey, shift.startTime, shift.endTime, shift.timezone, to);
+    // Keep: the VA's own clock times now, on the day after the change.
+    const keep = shiftInstants(after, clockTime(now.startAt, va), clockTime(now.endAt, va), va);
+    // What the saved shift turns into by itself after the change.
+    const itself = shiftInstants(after, shift.startTime, shift.endTime, shift.timezone);
+    const same = (a: Date, b: Date) => a.getTime() === b.getTime();
     return {
       id: employee.id,
+      shiftIndex: shift.index,
       name: employee.name?.trim() || employee.email,
       email: employee.email?.trim() || "",
-      clientBefore: on(before, change.timezone),
-      clientAfter: on(after, change.timezone),
-      vaBefore: on(before, vaTimezone),
-      vaAfter: on(after, vaTimezone),
-      vaPlace: placeName(vaTimezone),
-      vaZone: zoneName(vaTimezone),
-      clientKeep: formatShiftOn(after, vaStart, vaEnd, vaTimezone, change.timezone),
+      clientBefore: rangeOn(now, client),
+      clientAfter: rangeOn(follow, client),
+      vaBefore: rangeOn(now, va),
+      vaAfter: rangeOn(follow, va),
+      vaPlace: placeName(va),
+      vaTimezone: va,
+      vaZone: zoneName(va),
+      clientKeep: rangeOn(keep, client),
+      clientStart: clockTime(now.startAt, client),
+      clientEnd: clockTime(now.endAt, client),
+      vaStart: clockTime(now.startAt, va),
+      vaEnd: clockTime(now.endAt, va),
+      savedZone: `${placeName(shift.timezone)} time`,
+      automatic: same(itself.startAt, follow.startAt)
+        ? "follow"
+        : same(itself.startAt, keep.startAt)
+          ? "keep"
+          : "neither",
+      savedFollow: rangeOn(follow, shift.timezone),
+      savedKeep: rangeOn(keep, shift.timezone),
     };
   });
 }
 
+/** One client and their VAs around their next clock change, whether or not they are emailed. */
 export interface ClientDstPlan {
   company: Company;
+  /** The client's email addresses for daylight saving notices; may be empty. */
   to: string[];
+  /** The client's clock, e.g. "Australia/Sydney". */
+  timezone: string;
+  /** Their next clock change, or null when their clocks never change. */
   change: DstChange;
   schedules: DstScheduleLine[];
   /** VAs with no shift times saved, named without hours. */
   unscheduled: string[];
 }
 
-/** Every client whose clocks change within `days`, with active VAs and a client email. */
-export function planClientDstEmails(
+export interface DstScheduleEntry extends Omit<ClientDstPlan, "change"> {
+  change: DstChange | null;
+}
+
+/**
+ * Every active client with active VAs: their clock, their next change within
+ * `days` (or none), and each VA's hours around it. The schedule screen lists
+ * all of them; the emails go to the ones with a change soon and a client email.
+ */
+export function planDstSchedule(
   companies: Company[],
   employees: Employee[],
   now: Date,
-  days = 21,
-): ClientDstPlan[] {
-  const plans: ClientDstPlan[] = [];
+  days = 366,
+): DstScheduleEntry[] {
+  const entries: DstScheduleEntry[] = [];
   const changes = new Map<string, DstChange | null>();
   for (const company of companies) {
     if (company.archived || company.status === "archived") continue;
-    const to = clientEmailsFor(company, "daylightSaving");
-    if (to.length === 0) continue;
-    const timezone = companyClockTimezone(company);
-    if (!changes.has(timezone)) changes.set(timezone, findDstChange(timezone, now, days));
-    const change = changes.get(timezone);
-    if (!change) continue;
     const id = normalizeCompanyId(company.id);
     const staff = employees
       .filter(
@@ -242,16 +329,42 @@ export function planClientDstEmails(
       )
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     if (staff.length === 0) continue;
+    const timezone = companyClockTimezone(company);
+    if (!changes.has(timezone)) changes.set(timezone, findDstChange(timezone, now, days));
+    const change = changes.get(timezone) ?? null;
     const schedules: DstScheduleLine[] = [];
     const unscheduled: string[] = [];
     for (const employee of staff) {
-      const lines = describeDstSchedules(employee, id, change);
+      const lines = change ? describeDstSchedules(employee, id, change) : [];
       if (lines.length > 0) schedules.push(...lines);
       else unscheduled.push(employee.name?.trim() || employee.email);
     }
-    plans.push({ company, to, change, schedules, unscheduled });
+    entries.push({
+      company,
+      to: clientEmailsFor(company, "daylightSaving"),
+      timezone,
+      change,
+      schedules,
+      unscheduled,
+    });
   }
-  return plans;
+  return entries.sort(
+    (a, b) =>
+      (a.change?.date ?? "9999").localeCompare(b.change?.date ?? "9999") ||
+      (a.company.name || "").localeCompare(b.company.name || ""),
+  );
+}
+
+/** Every client whose clocks change within `days`, with active VAs and a client email. */
+export function planClientDstEmails(
+  companies: Company[],
+  employees: Employee[],
+  now: Date,
+  days = 35,
+): ClientDstPlan[] {
+  return planDstSchedule(companies, employees, now, days).filter(
+    (entry): entry is ClientDstPlan => Boolean(entry.change) && entry.to.length > 0,
+  );
 }
 
 /** "Keep current PHT schedule", or a plain version when the VAs are in different places. */
@@ -285,6 +398,16 @@ export function buildClientDstEmail(
     change.kind === "start" ? "Daylight Saving Time starts" : "Daylight Saving Time ends";
   const keep = keepLabel(plan.schedules);
   const intro = `I hope this email finds you well. ${what}${where} on ${date}, when clocks move ${move} by ${amount}.`;
+  // How far ahead of each VA's country the client's clock is, before and after.
+  const gaps = [...new Set(plan.schedules.map((line) => line.vaTimezone))].map((vaTimezone) => {
+    const before = new Date(`${shiftDateKey(change.date, -1)}T12:00:00Z`);
+    const after = new Date(`${shiftDateKey(change.date, 1)}T12:00:00Z`);
+    const country = COUNTRY_OF_ZONE[vaTimezone] ?? placeName(vaTimezone);
+    return `${clockGap(change.timezone, vaTimezone, after)} ${country} (now ${clockGap(change.timezone, vaTimezone, before).replace(/ (ahead of|behind)$/, "")})`;
+  });
+  const gapText = gaps.length
+    ? `From ${date}, ${state || placeName(change.timezone)} will be ${gaps.join(" and ")}.`
+    : "";
   const same = `Your Virtual Assistant will still work the same number of hours. Because they work from a different time zone, please choose which schedule you would like them to follow from ${date}:`;
   const options = [
     `${FOLLOW_LABEL}: your VA keeps the same hours on your clock, so their own start time moves by 1 hour.`,
@@ -308,6 +431,7 @@ export function buildClientDstEmail(
     "",
     intro,
     "",
+    ...(gapText ? [gapText, ""] : []),
     same,
     "",
     ...options.map((option) => `- ${option}`),
@@ -364,6 +488,7 @@ export function buildClientDstEmail(
     contentHtml: [
       paragraph(`Dear ${clientName},`),
       paragraph(intro),
+      ...(gapText ? [paragraph(gapText)] : []),
       paragraph(same),
       ...options.map(paragraph),
       table,
@@ -494,19 +619,27 @@ export function newDstResponse(
     company: companyEmailBranding(plan.company, plan.company.id),
     change: { ...plan.change },
     keepLabel: keepLabel(plan.schedules),
-    lines: plan.schedules.map(
-      ({ id, name, email, clientBefore, clientAfter, vaBefore, vaAfter, vaZone, clientKeep }) => ({
-        id,
-        name,
-        email,
-        clientBefore,
-        clientAfter,
-        vaBefore,
-        vaAfter,
-        vaZone,
-        clientKeep,
-      }),
-    ),
+    lines: plan.schedules.map((line) => ({
+      id: line.id,
+      name: line.name,
+      email: line.email,
+      clientBefore: line.clientBefore,
+      clientAfter: line.clientAfter,
+      vaBefore: line.vaBefore,
+      vaAfter: line.vaAfter,
+      vaZone: line.vaZone,
+      clientKeep: line.clientKeep,
+      savedZone: line.savedZone,
+      automatic: line.automatic,
+      savedFollow: line.savedFollow,
+      savedKeep: line.savedKeep,
+      vaTimezone: line.vaTimezone,
+      shiftIndex: line.shiftIndex,
+      clientStart: line.clientStart,
+      clientEnd: line.clientEnd,
+      vaStart: line.vaStart,
+      vaEnd: line.vaEnd,
+    })),
     ...(notifyEmail ? { notifyEmail } : {}),
     decision: null,
     createdAt: now.toISOString(),

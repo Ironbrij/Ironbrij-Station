@@ -9,7 +9,7 @@ import type { Company, Employee } from "@/lib/types";
 
 /**
  * Daylight saving notices for clients. With `dryRun` it lists the clients whose
- * clocks change in the next three weeks, so the admin can see who would be told;
+ * clocks change in the next five weeks, so the admin can see who would be told;
  * without it, it emails the clients named in `companyIds`.
  *
  * Companies and people are read with the admin's own login, never taken from

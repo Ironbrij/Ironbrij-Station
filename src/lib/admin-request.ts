@@ -173,6 +173,26 @@ export async function automationIdToken(): Promise<string | null> {
   }
 }
 
+/** Sets some top-level fields of an existing document, as the admin. */
+export async function patchDocument(
+  path: string,
+  data: Record<string, unknown>,
+  idToken: string,
+): Promise<void> {
+  const mask = Object.keys(data)
+    .map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`)
+    .join("&");
+  const response = await fetch(
+    `${firestoreBaseUrl()}/${path}?${mask}&currentDocument.exists=true`,
+    {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: toFirestoreFields(data) }),
+    },
+  );
+  if (!response.ok) throw new Error(`Could not update ${path}: ${response.status}`);
+}
+
 /** Creates a document under a chosen id, as the admin. */
 export async function createDocument(
   collection: string,

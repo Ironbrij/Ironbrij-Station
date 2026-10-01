@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { Clock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import { formatEmailDate } from "@/lib/email-template";
 import type { DstResponse } from "@/lib/dst-response";
+import type { Company, Employee } from "@/lib/types";
+import { DstScheduleView } from "@/components/DstScheduleView";
+import { updateIfUnchanged } from "@/lib/guarded-writes";
+import { chosenClockUpdate, linesToApply } from "@/lib/shift-clock";
+
+const SHIFT_FIELDS = [
+  "shiftTimezone",
+  "shiftStartTime",
+  "shiftEndTime",
+  "shifts",
+  "companyMemberships",
+] as const;
 
 interface DstClient {
   companyId: string;
@@ -19,11 +31,62 @@ interface DstClient {
 }
 
 /**
- * Clients whose clocks change in the next three weeks, and a button to email
+ * Clients whose clocks change in the next five weeks, and a button to email
  * them each VA's hours before and after. Nothing is sent until the admin asks.
+ * The full year's schedule for every client opens from here too.
  */
-export function DaylightSavingCard() {
+export function DaylightSavingCard({
+  companies,
+  employees,
+}: {
+  companies: Company[];
+  employees: Employee[];
+}) {
   const { user } = useAuth();
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [applying, setApplying] = useState<string | null>(null);
+
+  /** Re-saves each VA's shift on the clock the client chose, then marks the choice applied. */
+  async function applyChoice(answer: DstResponse & { id: string }) {
+    if (!answer.decision) return;
+    setApplying(answer.id);
+    try {
+      let changed = 0;
+      for (const [employeeId, lines] of linesToApply(answer.lines, answer.decision)) {
+        const employee = employees.find((item) => item.id === employeeId);
+        if (!employee) continue;
+        const update = chosenClockUpdate(
+          employee,
+          answer.companyId,
+          lines,
+          answer.change.timezone,
+          answer.decision,
+        );
+        if (!update) continue;
+        await updateIfUnchanged({
+          path: `employees/${employeeId}`,
+          baseline: employee as unknown as Record<string, unknown>,
+          watched: SHIFT_FIELDS,
+          what: `${employee.name || "This VA"}'s shift`,
+          update: { ...update, updatedAt: new Date().toISOString() },
+        });
+        changed += 1;
+      }
+      await updateDoc(doc(db(), "dstResponses", answer.id), {
+        appliedAt: new Date().toISOString(),
+        appliedBy: user?.email || "Admin",
+      });
+      toast.success(
+        changed
+          ? `Updated ${changed} ${changed === 1 ? "VA's shift" : "VAs' shifts"} for ${answer.companyName}.`
+          : `Nothing needed changing for ${answer.companyName}.`,
+      );
+    } catch (error) {
+      toast.error((error as Error).message || "The shifts could not be updated.");
+    } finally {
+      setApplying(null);
+    }
+  }
   const [clients, setClients] = useState<DstClient[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
@@ -131,13 +194,27 @@ export function DaylightSavingCard() {
           follow the client&apos;s new DST schedule, or keep the VA&apos;s current schedule. The
           client picks one from the email; the VA and you are told automatically.
         </p>
+        <button
+          type="button"
+          onClick={() => setShowSchedule(true)}
+          className="mt-2 rounded-md border px-3 py-1.5 text-xs font-bold text-primary hover:bg-muted"
+        >
+          See every client&apos;s daylight saving schedule
+        </button>
       </div>
+      {showSchedule && (
+        <DstScheduleView
+          companies={companies}
+          employees={employees}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
 
       {clients === null ? (
         <p className="text-xs text-muted-foreground">Checking client clocks…</p>
       ) : clients.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No client&apos;s clocks change in the next three weeks, or those clients have no client
+          No client&apos;s clocks change in the next five weeks, or those clients have no client
           email with Daylight saving switched on.
         </p>
       ) : (
@@ -208,14 +285,38 @@ export function DaylightSavingCard() {
                   {formatEmailDate(answer.change.date)} ·{" "}
                   {[...new Set(answer.lines.map((line) => line.name))].join(", ")}
                 </div>
-                {answer.decision === "keep" && (
-                  <div className="font-medium text-violet-800 dark:text-violet-300">
-                    Update in SavyTime:{" "}
-                    {answer.lines
-                      .map((line) => `${line.name} to ${line.clientKeep} (client's clock)`)
-                      .join("; ")}
-                  </div>
-                )}
+                {answer.decision &&
+                  (linesToApply(answer.lines, answer.decision).size === 0 ? (
+                    <div className="font-medium text-emerald-700 dark:text-emerald-400">
+                      Nothing to change: SavyTime gives these hours by itself.
+                    </div>
+                  ) : answer.appliedAt ? (
+                    <div className="font-medium text-emerald-700 dark:text-emerald-400">
+                      Applied in SavyTime by {answer.appliedBy || "an admin"}: the shifts now follow
+                      the chosen clock.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-amber-700 dark:text-amber-400">
+                        Not in SavyTime yet:{" "}
+                        {answer.lines
+                          .map(
+                            (line) =>
+                              `${line.name} ${answer.decision === "follow" ? line.clientAfter : line.clientKeep}`,
+                          )
+                          .join("; ")}{" "}
+                        on the client&apos;s clock
+                      </span>
+                      <button
+                        type="button"
+                        disabled={applying === answer.id}
+                        onClick={() => applyChoice(answer)}
+                        className="btn-lift rounded-md bg-primary px-3 py-1 text-xs font-bold text-primary-foreground disabled:opacity-50"
+                      >
+                        {applying === answer.id ? "Applying…" : "Apply"}
+                      </button>
+                    </div>
+                  ))}
               </div>
             ))}
           </div>
