@@ -45,13 +45,13 @@ function defined<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 }
 
-function memberships(employee: Employee): Record<string, CompanyMembership> {
+export function memberships(employee: Employee): Record<string, CompanyMembership> {
   const saved = employee.companyMemberships;
   return saved && !Array.isArray(saved) && typeof saved === "object" ? saved : {};
 }
 
 /** The key a company's membership is saved under, if it has one. */
-function membershipKey(employee: Employee, companyId: string): string | null {
+export function membershipKey(employee: Employee, companyId: string): string | null {
   const id = normalizeCompanyId(companyId);
   for (const [key, membership] of Object.entries(memberships(employee))) {
     if (normalizeCompanyId(membership?.companyId || key) === id) return key;

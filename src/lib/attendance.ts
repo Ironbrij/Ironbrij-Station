@@ -21,6 +21,41 @@ export const ATTENDANCE_TIMEZONES = [
   { value: "Asia/Manila", label: "Manila, Philippines", short: "Philippines" },
 ] as const;
 
+/**
+ * The clocks a shift can be saved on: the VAs' own, and every client's. Saving
+ * a shift on the client's clock makes it follow their daylight saving by itself;
+ * saving it on the VA's clock keeps the VA's hours fixed instead.
+ */
+export const SHIFT_TIMEZONE_OPTIONS: { group: string; value: string; label: string }[] = [
+  { group: "VA's own clock", value: "Asia/Manila", label: "Philippines (PHT)" },
+  { group: "VA's own clock", value: "Asia/Kathmandu", label: "Nepal (NPT)" },
+  { group: "Australia", value: "Australia/Sydney", label: "Sydney · NSW, ACT" },
+  { group: "Australia", value: "Australia/Melbourne", label: "Melbourne · VIC" },
+  { group: "Australia", value: "Australia/Brisbane", label: "Brisbane · QLD (no DST)" },
+  { group: "Australia", value: "Australia/Adelaide", label: "Adelaide · SA" },
+  { group: "Australia", value: "Australia/Perth", label: "Perth · WA (no DST)" },
+  { group: "Australia", value: "Australia/Hobart", label: "Hobart · TAS" },
+  { group: "Australia", value: "Australia/Darwin", label: "Darwin · NT (no DST)" },
+  { group: "New Zealand", value: "Pacific/Auckland", label: "Auckland · New Zealand" },
+  { group: "Europe", value: "Europe/London", label: "London · UK" },
+  { group: "Europe", value: "Europe/Berlin", label: "Berlin · Germany" },
+  { group: "Europe", value: "Europe/Paris", label: "Paris · France" },
+  { group: "North America", value: "America/Toronto", label: "Toronto · Ontario" },
+  { group: "North America", value: "America/New_York", label: "New York · US Eastern" },
+  { group: "North America", value: "America/Chicago", label: "Chicago · US Central" },
+  { group: "North America", value: "America/Denver", label: "Denver · US Mountain" },
+  { group: "North America", value: "America/Phoenix", label: "Phoenix · Arizona (no DST)" },
+  { group: "North America", value: "America/Los_Angeles", label: "Los Angeles · US Pacific" },
+  { group: "Middle East", value: "Asia/Qatar", label: "Doha · Qatar (no DST)" },
+];
+
+/** The shift timezone choices, with a saved one outside the list kept selectable. */
+export function shiftTimezoneOptions(current?: string) {
+  return current && !SHIFT_TIMEZONE_OPTIONS.some((option) => option.value === current)
+    ? [...SHIFT_TIMEZONE_OPTIONS, { group: "Saved", value: current, label: current }]
+    : SHIFT_TIMEZONE_OPTIONS;
+}
+
 export const DEFAULT_SHIFT_TIMEZONE = "Australia/Sydney";
 export const DEFAULT_LOCAL_TIMEZONE = "Asia/Manila";
 export const MINIMUM_LATE_GRACE_MINUTES = 5;
@@ -656,7 +691,15 @@ export function formatInTimezone(
 
 export function getShiftConversions(employee: Employee, instant = new Date()) {
   const window = getEmployeeShiftWindow(employee, instant);
-  return ATTENDANCE_TIMEZONES.map((zone) => ({
+  // The usual three clocks, plus the client's when the shift is saved on another.
+  const shiftTz = getShiftTimezone(employee);
+  const zones: { value: string; label: string; short: string }[] = [...ATTENDANCE_TIMEZONES];
+  if (!zones.some((zone) => zone.value === shiftTz)) {
+    const option = SHIFT_TIMEZONE_OPTIONS.find((item) => item.value === shiftTz);
+    const short = (shiftTz.split("/").pop() || shiftTz).replace(/_/g, " ");
+    zones.push({ value: shiftTz, label: option?.label ?? shiftTz, short });
+  }
+  return zones.map((zone) => ({
     ...zone,
     start: formatInTimezone(window.start, zone.value),
     end: formatInTimezone(window.end, zone.value),

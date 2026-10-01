@@ -103,12 +103,12 @@ export function buildHolidayEmail(
   const one = holidays.length === 1;
   const name = (holiday: CompanyHoliday) => holiday.name?.trim() || "Company Holiday";
   const subject = one
-    ? `Upcoming holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
-    : `You have ${holidays.length} holidays coming up`;
-  const title = one ? "You Have an Upcoming Holiday" : "You Have Holidays Coming Up";
+    ? `Upcoming public holiday: ${name(holidays[0])}, ${formatHolidayDate(holidays[0].date)}`
+    : `You have ${holidays.length} upcoming public holidays`;
+  const title = one ? "You Have an Upcoming Public Holiday" : "You Have Upcoming Public Holidays";
   const headline = one
-    ? `You have an upcoming holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
-    : `You have ${holidays.length} holidays coming up.`;
+    ? `You have an upcoming public holiday on ${formatHolidayDate(holidays[0].date)} for ${name(holidays[0])}.`
+    : `You have ${holidays.length} upcoming public holidays.`;
   // Someone working for companies in two states is only off for the closed one.
   const companyName = (id: string) =>
     findCompanyById(companies, id)?.name || (id === "default" ? "the main company" : id);
@@ -118,18 +118,18 @@ export function buildHolidayEmail(
   };
   const partly = holidays.some((holiday) => closedCompanyIds(holiday, plan.employee));
   const details = holidays.map((holiday) => ({
-    label: "Upcoming Holiday",
+    label: "Upcoming Public Holiday",
     value: `${name(holiday)}, ${formatHolidayDate(holiday.date)}${scope(holiday)}`,
   }));
   const it = one ? "this holiday" : "these holidays";
   const paragraphs = [
     ...(clientAsked
       ? [
-          `This is a reminder about your upcoming ${one ? "holiday" : "holidays"}. Your client will let us know if they would like you to work on ${it}. The system or Accounts Team will notify you once their decision is confirmed.`,
+          `This is a reminder about your upcoming public ${one ? "holiday" : "holidays"}. Your client will let us know if they would like you to work on ${it}. The system or Accounts Team will notify you once their decision is confirmed.`,
           "If your client requests you to work, please log in and work your usual hours. If they do not request you to work, please do not punch in.",
         ]
       : [
-          `This is a reminder about your upcoming ${one ? "holiday" : "holidays"}. Please do not punch in on ${one ? "this day" : "these days"}.`,
+          `This is a reminder about your upcoming public ${one ? "holiday" : "holidays"}. Please do not punch in on ${one ? "this day" : "these days"}.`,
         ]),
     ...(partly ? ["Work for your other companies on the same day is a normal working day."] : []),
   ];
@@ -152,7 +152,7 @@ export function buildHolidayEmail(
   const html = renderCompanyEmail({
     company,
     preheader: headline,
-    label: "Upcoming Holiday",
+    label: "Upcoming Public Holiday",
     title,
     introHtml: `Hi ${escapeEmailHtml(firstName)},<br>${escapeEmailHtml(headline)}`,
     contentHtml: [
@@ -244,7 +244,7 @@ export function buildClientHolidayEmail(
       : "To ensure accurate billing in the next cycle, kindly let us know if you'd like your VA to work on this day.",
     "Thank you for your understanding. Should you have any questions or need further assistance, please feel free to reach out.",
   ];
-  const subject = `Upcoming holiday: ${holidayName}, ${date}`;
+  const subject = `Upcoming public holiday: ${holidayName}, ${date}`;
   const workUrl = answer ? holidayResponseUrl(answer.appUrl, answer.token, "work") : "";
   const offUrl = answer ? holidayResponseUrl(answer.appUrl, answer.token, "off") : "";
   const text = [

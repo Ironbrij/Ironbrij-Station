@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { ShiftTimezoneSelect } from "@/components/ShiftTimezoneSelect";
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -36,7 +37,7 @@ import { COUNTRY_TIMEZONES, toDate, toMillis } from "@/lib/time";
 import { describeWorkStates, employeeWorkStates } from "@/lib/holidays";
 import { MultiStateBadge } from "@/components/MultiStateBadge";
 import { Switch } from "@/components/ui/switch";
-import { ATTENDANCE_TIMEZONES, DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
+import { DEFAULT_SHIFT_TIMEZONE } from "@/lib/attendance";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { companyEmailBranding, findCompanyById } from "@/lib/email-branding";
@@ -954,17 +955,11 @@ function CompanyMembershipSettings({
                     Same client for every shift
                   </label>
                   <div className="w-44">
-                    <select
+                    <ShiftTimezoneSelect
                       value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
-                      onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
+                      onChange={(shiftTimezone) => update(companyId, { shiftTimezone })}
                       className="w-full rounded-md border bg-background px-2 py-1 text-xs font-medium"
-                    >
-                      {ATTENDANCE_TIMEZONES.map((zone) => (
-                        <option key={zone.value} value={zone.value}>
-                          {zone.short}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 </div>
 
@@ -1178,17 +1173,11 @@ function CompanyMembershipSettings({
                   </div>
                   <div>
                     <label className="text-xs font-medium">Shift timezone</label>
-                    <select
+                    <ShiftTimezoneSelect
                       value={membership.shiftTimezone || DEFAULT_SHIFT_TIMEZONE}
-                      onChange={(event) => update(companyId, { shiftTimezone: event.target.value })}
+                      onChange={(shiftTimezone) => update(companyId, { shiftTimezone })}
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                    >
-                      {ATTENDANCE_TIMEZONES.map((zone) => (
-                        <option key={zone.value} value={zone.value}>
-                          {zone.short}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

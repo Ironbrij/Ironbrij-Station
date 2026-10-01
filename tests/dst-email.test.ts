@@ -6,6 +6,7 @@ import {
   findDstChange,
   newDstResponse,
   planClientDstEmails,
+  planDstSchedule,
   sendClientDstEmails,
 } from "../src/lib/dst-email.ts";
 import type { Company, Employee } from "../src/lib/types.ts";
@@ -78,6 +79,7 @@ test("the client sees each VA's hours now, and under both choices", () => {
   assert.deepEqual(plan.schedules, [
     {
       id: "maria",
+      shiftIndex: 0,
       name: "maria VA",
       email: "maria@example.com",
       clientBefore: "9:00 AM – 5:00 PM",
@@ -85,9 +87,19 @@ test("the client sees each VA's hours now, and under both choices", () => {
       vaBefore: "7:00 AM – 3:00 PM",
       vaAfter: "6:00 AM – 2:00 PM",
       vaPlace: "Manila",
+      vaTimezone: "Asia/Manila",
       vaZone: "PHT",
       // Keeping her Manila hours means an hour later on Sydney's new clock.
       clientKeep: "10:00 AM – 6:00 PM",
+      savedZone: "Sydney time",
+      // Saved on Sydney time, SavyTime follows Sydney by itself.
+      automatic: "follow",
+      savedFollow: "9:00 AM – 5:00 PM",
+      savedKeep: "10:00 AM – 6:00 PM",
+      clientStart: "09:00",
+      clientEnd: "17:00",
+      vaStart: "07:00",
+      vaEnd: "15:00",
     },
   ]);
   const email = buildClientDstEmail(plan, { appUrl: "https://example.com", token: "t".repeat(40) });
@@ -99,6 +111,11 @@ test("the client sees each VA's hours now, and under both choices", () => {
   assert.match(
     email.text,
     /starts in New South Wales on Sunday, 4 October 2026, when clocks move forward by 1 hour\./,
+  );
+  assert.ok(
+    email.text.includes(
+      "From Sunday, 4 October 2026, New South Wales will be 3 hours ahead of the Philippines (now 2 hours).",
+    ),
   );
   assert.ok(
     email.text.includes("- maria VA: now 9:00 AM – 5:00 PM your time (7:00 AM – 3:00 PM PHT)"),
@@ -132,6 +149,130 @@ test("the client sees each VA's hours now, and under both choices", () => {
   const reply = buildClientDstEmail(plan);
   assert.match(reply.text, /Simply reply to this email to let us know which you prefer\./);
   assert.doesNotMatch(reply.text, /dst-response/);
+});
+
+// The case from the Accounts Team: a Nepal VA on 8 AM to 2 PM Sydney time.
+const nepalVa = (shiftTimezone: string, start: string, end: string) =>
+  va("bibek", ["nsw"], {
+    country: "NP",
+    timezone: "Asia/Kathmandu",
+    shiftTimezone,
+    shiftStartTime: start,
+    shiftEndTime: end,
+  });
+
+test("a Nepal VA on 8 AM to 2 PM Sydney time: both choices, worked out from the clocks", () => {
+  const [plan] = planClientDstEmails(
+    [company("nsw", "NSW")],
+    [nepalVa("Australia/Sydney", "08:00", "14:00")],
+    new Date("2026-09-29T00:00:00Z"),
+  );
+  const [line] = plan.schedules;
+  assert.equal(line.clientBefore, "8:00 AM – 2:00 PM");
+  assert.equal(line.vaBefore, "3:45 AM – 9:45 AM");
+  // Follow Sydney: same Sydney hours, an hour earlier in Nepal.
+  assert.equal(line.clientAfter, "8:00 AM – 2:00 PM");
+  assert.equal(line.vaAfter, "2:45 AM – 8:45 AM");
+  // Keep NPT: same Nepal hours, an hour later in Sydney.
+  assert.equal(line.clientKeep, "9:00 AM – 3:00 PM");
+  assert.equal(line.vaZone, "NPT");
+  assert.equal(line.automatic, "follow");
+  assert.ok(
+    buildClientDstEmail(plan).text.includes(
+      "New South Wales will be 5 hours 15 minutes ahead of Nepal (now 4 hours 15 minutes).",
+    ),
+  );
+});
+
+test("the same shift saved on Nepal time gives the same choices, and keeps NPT by itself", () => {
+  const [plan] = planClientDstEmails(
+    [company("nsw", "NSW")],
+    [nepalVa("Asia/Kathmandu", "03:45", "09:45")],
+    new Date("2026-09-29T00:00:00Z"),
+  );
+  const [line] = plan.schedules;
+  assert.equal(line.clientBefore, "8:00 AM – 2:00 PM");
+  assert.equal(line.vaAfter, "2:45 AM – 8:45 AM");
+  assert.equal(line.clientKeep, "9:00 AM – 3:00 PM");
+  assert.equal(line.automatic, "keep");
+  assert.equal(line.savedZone, "Kathmandu time");
+  // To follow Sydney, the saved Nepal times have to move an hour earlier.
+  assert.equal(line.savedFollow, "2:45 AM – 8:45 AM");
+  assert.equal(line.savedKeep, "3:45 AM – 9:45 AM");
+});
+
+test("a UK client's clocks go back on their own date, with the gap to Manila growing", () => {
+  const [plan] = planClientDstEmails(
+    [company("uk", "GB-ENG")],
+    [va("ana", ["uk"], { shiftTimezone: "Europe/London" })],
+    new Date("2026-10-05T00:00:00Z"),
+  );
+  assert.equal(plan.change.date, "2026-10-25");
+  assert.equal(plan.change.kind, "end");
+  const [line] = plan.schedules;
+  assert.equal(line.clientBefore, "9:00 AM – 5:00 PM");
+  assert.equal(line.vaBefore, "4:00 PM – 12:00 AM");
+  assert.equal(line.vaAfter, "5:00 PM – 1:00 AM");
+  assert.equal(line.clientKeep, "8:00 AM – 4:00 PM");
+  assert.equal(line.automatic, "follow");
+  assert.ok(
+    buildClientDstEmail(plan).text.includes(
+      "From Sunday, 25 October 2026, England will be 8 hours behind the Philippines (now 7 hours).",
+    ),
+  );
+});
+
+test("the year-round schedule lists every client, with or without daylight saving or an email", () => {
+  const entries = planDstSchedule(
+    [
+      company("nsw", "NSW", { clientEmails: [] }),
+      company("qld", "QLD"),
+      company("uk", "GB-ENG"),
+      company("empty", "VIC"),
+    ],
+    [va("a", ["nsw"]), va("b", ["qld"]), va("c", ["uk"], { shiftTimezone: "Europe/London" })],
+    new Date("2026-10-01T00:00:00Z"),
+  );
+  assert.deepEqual(
+    entries.map((entry) => [entry.company.id, entry.change?.date ?? null, entry.to.length]),
+    [
+      ["nsw", "2026-10-04", 0],
+      ["uk", "2026-10-25", 1],
+      ["qld", null, 1],
+    ],
+  );
+});
+
+test("the official clock-change dates for every client region", () => {
+  const next = (timezone: string, from: string) => {
+    const change = findDstChange(timezone, new Date(`${from}T00:00:00Z`), 366);
+    return change ? `${change.kind} ${change.date}` : "none";
+  };
+  const expected: Record<string, string> = {
+    "Australia/Sydney": "start 2026-10-04",
+    "Australia/Melbourne": "start 2026-10-04",
+    "Australia/Adelaide": "start 2026-10-04",
+    "Australia/Hobart": "start 2026-10-04",
+    "Australia/Brisbane": "none",
+    "Australia/Perth": "none",
+    "Australia/Darwin": "none",
+    "Pacific/Auckland": "end 2027-04-04",
+    "Europe/London": "end 2026-10-25",
+    "Europe/Berlin": "end 2026-10-25",
+    "America/New_York": "end 2026-11-01",
+    "America/Toronto": "end 2026-11-01",
+    "America/Los_Angeles": "end 2026-11-01",
+    "America/Phoenix": "none",
+    "Asia/Qatar": "none",
+    "Asia/Manila": "none",
+    "Asia/Kathmandu": "none",
+  };
+  for (const [timezone, change] of Object.entries(expected)) {
+    assert.equal(next(timezone, "2026-10-01"), change, timezone);
+  }
+  assert.equal(next("Australia/Sydney", "2026-10-05"), "end 2027-04-04");
+  assert.equal(next("Europe/London", "2026-10-26"), "start 2027-03-28");
+  assert.equal(next("America/New_York", "2026-11-02"), "start 2027-03-14");
 });
 
 test("a client given the choice chooses first; their VAs are only told afterwards", async () => {

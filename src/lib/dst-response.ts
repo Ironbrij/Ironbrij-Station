@@ -27,6 +27,19 @@ export interface DstResponseLine {
   vaAfter: string;
   vaZone: string;
   clientKeep: string;
+  /** Where the shift is saved in SavyTime, and what it does there by itself. */
+  savedZone?: string;
+  automatic?: "follow" | "keep" | "neither";
+  /** The saved shift times that give each choice, on the saved clock. */
+  savedFollow?: string;
+  savedKeep?: string;
+  /** The VA's clock, and the shift now on both clocks ("08:00"), to re-save it on the chosen one. */
+  vaTimezone?: string;
+  shiftIndex?: number;
+  clientStart?: string;
+  clientEnd?: string;
+  vaStart?: string;
+  vaEnd?: string;
 }
 
 export interface DstResponse {
@@ -40,6 +53,9 @@ export interface DstResponse {
   notifyEmail?: string;
   decision: DstDecision | null;
   decidedAt?: string;
+  /** When SavyTime re-saved the shifts on the chosen clock, and who did it. */
+  appliedAt?: string;
+  appliedBy?: string;
   createdAt: string;
 }
 
@@ -140,6 +156,8 @@ export function buildDstDecisionNoticeEmail(
   response: DstResponse,
   decision: DstDecision,
   vasTold: number,
+  /** Whether SavyTime already re-saved the shifts on the chosen clock. */
+  applied = false,
 ) {
   const { date, what } = changeWords(response);
   const names = joinNames(response.lines.map((line) => line.name));
@@ -156,25 +174,34 @@ export function buildDstDecisionNoticeEmail(
       : vasTold < people
         ? `${vasTold} of the ${people} VAs have been notified by email. Please let the others know.`
         : `${several ? "The VAs have" : "The VA has"} been notified by email.`;
-  const lines =
+  // Shifts saved on a clock that already gives the chosen hours need nothing;
+  // the rest are listed with the times to save. Older records lack `automatic`;
+  // their shifts were saved on the client's clock, so they follow by themselves.
+  const toChange = response.lines.filter((line) => (line.automatic ?? "follow") !== decision);
+  const chose =
     decision === "follow"
-      ? [
-          `${response.companyName} has chosen for ${names} to follow their new DST schedule from ${date}.`,
-          "Nothing needs to change in SavyTime: the shift stays the same on the client's clock.",
-          told,
-        ]
-      : [
-          `${response.companyName} has chosen for ${names} to keep their current schedule from ${date}.`,
-          `Please update the shift in SavyTime before ${date}, using the Daylight saving schedule switch on each VA's profile, so it reads as below on ${response.companyName}'s clock.`,
-          told,
-        ];
-  const details =
-    decision === "keep"
-      ? response.lines.map((line) => ({
-          label: line.name,
-          value: `${line.clientKeep} (was ${line.clientBefore})`,
-        }))
-      : [];
+      ? `${response.companyName} has chosen for ${names} to follow their new DST schedule from ${date}.`
+      : `${response.companyName} has chosen for ${names} to keep their current schedule from ${date}.`;
+  const lines = [
+    chose,
+    toChange.length === 0
+      ? "Nothing needs to change in SavyTime: the saved shifts already give these hours after the change."
+      : applied
+        ? `SavyTime has been updated: the shift now follows the chosen clock, so it gives these hours from ${date} by itself.`
+        : `Please press Apply under Company → Daylight saving → Client choices in SavyTime before ${date}, or set the shift by hand (Edit profile and shift):`,
+    told,
+  ];
+  const details = (applied ? [] : toChange).map((line) => {
+    const target = decision === "follow" ? line.savedFollow : line.savedKeep;
+    const onClient = decision === "follow" ? line.clientAfter : line.clientKeep;
+    return {
+      label: line.name,
+      value:
+        target && line.savedZone
+          ? `Set to ${target} ${line.savedZone} (${onClient} on ${response.companyName}'s clock)`
+          : `${onClient} on ${response.companyName}'s clock (was ${line.clientBefore})`,
+    };
+  });
   const subject = `${response.companyName}: ${decision === "follow" ? "VA follows new DST schedule" : "VA keeps current schedule"} from ${date}`;
   const text = [
     title,

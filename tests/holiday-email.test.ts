@@ -73,8 +73,11 @@ test("each person given the holiday gets their own email through the webhook", a
   assert.equal(calls.length, 1);
   assert.equal(calls[0].to, "maria@example.com");
   assert.equal(calls[0].event, "holiday_notice");
-  assert.equal(calls[0].subject, "Upcoming holiday: Labour Day, Monday, 5 October 2026");
-  assert.match(calls[0].text, /You have an upcoming holiday on Monday, 5 October 2026 for Labour Day./);
+  assert.equal(calls[0].subject, "Upcoming public holiday: Labour Day, Monday, 5 October 2026");
+  assert.match(
+    calls[0].text,
+    /You have an upcoming public holiday on Monday, 5 October 2026 for Labour Day./,
+  );
   // She also works for Beta in VIC, so the email says which work is off.
   assert.match(calls[0].text, /your work for Alpha only/);
   assert.match(calls[0].text, /other companies on the same day is a normal working day/);
@@ -123,7 +126,7 @@ test("each client with people off is asked whether their VA will work the holida
   // NSW Labour Day closes Alpha only; Beta (VIC) keeps working and is not told.
   assert.equal(client.length, 1);
   assert.equal(client[0].to, "boss@alpha.com,ops@alpha.com");
-  assert.equal(client[0].subject, "Upcoming holiday: Labour Day, Monday, 5 October 2026");
+  assert.equal(client[0].subject, "Upcoming public holiday: Labour Day, Monday, 5 October 2026");
   assert.equal(
     client[0].text,
     [
@@ -283,15 +286,15 @@ test("the VA's holiday email says their client will decide, when their client is
   assert.equal(
     va.text,
     [
-      "You Have an Upcoming Holiday",
+      "You Have an Upcoming Public Holiday",
       "",
       "Hi Ann,",
       "",
-      "You have an upcoming holiday on Monday, 5 October 2026 for Labour Day.",
+      "You have an upcoming public holiday on Monday, 5 October 2026 for Labour Day.",
       "",
-      "Upcoming Holiday: Labour Day, Monday, 5 October 2026",
+      "Upcoming Public Holiday: Labour Day, Monday, 5 October 2026",
       "",
-      "This is a reminder about your upcoming holiday. Your client will let us know if they would like you to work on this holiday. The system or Accounts Team will notify you once their decision is confirmed.",
+      "This is a reminder about your upcoming public holiday. Your client will let us know if they would like you to work on this holiday. The system or Accounts Team will notify you once their decision is confirmed.",
       "",
       "If your client requests you to work, please log in and work your usual hours. If they do not request you to work, please do not punch in.",
       "",
@@ -312,7 +315,7 @@ test("the VA's holiday email says their client will decide, when their client is
   });
   assert.match(
     posts[0].text,
-    /This is a reminder about your upcoming holiday\. Please do not punch in on this day\./,
+    /This is a reminder about your upcoming public holiday\. Please do not punch in on this day\./,
   );
   assert.doesNotMatch(posts[0].text, /Your client will let us know/);
 });
