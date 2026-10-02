@@ -5,7 +5,7 @@ import { resolveReportWeek } from "@/lib/weekly-report";
 import { normalizeCompanyId } from "@/lib/company-context";
 import { shareHolidays } from "@/lib/holidays";
 import { clientEmailsFor } from "@/lib/client-emails";
-import { deliverReportEmail, type SendReportInput } from "@/lib/report-email";
+import { weeklyReportSubject, deliverReportEmail, type SendReportInput } from "@/lib/report-email";
 import { automationIdToken, createDocument } from "@/lib/admin-request";
 import { newReportHistoryEntry, reportHistoryId } from "@/lib/report-history";
 import { buildReportCoverMessage } from "@/lib/report-cover-message";
@@ -355,7 +355,8 @@ async function runWeeklyReport(request: Request): Promise<Response> {
   const report: SendReportInput = {
     companyId: isAll ? "all" : normalizeCompanyId(requestedCompany) || COMPANY_ID,
     recipientEmails: recipients,
-    subject: `${companyName} weekly report (${week.label})`,
+    // The same subject every week, so the client's reports share one thread.
+    subject: weeklyReportSubject(isAll ? "" : companyName),
     // The same letter an admin gets pre-written on the report screen.
     customMessage: buildReportCoverMessage({
       clientName: isAll ? "" : companyName,
