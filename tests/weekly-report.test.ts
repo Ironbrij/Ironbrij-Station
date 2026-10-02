@@ -50,3 +50,10 @@ test("the send day is read in the company's timezone", () => {
   assert.equal(isReportSendDay(at("2026-09-25T15:00:00Z"), "Australia/Sydney"), true);
   assert.equal(isReportSendDay(at("2026-09-25T15:00:00Z"), "UTC"), false);
 });
+
+test("every weekly report to a client has the same subject, so they share one thread", async () => {
+  const { weeklyReportSubject } = await import("../src/lib/report-email.ts");
+  assert.equal(weeklyReportSubject("Northwind"), "Northwind VAs Weekly Attendance Report");
+  assert.equal(weeklyReportSubject(" Northwind "), weeklyReportSubject("Northwind"));
+  assert.equal(weeklyReportSubject(""), "All Clients VAs Weekly Attendance Report");
+});

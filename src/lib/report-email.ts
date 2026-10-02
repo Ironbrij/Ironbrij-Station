@@ -143,6 +143,15 @@ function renderReportHtmlTable(rows: ReportEmployeeRowPayload[], covered: string
 }
 
 /**
+ * One subject per client for every weekly report, so the client's mail app
+ * keeps them all in one thread. Which week each covers is in the email.
+ */
+export function weeklyReportSubject(clientName: string): string {
+  const name = clientName.trim();
+  return name ? `${name} VAs Weekly Attendance Report` : "All Clients VAs Weekly Attendance Report";
+}
+
+/**
  * The report email itself: subject, HTML and plain text. Kept apart from
  * sending so a report in the history can be shown again exactly as it was sent.
  */

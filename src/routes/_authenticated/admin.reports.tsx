@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { weeklyReportSubject } from "@/lib/report-email";
 import { companyClientEmails, parseClientEmails } from "@/lib/client-emails";
 import { EmailChipsInput } from "@/components/EmailChipsInput";
 import { ReportHistoryPanel } from "@/components/ReportHistoryPanel";
@@ -959,7 +960,14 @@ function ReportsPage() {
 
   // Open Send Modal with Pre-filled Defaults
   function openSendEmailModal() {
-    setEmailSubject(`${companyDisplayName} Attendance & Work Report (${periodLabel})`);
+    // A week's report goes in the client's one weekly thread; a longer period
+    // is a separate email with its dates in the subject.
+    const isWeek = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) < 7 * 86_400_000;
+    setEmailSubject(
+      isWeek
+        ? weeklyReportSubject(companyFilter === "all" ? "" : selectedCompany?.name || "")
+        : `${companyDisplayName} VAs Attendance Report (${periodLabel})`,
+    );
     setClientName(selectedCompany?.name || "");
     setRecipientEmails(savedRecipients);
     // Nothing saved yet: whatever is typed this time is kept for next time.
