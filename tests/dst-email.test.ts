@@ -70,7 +70,7 @@ test("a Queensland client left on the Sydney timezone is not told its clocks cha
   );
 });
 
-test("the client sees each VA's hours now, and under both choices", () => {
+test("the client is only asked to choose: no VA's hours or clock gaps in the email", () => {
   const [plan] = planClientDstEmails(
     [company("nsw", "NSW")],
     [va("maria", ["nsw"]), va("gone", ["nsw"], { status: "inactive" })],
@@ -112,22 +112,21 @@ test("the client sees each VA's hours now, and under both choices", () => {
     email.text,
     /starts in New South Wales on Sunday, 4 October 2026, when clocks move forward by 1 hour\./,
   );
+  // Nothing about the VA or their hours: not their name, shift times or the gap to Manila.
+  for (const body of [email.text, email.html]) {
+    assert.doesNotMatch(body, /maria/);
+    assert.doesNotMatch(body, /\d:\d\d [AP]M/);
+    assert.doesNotMatch(body, /hours? ahead of/);
+    assert.doesNotMatch(body, /<table[^>]*>\s*<tr><th/);
+  }
   assert.ok(
     email.text.includes(
-      "From Sunday, 4 October 2026, New South Wales will be 3 hours ahead of the Philippines (now 2 hours).",
+      "Follow my new DST schedule: your VA keeps the same hours on your clock, so their own start time moves by 1 hour.",
     ),
   );
   assert.ok(
-    email.text.includes("- maria VA: now 9:00 AM – 5:00 PM your time (7:00 AM – 3:00 PM PHT)"),
-  );
-  assert.ok(
     email.text.includes(
-      "Follow my new DST schedule: 9:00 AM – 5:00 PM your time (6:00 AM – 2:00 PM PHT)",
-    ),
-  );
-  assert.ok(
-    email.text.includes(
-      "Keep current PHT schedule: 10:00 AM – 6:00 PM your time (7:00 AM – 3:00 PM PHT)",
+      "Keep current PHT schedule: your VA keeps the same hours on their own clock, so their hours on your clock move by 1 hour.",
     ),
   );
   assert.ok(
@@ -177,11 +176,12 @@ test("a Nepal VA on 8 AM to 2 PM Sydney time: both choices, worked out from the 
   assert.equal(line.clientKeep, "9:00 AM – 3:00 PM");
   assert.equal(line.vaZone, "NPT");
   assert.equal(line.automatic, "follow");
-  assert.ok(
-    buildClientDstEmail(plan).text.includes(
-      "New South Wales will be 5 hours 15 minutes ahead of Nepal (now 4 hours 15 minutes).",
-    ),
-  );
+  // Worked out and kept for applying the choice, but never sent to the client.
+  const email = buildClientDstEmail(plan);
+  assert.doesNotMatch(email.text, /Nepal|3:45|2:45|5 hours 15 minutes/);
+  assert.doesNotMatch(email.html, /Nepal|3:45|2:45|5 hours 15 minutes/);
+  // The choice is still named by the VA's clock, as the button says.
+  assert.match(email.text, /Keep current NPT schedule/);
 });
 
 test("the same shift saved on Nepal time gives the same choices, and keeps NPT by itself", () => {
@@ -215,11 +215,9 @@ test("a UK client's clocks go back on their own date, with the gap to Manila gro
   assert.equal(line.vaAfter, "5:00 PM – 1:00 AM");
   assert.equal(line.clientKeep, "8:00 AM – 4:00 PM");
   assert.equal(line.automatic, "follow");
-  assert.ok(
-    buildClientDstEmail(plan).text.includes(
-      "From Sunday, 25 October 2026, England will be 8 hours behind the Philippines (now 7 hours).",
-    ),
-  );
+  const email = buildClientDstEmail(plan).text;
+  assert.match(email, /Daylight Saving Time ends in England on Sunday, 25 October 2026/);
+  assert.doesNotMatch(email, /behind the Philippines|\d:\d\d [AP]M/);
 });
 
 test("the year-round schedule lists every client, with or without daylight saving or an email", () => {
