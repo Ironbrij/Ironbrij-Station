@@ -600,7 +600,7 @@ export function buildReportRows({
         workedDaysCount > 0
       ) {
         sections.push(
-          `Complete Attendance for the ${isWeek ? "Week" : "Period"}: ${formatCovered(from, to)}`,
+          `Complete Attendance for the ${from === to ? "Day" : isWeek ? "Week" : "Period"}: ${formatCovered(from, to)}`,
         );
       }
       if (lateLines.length > 0) sections.push(`Late:\n${lateLines.join("\n")}`);

@@ -23,7 +23,7 @@ const MONTH_NAMES = [
 
 // Spelled out rather than localised: the label goes in a client's subject line,
 // and runtimes disagree on whether September abbreviates to Sep or Sept.
-function readableDate(dateKey: string): string {
+export function readableDate(dateKey: string): string {
   const date = new Date(`${dateKey}T12:00:00Z`);
   return `${DAY_NAMES[date.getUTCDay()]} ${date.getUTCDate()} ${MONTH_NAMES[date.getUTCMonth()]}`;
 }

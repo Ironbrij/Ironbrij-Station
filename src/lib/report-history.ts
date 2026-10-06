@@ -16,7 +16,7 @@ export interface ReportHistoryEntry {
   from: string;
   to: string;
   recipients: string[];
-  /** Who sent it: an admin's email, or "Weekly automation". */
+  /** Who sent it: an admin's email, "Weekly automation" or "Daily automation". */
   sentBy: string;
   sentAt: string;
   source: "screen" | "automation";
@@ -31,6 +31,15 @@ export interface ReportHistoryEntry {
 export function reportHistoryId(companyId: string, from: string, sentAt: Date): string {
   const safe = (companyId || "all").replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
   return `${safe}-${from || "period"}-${sentAt.getTime()}`;
+}
+
+/**
+ * One id per client per day for the daily report, so the record that it went
+ * out is also how the next run knows not to send it again.
+ */
+export function dailyReportHistoryId(companyId: string, date: string): string {
+  const safe = (companyId || "all").replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
+  return `daily-${safe}-${date}`;
 }
 
 export function newReportHistoryEntry({

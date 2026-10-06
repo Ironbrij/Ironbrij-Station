@@ -16,6 +16,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ApiAutoPunchOutNotificationRouteImport } from './routes/api.auto-punch-out-notification'
 import { Route as ApiAutomationStatusRouteImport } from './routes/api.automation-status'
+import { Route as ApiDailyReportRouteImport } from './routes/api.daily-report'
 import { Route as ApiDstNotificationRouteImport } from './routes/api.dst-notification'
 import { Route as ApiDstResponseRouteImport } from './routes/api.dst-response'
 import { Route as ApiHolidayNotificationRouteImport } from './routes/api.holiday-notification'
@@ -89,6 +90,11 @@ const ApiAutoPunchOutNotificationRoute =
 const ApiAutomationStatusRoute = ApiAutomationStatusRouteImport.update({
   id: '/api/automation-status',
   path: '/api/automation-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDailyReportRoute = ApiDailyReportRouteImport.update({
+  id: '/api/daily-report',
+  path: '/api/daily-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDstNotificationRoute = ApiDstNotificationRouteImport.update({
@@ -311,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/daily-report': typeof ApiDailyReportRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
@@ -357,6 +364,7 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/daily-report': typeof ApiDailyReportRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
@@ -406,6 +414,7 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/api/auto-punch-out-notification': typeof ApiAutoPunchOutNotificationRoute
   '/api/automation-status': typeof ApiAutomationStatusRoute
+  '/api/daily-report': typeof ApiDailyReportRoute
   '/api/dst-notification': typeof ApiDstNotificationRoute
   '/api/dst-response': typeof ApiDstResponseRoute
   '/api/holiday-notification': typeof ApiHolidayNotificationRoute
@@ -455,6 +464,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/daily-report'
     | '/api/dst-notification'
     | '/api/dst-response'
     | '/api/holiday-notification'
@@ -501,6 +511,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/daily-report'
     | '/api/dst-notification'
     | '/api/dst-response'
     | '/api/holiday-notification'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/api/auto-punch-out-notification'
     | '/api/automation-status'
+    | '/api/daily-report'
     | '/api/dst-notification'
     | '/api/dst-response'
     | '/api/holiday-notification'
@@ -596,6 +608,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiAutoPunchOutNotificationRoute: typeof ApiAutoPunchOutNotificationRoute
   ApiAutomationStatusRoute: typeof ApiAutomationStatusRoute
+  ApiDailyReportRoute: typeof ApiDailyReportRoute
   ApiDstNotificationRoute: typeof ApiDstNotificationRoute
   ApiDstResponseRoute: typeof ApiDstResponseRoute
   ApiHolidayNotificationRoute: typeof ApiHolidayNotificationRoute
@@ -666,6 +679,13 @@ declare module '@tanstack/react-router' {
       path: '/api/automation-status'
       fullPath: '/api/automation-status'
       preLoaderRoute: typeof ApiAutomationStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/daily-report': {
+      id: '/api/daily-report'
+      path: '/api/daily-report'
+      fullPath: '/api/daily-report'
+      preLoaderRoute: typeof ApiDailyReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/dst-notification': {
@@ -1035,6 +1055,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiAutoPunchOutNotificationRoute: ApiAutoPunchOutNotificationRoute,
   ApiAutomationStatusRoute: ApiAutomationStatusRoute,
+  ApiDailyReportRoute: ApiDailyReportRoute,
   ApiDstNotificationRoute: ApiDstNotificationRoute,
   ApiDstResponseRoute: ApiDstResponseRoute,
   ApiHolidayNotificationRoute: ApiHolidayNotificationRoute,
