@@ -73,13 +73,8 @@ function DstAnswer() {
   const answered = done ?? question?.decision ?? null;
   const date = question ? formatEmailDate(question.change.date) : "";
   const keep = question?.keepLabel || "Keep their current schedule";
-  const hours = (value: DstDecision) =>
-    (question?.lines ?? []).map((line) => (
-      <span key={`${line.id}-${line.clientBefore}`} className="block">
-        {line.name}: {value === "follow" ? line.clientAfter : line.clientKeep} your time (
-        {value === "follow" ? line.vaAfter : line.vaBefore} {line.vaZone})
-      </span>
-    ));
+  const minutes = question?.change.minutes ?? 60;
+  const amount = minutes === 60 ? "1 hour" : `${minutes} minutes`;
   const option = (value: DstDecision, title: string, detail: string) => (
     <button
       type="button"
@@ -91,7 +86,6 @@ function DstAnswer() {
     >
       <span className="block text-base font-bold">{title}</span>
       <span className="mt-1 block text-sm text-muted-foreground">{detail}</span>
-      <span className="mt-2 block text-xs font-medium text-foreground/80">{hours(value)}</span>
     </button>
   );
 
@@ -134,12 +128,12 @@ function DstAnswer() {
               {option(
                 "follow",
                 "Follow my new DST schedule",
-                "Same hours on your clock; your VA's own start time moves by 1 hour.",
+                `Same hours on your clock; your VA's own start time moves by ${amount}.`,
               )}
               {option(
                 "keep",
                 keep,
-                "Same hours on your VA's clock; their hours on your clock move by 1 hour.",
+                `Same hours on your VA's clock; their hours on your clock move by ${amount}.`,
               )}
             </div>
             <button

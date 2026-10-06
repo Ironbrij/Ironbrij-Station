@@ -27,8 +27,9 @@ import type { Company, Employee } from "./types.ts";
 /**
  * Daylight saving notices for clients. When a client's clocks move, their VA
  * works the same hours on the client's clock, so the VA's own start time moves
- * by an hour. Each client is told, with every VA's hours before and after, and
- * asked to reply if they would rather keep the VA's current hours.
+ * by an hour. Each client is told the date and asked whether their VA follows
+ * the new clock or keeps their current hours. No VA's hours are put in the
+ * client's email; they are kept on the saved choice to apply it afterwards.
  */
 
 const AU_STATE_NAMES: Record<string, string> = {
@@ -93,13 +94,6 @@ function shiftDateKey(dateKey: string, days: number): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
-
-/** Where a VA's clock is, as a client would say it. */
-const COUNTRY_OF_ZONE: Record<string, string> = {
-  "Asia/Manila": "the Philippines",
-  "Asia/Kathmandu": "Nepal",
-  "Asia/Kolkata": "India",
-};
 
 /** "Asia/Manila" -> "Manila". */
 export function placeName(timezone: string): string {
@@ -398,20 +392,12 @@ export function buildClientDstEmail(
     change.kind === "start" ? "Daylight Saving Time starts" : "Daylight Saving Time ends";
   const keep = keepLabel(plan.schedules);
   const intro = `I hope this email finds you well. ${what}${where} on ${date}, when clocks move ${move} by ${amount}.`;
-  // How far ahead of each VA's country the client's clock is, before and after.
-  const gaps = [...new Set(plan.schedules.map((line) => line.vaTimezone))].map((vaTimezone) => {
-    const before = new Date(`${shiftDateKey(change.date, -1)}T12:00:00Z`);
-    const after = new Date(`${shiftDateKey(change.date, 1)}T12:00:00Z`);
-    const country = COUNTRY_OF_ZONE[vaTimezone] ?? placeName(vaTimezone);
-    return `${clockGap(change.timezone, vaTimezone, after)} ${country} (now ${clockGap(change.timezone, vaTimezone, before).replace(/ (ahead of|behind)$/, "")})`;
-  });
-  const gapText = gaps.length
-    ? `From ${date}, ${state || placeName(change.timezone)} will be ${gaps.join(" and ")}.`
-    : "";
+  // Only the question. The VAs' hours and the clock gap to their country are not
+  // sent: they come from saved profiles and have been wrong in a client's inbox.
   const same = `Your Virtual Assistant will still work the same number of hours. Because they work from a different time zone, please choose which schedule you would like them to follow from ${date}:`;
   const options = [
-    `${FOLLOW_LABEL}: your VA keeps the same hours on your clock, so their own start time moves by 1 hour.`,
-    `${keep}: your VA keeps the same hours on their own clock, so their hours on your clock move by 1 hour.`,
+    `${FOLLOW_LABEL}: your VA keeps the same hours on your clock, so their own start time moves by ${amount}.`,
+    `${keep}: your VA keeps the same hours on their own clock, so their hours on your clock move by ${amount}.`,
   ];
   const ask = answer
     ? "Simply press one of the buttons below to let us know."
@@ -420,24 +406,15 @@ export function buildClientDstEmail(
     "Thank you for your understanding. Should you have any questions or need further assistance, please feel free to reach out.";
   const followUrl = answer ? dstResponseUrl(answer.appUrl, answer.token, "follow") : "";
   const keepUrl = answer ? dstResponseUrl(answer.appUrl, answer.token, "keep") : "";
-  const lineText = (line: DstScheduleLine) => [
-    `- ${line.name}: now ${line.clientBefore} your time (${line.vaBefore} ${line.vaZone})`,
-    `    ${FOLLOW_LABEL}: ${line.clientAfter} your time (${line.vaAfter} ${line.vaZone})`,
-    `    ${keep}: ${line.clientKeep} your time (${line.vaBefore} ${line.vaZone})`,
-  ];
   const subject = `${what} on ${date}: please choose your VA's schedule`;
   const text = [
     `Dear ${clientName},`,
     "",
     intro,
     "",
-    ...(gapText ? [gapText, ""] : []),
     same,
     "",
     ...options.map((option) => `- ${option}`),
-    "",
-    ...plan.schedules.flatMap(lineText),
-    ...plan.unscheduled.map((name) => `- ${name}`),
     "",
     ask,
     ...(answer ? ["", `${FOLLOW_LABEL}: ${followUrl}`, `${keep}: ${keepUrl}`] : []),
@@ -450,30 +427,6 @@ export function buildClientDstEmail(
 
   const paragraph = (value: string) =>
     `<p style="margin: 0 0 16px; font-size: 15px; line-height: 24px; color: #2d3748;">${escapeEmailHtml(value)}</p>`;
-  const cell =
-    "padding: 8px 10px; border-bottom: 1px solid #e7edf4; font-size: 13px; line-height: 19px; color: #2d3748; vertical-align: top;";
-  const head =
-    "padding: 8px 10px; border-bottom: 2px solid #dfe7f0; font-size: 11px; line-height: 16px; color: #718096; text-align: left; text-transform: uppercase; letter-spacing: 0.04em;";
-  const hours = (client: string, va: string, zone: string, bold = false) =>
-    `${bold ? `<strong>${escapeEmailHtml(client)}</strong>` : escapeEmailHtml(client)}<br><span style="color: #718096;">${escapeEmailHtml(`${va} ${zone}`)}</span>`;
-  const rows = [
-    ...plan.schedules.map(
-      (line) => `<tr>
-        <td style="${cell} font-weight: 700;">${escapeEmailHtml(line.name)}</td>
-        <td style="${cell}">${hours(line.clientBefore, line.vaBefore, line.vaZone)}</td>
-        <td style="${cell}">${hours(line.clientAfter, line.vaAfter, line.vaZone, true)}</td>
-        <td style="${cell}">${hours(line.clientKeep, line.vaBefore, line.vaZone, true)}</td>
-      </tr>`,
-    ),
-    ...plan.unscheduled.map(
-      (name) =>
-        `<tr><td style="${cell} font-weight: 700;">${escapeEmailHtml(name)}</td><td style="${cell}" colspan="3">Same hours as agreed</td></tr>`,
-    ),
-  ].join("");
-  const table = `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin: 0 0 18px; border-collapse: collapse;">
-      <tr><th style="${head}">VA</th><th style="${head}">Now (your time)</th><th style="${head}">${escapeEmailHtml(FOLLOW_LABEL)}</th><th style="${head}">${escapeEmailHtml(keep)}</th></tr>
-      ${rows}
-    </table>`;
   const button = (url: string, label: string, background: string) =>
     `<td style="padding: 0 10px 10px 0;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${background}" style="border-radius: 8px;"><a href="${escapeEmailHtml(url)}" style="display: inline-block; padding: 13px 20px; color: #ffffff; font-size: 14px; line-height: 18px; font-weight: 700; text-decoration: none;">${escapeEmailHtml(label)}</a></td></tr></table></td>`;
   const buttons = answer
@@ -488,10 +441,8 @@ export function buildClientDstEmail(
     contentHtml: [
       paragraph(`Dear ${clientName},`),
       paragraph(intro),
-      ...(gapText ? [paragraph(gapText)] : []),
       paragraph(same),
       ...options.map(paragraph),
-      table,
       paragraph(ask),
       buttons,
       paragraph(close),

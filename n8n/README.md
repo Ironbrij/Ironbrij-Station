@@ -141,3 +141,32 @@ back to `0`.
 
 See `docs/weekly-report-automation.md` for the endpoint itself, including the
 `dryRun` option for checking a client's figures before switching the schedule on.
+
+---
+
+## 6. Daily Attendance Report (`daily-report.workflow.json`)
+
+Sends each client that has switched it on their VAs' attendance for the day, as
+soon as every shift that day has finished. Import `report-email.workflow.json`
+first, as for the weekly report.
+
+### Setup
+
+1. Import `daily-report.workflow.json` into n8n.
+2. Open the **Config** node: `baseUrl` and `adminKey`, as for the weekly report.
+3. In SavyTime set `AUTOMATION_EMAIL` and `AUTOMATION_PASSWORD` (an admin account).
+   The daily report refuses to send without them, because it uses the report
+   history to avoid sending a day twice.
+4. Tick **Daily attendance report** for each client that wants it (Admin →
+   Company → edit a client). It is off until ticked.
+5. Try one client with `?dryRun=true&companyId=<id>` before activating.
+
+### How it behaves
+
+- It runs every 15 minutes, and most runs send nothing. A day goes out once every
+  VA's shift has ended and they have clocked out, then is never sent again.
+- Someone who never clocks out holds it for three hours at most, then it goes
+  with their missing clock-out marked.
+- There is no list step and no summary email: one call covers every client.
+
+See `docs/daily-report-automation.md` for the rules and the options.

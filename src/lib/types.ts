@@ -44,9 +44,10 @@ export interface Company {
   autoDeductUnloggedBreak?: boolean;
   /** Everyone at the client our emails go to (see client-emails.ts). */
   clientEmails?: string[];
-  /** Which emails the client gets; each is on unless set to false. */
+  /** Which emails the client gets; each is on unless set to false, except dailyReport, off unless true. */
   clientEmailTopics?: {
     weeklyReport?: boolean;
+    dailyReport?: boolean;
     holidays?: boolean;
     leave?: boolean;
     daylightSaving?: boolean;
