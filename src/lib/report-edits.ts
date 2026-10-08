@@ -290,6 +290,39 @@ export function mergeReportEdits(
   };
 }
 
+/**
+ * The All Companies report has no edits of its own for a person until someone
+ * makes one there, so it shows what each company's report for the same period
+ * says. Edits made on All itself win over the companies'.
+ */
+export function inheritCompanyEdits(own: ReportEdits, companies: ReportEdits[]): ReportEdits {
+  if (companies.length === 0) return own;
+  const rowEdits: ReportEdits["rowEdits"] = {};
+  const dayEdits: ReportEdits["dayEdits"] = {};
+  const customRows = new Map<string, ReportRow>();
+  const removed = new Set<string>();
+  for (const edits of [...companies, own]) {
+    for (const [id, fields] of Object.entries(edits.rowEdits)) {
+      rowEdits[id] = { ...rowEdits[id], ...fields };
+    }
+    for (const [id, days] of Object.entries(edits.dayEdits)) {
+      const merged = { ...dayEdits[id] };
+      for (const [date, change] of Object.entries(days)) {
+        merged[date] = { ...merged[date], ...change };
+      }
+      dayEdits[id] = merged;
+    }
+    for (const row of edits.customRows) customRows.set(row.id, row);
+    for (const id of edits.removedRowIds) removed.add(id);
+  }
+  return {
+    rowEdits,
+    dayEdits,
+    customRows: [...customRows.values()],
+    removedRowIds: [...removed],
+  };
+}
+
 export function removeReportRow(edits: ReportEdits, rowId: string): ReportEdits {
   const rowEdits = { ...edits.rowEdits };
   const dayEdits = { ...edits.dayEdits };

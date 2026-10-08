@@ -4,7 +4,7 @@ import { companyClientEmails, parseClientEmails } from "@/lib/client-emails";
 import { EmailChipsInput } from "@/components/EmailChipsInput";
 import { ReportHistoryPanel } from "@/components/ReportHistoryPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { doc, onSnapshot, runTransaction, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, runTransaction, updateDoc, where } from "firebase/firestore";
 import {
   listOf,
   liveError,
@@ -109,6 +109,7 @@ import {
   editDay,
   editRowFields,
   hasReportEdits,
+  inheritCompanyEdits,
   mergeReportEdits,
   NO_REPORT_EDITS,
   readReportEdits,
@@ -183,6 +184,9 @@ function ReportsPage() {
   // The admin's edits to this report, saved by themselves; the rows shown are
   // the calculated ones with these laid on top.
   const [reportEdits, setReportEdits] = useState<ReportEdits>(NO_REPORT_EDITS);
+  // On All Companies: what each company's report for this period has saved, shown
+  // underneath anything edited on All itself.
+  const [companyReportEdits, setCompanyReportEdits] = useState<ReportEdits[]>([]);
   const [editsSaveState, setEditsSaveState] = useState<"saved" | "unsaved" | "saving" | "error">(
     "saved",
   );
@@ -389,8 +393,12 @@ function ReportsPage() {
   // every time and lay the saved edits on top, field by field, so anything
   // nobody typed over keeps following the punches.
   const reportRows = useMemo(
-    () => applyReportEdits(computedSummaryRows, reportEdits),
-    [computedSummaryRows, reportEdits],
+    () =>
+      applyReportEdits(
+        computedSummaryRows,
+        companyFilter === "all" ? inheritCompanyEdits(reportEdits, companyReportEdits) : reportEdits,
+      ),
+    [companyFilter, computedSummaryRows, reportEdits, companyReportEdits],
   );
   const hasCustomEdits = hasReportEdits(reportEdits);
   const selectedIntervalEmployee = useMemo(
@@ -443,6 +451,19 @@ function ReportsPage() {
         setSyncError(`Saved report edits could not load (${error.message}). Refresh to reconnect.`),
     );
   }, [editsDocId]);
+
+  useEffect(() => {
+    setCompanyReportEdits([]);
+    if (companyFilter !== "all") return;
+    return onSnapshot(
+      query(collection(db(), "reportEdits"), where("from", "==", from), where("to", "==", to)),
+      (snapshot) =>
+        setCompanyReportEdits(
+          snapshot.docs.filter((d) => d.id !== editsDocId).map((d) => readReportEdits(d.data())),
+        ),
+      () => setCompanyReportEdits([]),
+    );
+  }, [companyFilter, from, to, editsDocId]);
 
   // Every edit lands here first, so the table and the inspect panel show it at once.
   function changeReportEdits(
