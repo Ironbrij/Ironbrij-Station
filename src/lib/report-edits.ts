@@ -1,3 +1,4 @@
+import { formatShortDate } from "./report-format.ts";
 import type { DailyIntervalRecord, ReportRow } from "./report-rows.ts";
 
 /**
@@ -84,18 +85,35 @@ export function readReportEdits(data: unknown): ReportEdits {
   };
 }
 
+/** "3.0hrs OT 1-Oct-26", one overtime line of the remarks. */
+export function overtimeRemarkLine(date: string, hours: number): string {
+  return `${hours.toFixed(1)}hrs OT ${formatShortDate(date).replace(/^0/, "")}`;
+}
+
+/** Puts the remarks' Overtime section in line with the days, leaving the rest as written. */
+function withOvertimeSection(remarks: string, lines: string[]): string {
+  const rest = remarks
+    .replace(/(^|\n\n)Overtime:\n[^\n]*(\n[^\n]+)*/g, "")
+    .replace(/^\n+|\n+$/g, "");
+  if (lines.length === 0) return rest;
+  const section = `Overtime:\n${lines.join("\n")}`;
+  return rest ? `${rest}\n\n${section}` : section;
+}
+
 /** A row's totals from its days, so a row always adds up to the days shown under it. */
 export function totalsFromDays(days: DailyIntervalRecord[]) {
   let regular = 0;
   let approved = 0;
   let pending = 0;
   const overtimeDates: string[] = [];
+  const overtimeLines: string[] = [];
   for (const day of days) {
     regular += day.regularHours || 0;
     if (day.rawOvertimeHours > 0) {
       if (day.isOvertimeApproved) {
         approved += day.rawOvertimeHours;
         overtimeDates.push(`${day.date} (+${day.rawOvertimeHours.toFixed(1)}h)`);
+        overtimeLines.push(overtimeRemarkLine(day.date, day.rawOvertimeHours));
       } else if (!day.isOvertimeRejected && day.overtimeStatus !== "rejected") {
         pending += day.rawOvertimeHours;
       }
@@ -106,6 +124,7 @@ export function totalsFromDays(days: DailyIntervalRecord[]) {
     overtimeHours: Math.round(approved * 10) / 10,
     pendingOvertimeHours: Math.round(pending * 10) / 10,
     overtimeDates,
+    overtimeLines,
   };
 }
 
@@ -122,10 +141,11 @@ export function applyReportEdits(computed: ReportRow[], edits: ReportEdits): Rep
         byDate.set(date, { ...(base || {}), ...change, date } as DailyIntervalRecord);
       }
       const dailyIntervals = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-      const totals = totalsFromDays(dailyIntervals);
+      const { overtimeLines, ...totals } = totalsFromDays(dailyIntervals);
       next = {
         ...next,
         ...totals,
+        remarks: withOvertimeSection(next.remarks || "", overtimeLines),
         dailyIntervals,
         workedDays: dailyIntervals.filter((day) => (day.regularHours || 0) > 0).length,
         worked: totals.regularHours > 0 || totals.overtimeHours > 0,

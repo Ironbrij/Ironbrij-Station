@@ -13,7 +13,7 @@ import { buildAttendanceSessions, type AttendanceSession } from "./attendance-se
 import { computeLeaveCreditBalance, leaveDayHours } from "./leave-credits.ts";
 import { formatCovered, formatDaysAndHours, formatHours, formatShortDate } from "./report-format.ts";
 import { getShiftIntervals } from "./shift-clients.ts";
-import { totalsFromDays } from "./report-edits.ts";
+import { overtimeRemarkLine, totalsFromDays } from "./report-edits.ts";
 import {
   formatInTimezone,
   getEffectiveEmployeeWorkingDays,
@@ -479,7 +479,7 @@ export function buildReportRows({
               ? `+${approvedOtHours.toFixed(1)}h`
               : `+${Math.round(approvedDayOtMinutes)}m`;
           approvedOvertimeDatesList.push(`${date} (${displayOtText})`);
-          overtimeLines.push(`${approvedOtHours.toFixed(1)}hr OT ${formatShortDate(date)}`);
+          overtimeLines.push(overtimeRemarkLine(date, approvedOtHours));
         }
 
         const isOvertimeApproved = approvedOtHours > 0;
