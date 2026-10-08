@@ -2335,11 +2335,18 @@ function ReportsPage() {
                           step="0.1"
                           min="0"
                           value={day.rawOvertimeHours}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            // Hours the admin types are the admin's own approval, so
+                            // they count in the totals instead of sitting as pending or
+                            // rejected from an earlier request.
+                            const hours = parseFloat(e.target.value) || 0;
                             handleUpdateDayInterval(selectedIntervalEmployee.id, day.date, {
-                              rawOvertimeHours: parseFloat(e.target.value) || 0,
-                            })
-                          }
+                              rawOvertimeHours: hours,
+                              isOvertimeApproved: hours > 0,
+                              isOvertimeRejected: false,
+                              overtimeStatus: hours > 0 ? "approved" : "none",
+                            });
+                          }}
                           onBlur={saveReportEdits}
                           className={`w-16 text-right font-bold px-1.5 py-1 rounded border bg-background text-xs ${
                             day.rawOvertimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
