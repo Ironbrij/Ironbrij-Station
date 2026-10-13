@@ -18,6 +18,7 @@ import {
   zonedDateTimeToDate,
 } from "./attendance.ts";
 import { buildAttendanceSessions } from "./attendance-sessions.ts";
+import { isHolidayLeave } from "./leave-marking.ts";
 import { companyState, regionLabel } from "./holidays.ts";
 import {
   describePunchShiftSlot,
@@ -168,15 +169,18 @@ export function buildAttendanceLog({
       if (represented.has(`${cid}:${shift.start.getTime()}`)) continue;
       const company = companies.find((c) => normalizeCompanyId(c.id) === cid);
       const holiday = getEmployeeHoliday(company, scoped, rowDate);
-      const approvedLeave = getEmployeeApprovedLeaveForDate(
+      const markedLeave = getEmployeeApprovedLeaveForDate(
         scoped,
         leaves.filter((l) => !l.companyId || normalizeCompanyId(l.companyId) === cid),
         rowDate,
       );
+      // A holiday marked for this person is a day off like a calendar holiday, not leave.
+      const approvedLeave = isHolidayLeave(markedLeave) ? null : markedLeave;
       const weekday = new Date(`${rowDate}T12:00:00Z`).getUTCDay();
       const off =
         !getEffectiveEmployeeWorkingDays(scoped, company?.workingDays).includes(weekday) ||
-        Boolean(holiday);
+        Boolean(holiday) ||
+        isHolidayLeave(markedLeave);
       // A day with no punch still belongs to a slot, so the admin can see which
       // shift and which client was not covered.
       const slot = getShiftSlotByStart(

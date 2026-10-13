@@ -67,6 +67,10 @@ export async function sendLeaveTeamNotice({
   appUrl: string;
   fetchImpl?: typeof fetch;
 }): Promise<LeaveTeamNoticeResult> {
+  // Leave marked from the late log was never announced, so there is nothing to
+  // announce now, nor a "leave cancelled" to send when it is revoked.
+  if (leave.markedFromLateLog) return { ok: true, sent: 0 };
+
   // The team hears about leave only once an admin has approved it.
   const expectedStatus = event === "approved" ? "approved" : "rejected";
   if (leave.status !== expectedStatus) {

@@ -1,12 +1,13 @@
 import { buildLateRecords, lateRecordInPeriod } from "@/lib/late-records";
 import { resolveManualClockOut } from "@/lib/manual-clock-in";
 import { applyPunchCorrection } from "@/lib/punch-corrections";
+import { buildMarkedLeave, leaveMarkProblem, type LeaveMarkKind } from "@/lib/leave-marking";
 import { formatWorkMinutes } from "@/lib/attendance-calculation";
 import { useAppRuntime } from "@/lib/app-runtime";
 import { attendanceNow } from "@/lib/attendance-clock";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { doc, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import {
   isSettled,
   listOf,
@@ -19,7 +20,16 @@ import {
   useLeaveRequestsLive,
   useRecentPunchesLive,
 } from "@/lib/live-data";
-import { AlertTriangle, CheckCircle2, Clock3, Plus, UserCheck, UserX, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarOff,
+  CheckCircle2,
+  Clock3,
+  Plus,
+  UserCheck,
+  UserX,
+  X,
+} from "lucide-react";
 import { db } from "@/lib/firebase";
 import {
   COMPANY_ID,
@@ -126,6 +136,11 @@ function LateArrivalsPage() {
   const [manualOutTime, setManualOutTime] = useState("");
   const [manualNotes, setManualNotes] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
+  // The same modal also records a day the employee was away instead of at work.
+  const [fixMode, setFixMode] = useState<"punch" | "leave">("punch");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveThrough, setLeaveThrough] = useState("");
+  const [leaveKind, setLeaveKind] = useState<LeaveMarkKind>("paid");
 
   // Excuse Reason Modal States
   const [excuseModal, setExcuseModal] = useState<{
@@ -198,10 +213,18 @@ function LateArrivalsPage() {
     return slot?.endTime || scoped.shiftEndTime || "";
   })();
 
+  function resetLeaveMark() {
+    setFixMode("punch");
+    setLeaveReason("");
+    setLeaveThrough("");
+    setLeaveKind("paid");
+  }
+
   // Both a late arrival and a missing punch are corrected in the same modal, so
   // the row hands it the shift it belongs to instead of asking the admin to retype it.
   function openFixPunch(record: LateRecord) {
     setManualOutTime("");
+    resetLeaveMark();
     setSelectedEmpId(record.employee.id);
     setSelectedCompanyId(record.companyId);
     setManualDate(record.dateKey);
@@ -284,6 +307,60 @@ function LateArrivalsPage() {
     }
   }
 
+  // For a VA who was away but never filed it. Saved as already-approved leave, the
+  // record every other screen reads, so the day leaves this log and shows as leave
+  // on the dashboard and in the reports. "Revoke Leave" on the leave requests
+  // screen undoes it. No notice or email is sent.
+  async function saveLeaveMark() {
+    if (!runtime.ready || submittingManual) {
+      toast.error(runtime.message || "Wait for attendance records to finish syncing.");
+      return;
+    }
+    const targetEmp = employees.find((e) => e.id === selectedEmpId);
+    const problem = leaveMarkProblem({
+      employeeId: targetEmp?.id ?? "",
+      dateFrom: manualDate,
+      dateTo: leaveThrough,
+      reason: leaveReason,
+      kind: leaveKind,
+    });
+    if (!targetEmp || problem) {
+      toast.error(problem || "Choose the employee.");
+      return;
+    }
+    const targetCompanyIds = getEmployeeCompanyIds(targetEmp);
+    const effectiveCompanyId =
+      selectedCompanyId && targetCompanyIds.includes(selectedCompanyId)
+        ? selectedCompanyId
+        : targetCompanyIds[0] || COMPANY_ID;
+
+    setSubmittingManual(true);
+    try {
+      const leave = buildMarkedLeave({
+        employeeId: targetEmp.id,
+        companyId: effectiveCompanyId,
+        dateFrom: manualDate,
+        dateTo: leaveThrough,
+        reason: leaveReason,
+        kind: leaveKind,
+        actor: user?.email || "admin",
+        decidedAt: attendanceNow().toISOString(),
+      });
+      await addDoc(collection(db(), "leaveRequests"), { ...leave, createdAt: serverTimestamp() });
+      toast.success(
+        `${targetEmp.name} marked ${leaveKind === "holiday" ? "on holiday" : "on leave"} ${
+          leave.dateFrom === leave.dateTo ? leave.dateFrom : `${leave.dateFrom} to ${leave.dateTo}`
+        }. Use Revoke Leave on Leave Requests to undo it.`,
+      );
+      setShowManualModal(false);
+      resetLeaveMark();
+    } catch (err) {
+      toast.error("Could not mark the leave: " + (err as Error).message);
+    } finally {
+      setSubmittingManual(false);
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -299,6 +376,7 @@ function LateArrivalsPage() {
         <button
           onClick={() => {
             setManualOutTime("");
+            resetLeaveMark();
             if (employees.length > 0) {
               const firstEmp = employees[0];
               setSelectedEmpId(firstEmp.id);
@@ -534,10 +612,13 @@ function LateArrivalsPage() {
                   <UserCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Fix Punch Times</h3>
+                  <h3 className="text-base font-bold text-foreground">
+                    {fixMode === "punch" ? "Fix Punch Times" : "Mark On Leave / Holiday"}
+                  </h3>
                   <p className="text-xs text-muted-foreground">
-                    Retroactively add or adjust an employee's clock-in and clock-out when a
-                    mistake happens. Leave clock-out blank to keep the shift open.
+                    {fixMode === "punch"
+                      ? "Retroactively add or adjust an employee's clock-in and clock-out when a mistake happens. Leave clock-out blank to keep the shift open."
+                      : "Record that the employee was on leave or it was a holiday, for time off that was not filed in TimeSavy."}
                   </p>
                 </div>
               </div>
@@ -548,6 +629,34 @@ function LateArrivalsPage() {
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+
+            <div
+              role="tablist"
+              aria-label="What to record"
+              className="grid grid-cols-2 gap-1 rounded-lg bg-secondary p-1 shrink-0"
+            >
+              {(
+                [
+                  ["punch", "Fix punch times", UserCheck],
+                  ["leave", "On leave / holiday", CalendarOff],
+                ] as const
+              ).map(([mode, label, Icon]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={fixMode === mode}
+                  onClick={() => setFixMode(mode)}
+                  className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
+                    fixMode === mode
+                      ? "bg-card text-primary shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </button>
+              ))}
             </div>
 
             <div className="space-y-3.5 overflow-y-auto pr-1 flex-1 min-h-0">
@@ -628,7 +737,7 @@ function LateArrivalsPage() {
                       </div>
                     )}
 
-                    {targetEmpForCompany && (
+                    {fixMode === "punch" && targetEmpForCompany && (
                       <div className="rounded-xl bg-secondary/60 border p-3 text-xs space-y-2">
                         <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
                           <span className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
@@ -706,162 +815,265 @@ function LateArrivalsPage() {
                 );
               })()}
 
-              <label
-                className={`flex items-start gap-2 text-sm ${manualOutTime ? "opacity-50" : ""}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={reopenShift && !manualOutTime}
-                  disabled={Boolean(manualOutTime)}
-                  onChange={(e) => setReopenShift(e.target.checked)}
-                />
-                {manualOutTime
-                  ? "Not used: the clock-out time below closes this shift instead of reopening it."
-                  : "Employee is currently working: reopen today's shift by voiding incorrect automatic clock-outs. Past shifts stay historical."}
-              </label>
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-bold text-foreground mb-1">
-                    Shift Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={manualDate}
-                    onChange={(e) => setManualDate(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-foreground mb-1">
-                    Timezone <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={manualTimezone}
-                    onChange={(e) => setManualTimezone(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-2 py-2 text-xs font-medium"
+              {fixMode === "punch" ? (
+                <>
+                  <label
+                    className={`flex items-start gap-2 text-sm ${manualOutTime ? "opacity-50" : ""}`}
                   >
-                    <option value="Australia/Sydney">🇦🇺 Sydney (AU)</option>
-                    <option value="Asia/Manila">🇵🇭 Philippines (PHT)</option>
-                    <option value="Asia/Kathmandu">🇳🇵 Nepal (NPT)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-foreground mb-1">
-                    Clock-In Time <span className="text-rose-500">*</span>
+                    <input
+                      type="checkbox"
+                      checked={reopenShift && !manualOutTime}
+                      disabled={Boolean(manualOutTime)}
+                      onChange={(e) => setReopenShift(e.target.checked)}
+                    />
+                    {manualOutTime
+                      ? "Not used: the clock-out time below closes this shift instead of reopening it."
+                      : "Employee is currently working: reopen today's shift by voiding incorrect automatic clock-outs. Past shifts stay historical."}
                   </label>
-                  <input
-                    type="time"
-                    value={manualTime}
-                    onChange={(e) => setManualTime(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
-                  />
-                </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Shift Date <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
+                      />
+                    </div>
 
-                <div>
-                  <div className="flex items-baseline justify-between mb-1 gap-2">
-                    <label className="block text-xs font-bold text-foreground">
-                      Clock-Out Time
-                    </label>
-                    {manualOutTime ? (
-                      <button
-                        type="button"
-                        onClick={() => setManualOutTime("")}
-                        className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Timezone <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={manualTimezone}
+                        onChange={(e) => setManualTimezone(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2 py-2 text-xs font-medium"
                       >
-                        Clear
-                      </button>
-                    ) : (
-                      shiftEndSuggestion && (
+                        <option value="Australia/Sydney">🇦🇺 Sydney (AU)</option>
+                        <option value="Asia/Manila">🇵🇭 Philippines (PHT)</option>
+                        <option value="Asia/Kathmandu">🇳🇵 Nepal (NPT)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Clock-In Time <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="time"
+                        value={manualTime}
+                        onChange={(e) => setManualTime(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-baseline justify-between mb-1 gap-2">
+                        <label className="block text-xs font-bold text-foreground">
+                          Clock-Out Time
+                        </label>
+                        {manualOutTime ? (
+                          <button
+                            type="button"
+                            onClick={() => setManualOutTime("")}
+                            className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                          >
+                            Clear
+                          </button>
+                        ) : (
+                          shiftEndSuggestion && (
+                            <button
+                              type="button"
+                              onClick={() => setManualOutTime(shiftEndSuggestion)}
+                              className="text-[10px] font-bold text-primary hover:underline"
+                            >
+                              Use {shiftEndSuggestion}
+                            </button>
+                          )
+                        )}
+                      </div>
+                      <input
+                        type="time"
+                        value={manualOutTime}
+                        onChange={(e) => setManualOutTime(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
+                      />
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {manualOutTime && manualOutTime <= manualTime
+                          ? "Ends next day (overnight shift)."
+                          : "Optional. Leave blank to keep the shift open."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Live 3-Country Time Comparison Helper */}
+                  {manualTime && manualDate && (
+                    <div className="rounded-xl bg-secondary/60 border p-2.5 text-xs space-y-1 animate-in fade-in">
+                      <div className="font-bold text-foreground flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider">
+                          <Clock3 className="h-3 w-3 text-primary" /> Timezone Conversion Preview
+                        </span>
+                        <span className="text-[10px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10">
+                          {manualTime} ({manualTimezone.split("/")[1]})
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px] pt-1">
+                        <div className="p-1.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                            🇦🇺 Sydney
+                          </span>
+                          <span className="font-bold text-foreground text-[11px]">
+                            {formatInTimezone(
+                              zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                              "Australia/Sydney",
+                              { hour: "numeric", minute: "2-digit", hour12: true },
+                            )}
+                          </span>
+                        </div>
+                        <div className="p-1.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                            🇵🇭 Manila
+                          </span>
+                          <span className="font-bold text-foreground text-[11px]">
+                            {formatInTimezone(
+                              zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                              "Asia/Manila",
+                              { hour: "numeric", minute: "2-digit", hour12: true },
+                            )}
+                          </span>
+                        </div>
+                        <div className="p-1.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-sans font-bold">
+                            🇳🇵 Kathmandu
+                          </span>
+                          <span className="font-bold text-foreground text-[11px]">
+                            {formatInTimezone(
+                              zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
+                              "Asia/Kathmandu",
+                              { hour: "numeric", minute: "2-digit", hour12: true },
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-foreground mb-1">
+                      Reason / Notes
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={manualNotes}
+                      onChange={(e) => setManualNotes(e.target.value)}
+                      placeholder="e.g. Forgot to login at start of shift..."
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        First day away <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-foreground mb-1">
+                        Last day{" "}
+                        <span className="font-normal text-muted-foreground">
+                          (if more than one)
+                        </span>
+                      </label>
+                      <input
+                        type="date"
+                        value={leaveThrough}
+                        min={manualDate}
+                        onChange={(e) => setLeaveThrough(e.target.value)}
+                        className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-foreground mb-1">Type</label>
+                    <select
+                      value={leaveKind}
+                      onChange={(e) => setLeaveKind(e.target.value as LeaveMarkKind)}
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                    >
+                      <option value="paid">Paid leave (uses their leave credits)</option>
+                      <option value="unpaid">Unpaid leave</option>
+                      <option value="holiday">Holiday (a day off, uses no leave credits)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-foreground mb-1">
+                      {leaveKind === "holiday" ? "Which holiday?" : "Why are they away?"}{" "}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={leaveReason}
+                      onChange={(e) => setLeaveReason(e.target.value)}
+                      placeholder={
+                        leaveKind === "holiday"
+                          ? "e.g. Independence Day (Philippines)"
+                          : "e.g. Sick, told the client by email"
+                      }
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                    />
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {(leaveKind === "holiday"
+                        ? ["Public holiday"]
+                        : [
+                            "Sick leave",
+                            "Annual leave",
+                            "Emergency",
+                            "Told the client by email / WhatsApp",
+                          ]
+                      ).map((preset) => (
                         <button
+                          key={preset}
                           type="button"
-                          onClick={() => setManualOutTime(shiftEndSuggestion)}
-                          className="text-[10px] font-bold text-primary hover:underline"
+                          onClick={() =>
+                            setLeaveReason((prev) =>
+                              !prev.trim()
+                                ? preset
+                                : prev.includes(preset)
+                                  ? prev
+                                  : `${prev.trim()}, ${preset}`,
+                            )
+                          }
+                          className="rounded-md border bg-secondary/50 px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                         >
-                          Use {shiftEndSuggestion}
+                          + {preset}
                         </button>
-                      )
-                    )}
+                      ))}
+                    </div>
                   </div>
-                  <input
-                    type="time"
-                    value={manualOutTime}
-                    onChange={(e) => setManualOutTime(e.target.value)}
-                    className="w-full rounded-lg border bg-background px-2.5 py-2 text-xs font-medium font-mono"
-                  />
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {manualOutTime && manualOutTime <= manualTime
-                      ? "Ends next day (overnight shift)."
-                      : "Optional. Leave blank to keep the shift open."}
+
+                  <p className="rounded-lg bg-secondary/60 border p-2.5 text-[11px] text-muted-foreground">
+                    {leaveKind === "holiday"
+                      ? "Saved as a holiday for this person: a day off that uses no leave credits and shows as Holiday in reports."
+                      : "Saved as approved leave: it shows as leave on the dashboard and in reports."}{" "}
+                    These days stop showing here as a missing punch or late arrival. If they turn
+                    up, use Revoke Leave on the Leave Requests page: they can then punch in, and
+                    only the hours they work count.
                   </p>
-                </div>
-              </div>
-
-              {/* Live 3-Country Time Comparison Helper */}
-              {manualTime && manualDate && (
-                <div className="rounded-xl bg-secondary/60 border p-2.5 text-xs space-y-1 animate-in fade-in">
-                  <div className="font-bold text-foreground flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider">
-                      <Clock3 className="h-3 w-3 text-primary" /> Timezone Conversion Preview
-                    </span>
-                    <span className="text-[10px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/10">
-                      {manualTime} ({manualTimezone.split("/")[1]})
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px] pt-1">
-                    <div className="p-1.5 rounded-lg border bg-card/60">
-                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇦🇺 Sydney
-                      </span>
-                      <span className="font-bold text-foreground text-[11px]">
-                        {formatInTimezone(
-                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
-                          "Australia/Sydney",
-                          { hour: "numeric", minute: "2-digit", hour12: true },
-                        )}
-                      </span>
-                    </div>
-                    <div className="p-1.5 rounded-lg border bg-card/60">
-                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇵🇭 Manila
-                      </span>
-                      <span className="font-bold text-foreground text-[11px]">
-                        {formatInTimezone(
-                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
-                          "Asia/Manila",
-                          { hour: "numeric", minute: "2-digit", hour12: true },
-                        )}
-                      </span>
-                    </div>
-                    <div className="p-1.5 rounded-lg border bg-card/60">
-                      <span className="text-[10px] text-muted-foreground block font-sans font-bold">
-                        🇳🇵 Kathmandu
-                      </span>
-                      <span className="font-bold text-foreground text-[11px]">
-                        {formatInTimezone(
-                          zonedDateTimeToDate(manualDate, manualTime, manualTimezone),
-                          "Asia/Kathmandu",
-                          { hour: "numeric", minute: "2-digit", hour12: true },
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                </>
               )}
-
-              <div>
-                <label className="block text-xs font-bold text-foreground mb-1">
-                  Reason / Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                  placeholder="e.g. Forgot to login at start of shift..."
-                  className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
-                />
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t shrink-0">
@@ -875,14 +1087,18 @@ function LateArrivalsPage() {
               <button
                 type="button"
                 disabled={submittingManual}
-                onClick={saveManualClockIn}
+                onClick={fixMode === "punch" ? saveManualClockIn : saveLeaveMark}
                 className="btn-lift rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
               >
                 {submittingManual
                   ? "Saving..."
-                  : manualOutTime
-                    ? "Save Clock-In & Clock-Out"
-                    : "Save Manual Clock-In"}
+                  : fixMode === "leave"
+                    ? leaveKind === "holiday"
+                      ? "Mark Holiday"
+                      : "Mark On Leave"
+                    : manualOutTime
+                      ? "Save Clock-In & Clock-Out"
+                      : "Save Manual Clock-In"}
               </button>
             </div>
           </div>

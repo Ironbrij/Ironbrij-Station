@@ -8,6 +8,7 @@ import {
   type Punch,
 } from "./types.ts";
 import { toDate, toMillis } from "./time.ts";
+import { isHolidayLeave } from "./leave-marking.ts";
 import {
   getEmployeeCompanyIds,
   getEmployeeForCompany,
@@ -178,6 +179,7 @@ export function getEmployeeApprovedLeaveDates(
 }
 
 export function getLeaveLabel(leave: LeaveRequest | null | undefined): string {
+  if (isHolidayLeave(leave)) return "Holiday";
   if (!leave?.leaveType || leave.leaveType === "full_day") return "On leave";
   if (leave.leaveType === "half_day")
     return leave.halfDayPeriod === "second_half"

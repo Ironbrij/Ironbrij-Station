@@ -593,12 +593,15 @@ function LeaveRequestsPage() {
                     <dd className="mt-0.5 font-medium text-foreground">{leaveTypeLabel(leave)}</dd>
                     <dd className="text-xs text-muted-foreground">{leaveTimeDetail(leave)}</dd>
                     <dd className="mt-1 text-xs font-semibold text-foreground">
-                      {(leave.leaveCategory || "other").replace("_", " ")} ·{" "}
-                      {leave.paymentStatus === "unpaid"
-                        ? "Unpaid"
-                        : leave.paymentStatus === "paid"
-                          ? "Paid"
-                          : "Not classified"}
+                      {leave.leaveCategory === "holiday"
+                        ? "Holiday (day off, no leave credits used)"
+                        : `${(leave.leaveCategory || "other").replace("_", " ")} · ${
+                            leave.paymentStatus === "unpaid"
+                              ? "Unpaid"
+                              : leave.paymentStatus === "paid"
+                                ? "Paid"
+                                : "Not classified"
+                          }`}
                     </dd>
                   </div>
                   <div className="sm:col-span-2 lg:col-span-1">

@@ -74,6 +74,27 @@ test("a leave that is not approved is never sent to the team", async () => {
   assert.equal(posts.length, 0);
 });
 
+test("leave marked from the late log tells nobody, approved or revoked", async () => {
+  for (const [event, status] of [
+    ["approved", "approved"],
+    ["revoked", "rejected"],
+  ] as const) {
+    const { posts, fetchImpl } = recordingFetch();
+    const result = await sendLeaveTeamNotice({
+      event,
+      leaveRequestId: "l1",
+      leave: { ...leave, status, markedFromLateLog: true },
+      employees,
+      departments,
+      company: { name: "Ironbrij" },
+      appUrl: "https://station.example.com",
+      fetchImpl,
+    });
+    assert.deepEqual(result, { ok: true, sent: 0 }, event);
+    assert.equal(posts.length, 0, event);
+  }
+});
+
 test("the MCP path reads people and teams with the server key, then sends", async () => {
   const toDocs = (collection: string, rows: Record<string, string>[]) =>
     new Response(

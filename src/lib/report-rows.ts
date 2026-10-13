@@ -11,6 +11,7 @@ import { toDate, toMillis } from "./time.ts";
 import { formatWorkMinutes } from "./attendance-calculation.ts";
 import { buildAttendanceSessions, type AttendanceSession } from "./attendance-sessions.ts";
 import { computeLeaveCreditBalance, leaveDayHours } from "./leave-credits.ts";
+import { isHolidayLeave } from "./leave-marking.ts";
 import { formatCovered, formatDaysAndHours, formatHours, formatShortDate } from "./report-format.ts";
 import { getShiftIntervals } from "./shift-clients.ts";
 import { overtimeRemarkLine, totalsFromDays } from "./report-edits.ts";
@@ -347,8 +348,19 @@ export function buildReportRows({
           .reverse()
           .find((session) => session.end?.type === "out")?.end;
 
-        const approvedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
-        const holiday = getEmployeeHoliday(holidayCalendar, employee, date);
+        const markedLeave = getEmployeeApprovedLeaveForDate(employee, employeeLeaves, date);
+        // A holiday marked for this person reads as the holiday it is, not as leave taken.
+        const approvedLeave = isHolidayLeave(markedLeave) ? null : markedLeave;
+        const holiday =
+          getEmployeeHoliday(holidayCalendar, employee, date) ??
+          (markedLeave && !approvedLeave
+            ? {
+                id: `marked-${date}`,
+                date,
+                name: markedLeave.reason?.trim() || "Holiday",
+                targetType: "employees" as const,
+              }
+            : null);
         const [shiftYear, shiftMonth, shiftDay] = date.split("-").map(Number);
         const shiftWeekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
         const effectiveWorkingDays = getEffectiveEmployeeWorkingDays(
