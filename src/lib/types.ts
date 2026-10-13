@@ -307,7 +307,7 @@ export interface LeaveDayItem {
   date: string; // YYYY-MM-DD
   leaveType?: "full_day" | "half_day" | "timed_break";
   paymentStatus?: "paid" | "unpaid";
-  leaveCategory?: "annual" | "sick" | "personal" | "other";
+  leaveCategory?: "annual" | "sick" | "personal" | "other" | "holiday";
   halfDayPeriod?: "first_half" | "second_half";
   startTime?: string;
   endTime?: string;
@@ -318,7 +318,7 @@ export interface LeaveRequest {
   id: string;
   employeeId: string;
   companyId?: string; // Optional only for historical requests
-  leaveCategory?: "annual" | "sick" | "personal" | "other";
+  leaveCategory?: "annual" | "sick" | "personal" | "other" | "holiday";
   paymentStatus?: "paid" | "unpaid";
   remarks?: string;
   leaveType?: "full_day" | "half_day" | "timed_break";
@@ -335,6 +335,11 @@ export interface LeaveRequest {
   decidedBy?: string;
   decisionSource?: "admin" | "automatic";
   decisionReason?: string;
+  /**
+   * Recorded by an admin from the late log for a day already gone. The team and
+   * clients were never told about it, so approving or revoking it tells nobody.
+   */
+  markedFromLateLog?: boolean;
 }
 
 export interface PunchOutReminder {

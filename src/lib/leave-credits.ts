@@ -1,4 +1,5 @@
 import type { Employee, LeaveDayItem, LeaveRequest } from "./types.ts";
+import { isHolidayLeave } from "./leave-marking.ts";
 
 export interface LeaveCreditBalance {
   /** Paid leave days the employee is given for the year. */
@@ -74,6 +75,8 @@ export function computeLeaveCreditBalance(
   for (const leave of leaves) {
     if (leave.status !== "approved") continue;
     if (leave.employeeId !== employee.id && leave.employeeId !== employee.authUid) continue;
+    // A holiday marked for someone is a day off, not leave taken.
+    if (isHolidayLeave(leave)) continue;
 
     if (Array.isArray(leave.dates) && leave.dates.length > 0) {
       for (const day of leave.dates) {
