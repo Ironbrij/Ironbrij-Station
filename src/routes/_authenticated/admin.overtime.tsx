@@ -401,7 +401,7 @@ function AdminOvertimePage() {
               <button
                 onClick={handleApproveAllPending}
                 disabled={bulkProcessing}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 dark:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 dark:hover:bg-emerald-800 transition-all disabled:opacity-50"
                 title="Approve all pending overtime requests"
               >
                 <UserCheck className="h-3.5 w-3.5" />
@@ -595,7 +595,7 @@ function AdminOvertimePage() {
                               <button
                                 onClick={() => handleDecision(req.id, "approved")}
                                 disabled={processingId === req.id}
-                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all disabled:opacity-50"
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 dark:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 dark:hover:bg-emerald-800 transition-all disabled:opacity-50"
                               >
                                 <UserCheck className="h-3.5 w-3.5" /> Accept
                               </button>

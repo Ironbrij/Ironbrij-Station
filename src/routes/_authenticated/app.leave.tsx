@@ -625,7 +625,7 @@ function LeavePage() {
                           <button
                             type="button"
                             onClick={() => handleRemoveCustomDate(item.date)}
-                            className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
+                            className="p-1 rounded text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -752,7 +752,7 @@ function LeavePage() {
                         <button
                           type="button"
                           onClick={() => cancelLeaveRequest(leave.id)}
-                          className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
+                          className="rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 text-[11px] font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/40"
                         >
                           Cancel
                         </button>
@@ -790,8 +790,8 @@ function LeavePage() {
 
 function StatusIcon({ status }: { status: LeaveRequest["status"] }) {
   const style = {
-    pending: "bg-amber-500 text-slate-950 shadow-2xs",
-    approved: "bg-emerald-600 text-white shadow-2xs",
+    pending: "bg-amber-500 dark:bg-amber-900 text-slate-950 dark:text-slate-300 shadow-2xs",
+    approved: "bg-emerald-600 dark:bg-emerald-700 text-white shadow-2xs",
     rejected: "bg-rose-600 text-white shadow-2xs",
   }[status];
   const Icon = status === "approved" ? CheckCircle2 : status === "rejected" ? XCircle : Clock3;
@@ -812,8 +812,8 @@ function ActivityCount({
   tone: "amber" | "emerald" | "rose";
 }) {
   const style = {
-    amber: "bg-amber-500 text-slate-950 font-bold shadow-2xs",
-    emerald: "bg-emerald-600 text-white font-bold shadow-2xs",
+    amber: "bg-amber-500 dark:bg-amber-900 text-slate-950 dark:text-slate-300 font-bold shadow-2xs",
+    emerald: "bg-emerald-600 dark:bg-emerald-700 text-white font-bold shadow-2xs",
     rose: "bg-rose-600 text-white font-bold shadow-2xs",
   }[tone];
   return (
@@ -827,12 +827,12 @@ function StatusBadge({ status }: { status: LeaveRequest["status"] }) {
   const map = {
     pending: { bg: "var(--sky-soft)", fg: "var(--primary)", label: "Pending" },
     approved: {
-      bg: "color-mix(in oklab, var(--status-in) 20%, white)",
+      bg: "color-mix(in oklab, var(--status-in) 20%, var(--background))",
       fg: "var(--status-in)",
       label: "Approved",
     },
     rejected: {
-      bg: "color-mix(in oklab, var(--status-out) 20%, white)",
+      bg: "color-mix(in oklab, var(--status-out) 20%, var(--background))",
       fg: "var(--status-out)",
       label: "Rejected",
     },

@@ -236,18 +236,18 @@ function UsersPage() {
                             Owner / Admin
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-500/10 text-slate-500 dark:text-slate-300 border border-slate-500/20">
                             Member User
                           </span>
                         )}
                       </td>
                       <td className="p-3.5">
                         {existingEmp ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20">
                             <UserCheck className="h-3 w-3" /> Official Employee
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-500 border border-slate-500/20">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-500 dark:text-slate-300 border border-slate-500/20">
                             Registered User Only
                           </span>
                         )}
@@ -258,7 +258,7 @@ function UsersPage() {
                             onClick={() => toggleAdmin(u)}
                             className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                               isOwner
-                                ? "border-rose-200 text-rose-700 hover:bg-rose-50"
+                                ? "border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                                 : "text-foreground hover:bg-muted"
                             }`}
                           >

@@ -267,10 +267,10 @@ export function DaylightSavingCard({
                   <span
                     className={`rounded-full px-2 py-0.5 font-bold ${
                       answer.decision === "follow"
-                        ? "bg-cyan-500/15 text-cyan-800"
+                        ? "bg-cyan-500/15 text-cyan-800 dark:text-cyan-300"
                         : answer.decision === "keep"
-                          ? "bg-violet-500/15 text-violet-800"
-                          : "bg-amber-500/15 text-amber-700"
+                          ? "bg-violet-500/15 text-violet-800 dark:text-violet-300"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                     }`}
                   >
                     {answer.decision === "follow"

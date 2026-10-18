@@ -1366,7 +1366,7 @@ function ReportsPage() {
       {syncError && (
         <div
           role="status"
-          className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900"
+          className="flex items-start gap-2 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-xs font-semibold text-amber-900 dark:text-amber-300"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{syncError}</span>
@@ -1517,7 +1517,7 @@ function ReportsPage() {
 
                 <button
                   onClick={openSendEmailModal}
-                  className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition"
+                  className="rounded-md bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-800 text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition"
                 >
                   <Mail className="h-4 w-4" /> Send Report to Them
                 </button>
@@ -1556,18 +1556,18 @@ function ReportsPage() {
 
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            <Clock className="h-3.5 w-3.5 text-sky-600" /> Regular Hours
+            <Clock className="h-3.5 w-3.5 text-sky-600 dark:text-sky-300" /> Regular Hours
           </div>
-          <div className="mt-1 text-2xl font-black text-sky-600">
+          <div className="mt-1 text-2xl font-black text-sky-600 dark:text-sky-300">
             {reportTotals.totalHours.toFixed(1)}h
           </div>
         </div>
 
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Accepted Overtime
+            <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" /> Accepted Overtime
           </div>
-          <div className="mt-1 text-2xl font-black text-amber-600">
+          <div className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-300">
             {reportTotals.totalOvertime > 0 ? `+${reportTotals.totalOvertime.toFixed(1)}h` : "0.0h"}
           </div>
         </div>
@@ -1576,7 +1576,7 @@ function ReportsPage() {
           <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Paid Leave Used
           </div>
-          <div className="mt-1 text-2xl font-black text-emerald-600">
+          <div className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-300">
             {reportTotals.totalPaidLeave}d
           </div>
         </div>
@@ -1585,7 +1585,7 @@ function ReportsPage() {
           <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Unpaid Leave Used
           </div>
-          <div className="mt-1 text-2xl font-black text-rose-600">
+          <div className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-300">
             {reportTotals.totalUnpaidLeave}d
           </div>
         </div>
@@ -1677,7 +1677,7 @@ function ReportsPage() {
                         onClick={() => handleToggleWorked(row.id)}
                         className={`h-7 w-7 rounded-md inline-flex items-center justify-center font-bold transition ${
                           row.worked
-                            ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                            ? "bg-emerald-600 dark:bg-emerald-700 text-white hover:bg-emerald-700 dark:hover:bg-emerald-800 shadow-sm"
                             : "bg-muted text-muted-foreground border hover:border-foreground"
                         }`}
                         title={
@@ -1713,7 +1713,7 @@ function ReportsPage() {
                       )}
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5 px-2 text-[10px] font-bold">
                         <span
-                          className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold shadow-2xs"
+                          className="px-2 py-0.5 rounded-full bg-emerald-600 dark:bg-emerald-700 text-white font-bold shadow-2xs"
                           title="Days Worked"
                         >
                           {row.workedDays || 0}d worked
@@ -1773,7 +1773,7 @@ function ReportsPage() {
                             )
                           }
                           onBlur={saveReportEdits}
-                          className="w-full text-right font-bold text-sky-700 text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
+                          className="w-full text-right font-bold text-sky-700 dark:text-sky-300 text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                         />
                         <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
                           h
@@ -1798,7 +1798,7 @@ function ReportsPage() {
                           }
                           onBlur={saveReportEdits}
                           className={`w-full text-right font-bold text-xs px-2 py-1.5 pr-6 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
-                            row.overtimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
+                            row.overtimeHours > 0 ? "text-amber-600 dark:text-amber-300" : "text-muted-foreground"
                           }`}
                         />
                         <span className="absolute right-2 text-[11px] font-semibold text-muted-foreground pointer-events-none">
@@ -1848,7 +1848,7 @@ function ReportsPage() {
                         placeholder="e.g. 2.5 Days (20 hours)"
                         onChange={(e) => handleUpdateLeaveUsed(row.id, "paid", e.target.value)}
                         onBlur={saveReportEdits}
-                        className="w-full text-center font-bold text-emerald-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
+                        className="w-full text-center font-bold text-emerald-700 dark:text-emerald-300 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
 
@@ -1860,7 +1860,7 @@ function ReportsPage() {
                         placeholder="e.g. 1 Day (8 hours)"
                         onChange={(e) => handleUpdateLeaveUsed(row.id, "unpaid", e.target.value)}
                         onBlur={saveReportEdits}
-                        className="w-full text-center font-bold text-rose-700 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
+                        className="w-full text-center font-bold text-rose-700 dark:text-rose-300 text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition"
                       />
                     </td>
 
@@ -1876,8 +1876,8 @@ function ReportsPage() {
                         onBlur={saveReportEdits}
                         className={`w-full text-center font-bold text-xs px-2 py-1.5 rounded border border-dashed border-border hover:border-primary/60 focus:border-solid focus:border-primary bg-background/40 focus:bg-background outline-none transition ${
                           row.availableLeaveCredit.trim().startsWith("-")
-                            ? "text-rose-700"
-                            : "text-teal-700"
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-teal-700 dark:text-teal-300"
                         }`}
                       />
                     </td>
@@ -1911,7 +1911,7 @@ function ReportsPage() {
                       <button
                         type="button"
                         onClick={() => handleDeleteRow(row.id)}
-                        className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition"
+                        className="p-1 rounded text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-500/10 transition"
                         title="Remove person from report"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1982,10 +1982,10 @@ function ReportsPage() {
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-bold ${
                           row.isAutoPunchOut
-                            ? "bg-sky-500/10 text-sky-700"
+                            ? "bg-sky-500/10 text-sky-700 dark:text-sky-300"
                             : row.minutesLate
-                              ? "bg-amber-500/10 text-amber-700"
-                              : "bg-emerald-500/10 text-emerald-700"
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                              : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                         }`}
                       >
                         {row.status}
@@ -2089,7 +2089,7 @@ function ReportsPage() {
                     )
                   }
                   onBlur={saveReportEdits}
-                  className={`${PANEL_FIELD_CLASS} text-sky-700`}
+                  className={`${PANEL_FIELD_CLASS} text-sky-700 dark:text-sky-300`}
                 />
               </label>
               <label className="rounded-lg border bg-card p-2.5">
@@ -2109,14 +2109,14 @@ function ReportsPage() {
                     )
                   }
                   onBlur={saveReportEdits}
-                  className={`${PANEL_FIELD_CLASS} text-amber-600`}
+                  className={`${PANEL_FIELD_CLASS} text-amber-600 dark:text-amber-300`}
                 />
               </label>
               <div className="rounded-lg border bg-card p-2.5">
                 <span className="block text-[10px] font-bold uppercase text-muted-foreground">
                   Pending Overtime
                 </span>
-                <div className="mt-1 px-2 py-1 text-sm font-black text-rose-600">
+                <div className="mt-1 px-2 py-1 text-sm font-black text-rose-600 dark:text-rose-300">
                   {formatAmount(selectedIntervalEmployee.pendingOvertimeHours)}h
                 </div>
               </div>
@@ -2132,7 +2132,7 @@ function ReportsPage() {
                     handleUpdateLeaveUsed(selectedIntervalEmployee.id, "paid", e.target.value)
                   }
                   onBlur={saveReportEdits}
-                  className={`${PANEL_FIELD_CLASS} text-emerald-700`}
+                  className={`${PANEL_FIELD_CLASS} text-emerald-700 dark:text-emerald-300`}
                 />
               </label>
               <label className="rounded-lg border bg-card p-2.5">
@@ -2147,7 +2147,7 @@ function ReportsPage() {
                     handleUpdateLeaveUsed(selectedIntervalEmployee.id, "unpaid", e.target.value)
                   }
                   onBlur={saveReportEdits}
-                  className={`${PANEL_FIELD_CLASS} text-rose-700`}
+                  className={`${PANEL_FIELD_CLASS} text-rose-700 dark:text-rose-300`}
                 />
               </label>
               <label className="rounded-lg border bg-card p-2.5">
@@ -2168,8 +2168,8 @@ function ReportsPage() {
                   onBlur={saveReportEdits}
                   className={`${PANEL_FIELD_CLASS} ${
                     selectedIntervalEmployee.availableLeaveCredit.trim().startsWith("-")
-                      ? "text-rose-700"
-                      : "text-teal-700"
+                      ? "text-rose-700 dark:text-rose-300"
+                      : "text-teal-700 dark:text-teal-300"
                   }`}
                 />
               </label>
@@ -2272,7 +2272,7 @@ function ReportsPage() {
                       <td className="p-2.5">
                         {day.isMissingPunchOut ? (
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-rose-600 font-bold flex items-center gap-1">
+                            <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold flex items-center gap-1">
                               <AlertTriangle className="h-3 w-3" /> Missed Out
                             </span>
                             <button
@@ -2280,7 +2280,7 @@ function ReportsPage() {
                               onClick={() =>
                                 handleFixMissedPunchOut(selectedIntervalEmployee.id, day.date)
                               }
-                              className="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] hover:opacity-90 shadow-sm"
+                              className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-bold text-[10px] hover:opacity-90 shadow-sm"
                               title="Set shift end punch-out time"
                             >
                               Fix End
@@ -2319,7 +2319,7 @@ function ReportsPage() {
                           </span>
                         ) : day.unloggedBreakMinutes > 0 ? (
                           <span
-                            className="font-semibold text-amber-600"
+                            className="font-semibold text-amber-600 dark:text-amber-300"
                             title="No break was punched, so the shift's break allowance was deducted"
                           >
                             {formatWorkMinutes(day.unloggedBreakMinutes)}
@@ -2345,7 +2345,7 @@ function ReportsPage() {
                             })
                           }
                           onBlur={saveReportEdits}
-                          className="w-16 text-right font-bold text-sky-700 px-1.5 py-1 rounded border bg-background text-xs"
+                          className="w-16 text-right font-bold text-sky-700 dark:text-sky-300 px-1.5 py-1 rounded border bg-background text-xs"
                         />
                       </td>
 
@@ -2370,7 +2370,7 @@ function ReportsPage() {
                           }}
                           onBlur={saveReportEdits}
                           className={`w-16 text-right font-bold px-1.5 py-1 rounded border bg-background text-xs ${
-                            day.rawOvertimeHours > 0 ? "text-amber-600" : "text-muted-foreground"
+                            day.rawOvertimeHours > 0 ? "text-amber-600 dark:text-amber-300" : "text-muted-foreground"
                           }`}
                         />
                       </td>
@@ -2378,17 +2378,17 @@ function ReportsPage() {
                       {/* Overtime Status */}
                       <td className="p-2.5 text-center">
                         {day.overtimeStatus === "approved" || day.isOvertimeApproved ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-2xs">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 dark:bg-emerald-700 text-white shadow-2xs">
                             <Check className="h-3 w-3" /> Approved
                           </span>
                         ) : day.overtimeStatus === "rejected" || day.isOvertimeRejected ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shadow-2xs">
-                            <XCircle className="h-3 w-3 text-rose-600" /> Rejected
+                            <XCircle className="h-3 w-3 text-rose-600 dark:text-rose-300" /> Rejected
                           </span>
                         ) : day.overtimeStatus === "pending" || day.rawOvertimeHours > 0 ? (
                           <Link
                             to="/admin/overtime"
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition"
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 dark:bg-amber-900 hover:bg-amber-600 dark:hover:bg-amber-950 text-slate-950 dark:text-slate-300 shadow-2xs transition"
                             title="Click to review in Overtime tab"
                           >
                             <ClockAlert className="h-3 w-3" /> Pending in OT Tab →
@@ -2432,19 +2432,19 @@ function ReportsPage() {
                       <td colSpan={5} className="p-2.5 text-right text-muted-foreground">
                         Days add up to
                       </td>
-                      <td className="p-2.5 text-right text-sky-700">
+                      <td className="p-2.5 text-right text-sky-700 dark:text-sky-300">
                         {formatAmount(selectedDayTotals.regularHours)}h
                       </td>
-                      <td className="p-2.5 text-right text-amber-600">
+                      <td className="p-2.5 text-right text-amber-600 dark:text-amber-300">
                         {formatAmount(selectedDayTotals.overtimeHours)}h
                       </td>
                       <td colSpan={2} className="p-2.5 text-[11px] font-semibold">
                         {selectedDayTotals.regularHours === selectedIntervalEmployee.regularHours &&
                         selectedDayTotals.overtimeHours ===
                           selectedIntervalEmployee.overtimeHours ? (
-                          <span className="text-emerald-700">Same as the report row.</span>
+                          <span className="text-emerald-700 dark:text-emerald-300">Same as the report row.</span>
                         ) : (
-                          <span className="text-amber-700">
+                          <span className="text-amber-700 dark:text-amber-300">
                             The report row was typed over:{" "}
                             {formatAmount(selectedIntervalEmployee.regularHours)}h worked,{" "}
                             {formatAmount(selectedIntervalEmployee.overtimeHours)}h overtime.
@@ -2561,7 +2561,7 @@ function ReportsPage() {
                     max="24"
                     value={customDayRegularHours}
                     onChange={(e) => setCustomDayRegularHours(parseFloat(e.target.value) || 0)}
-                    className="w-full rounded-lg border bg-background px-3 py-2 font-bold text-sky-700"
+                    className="w-full rounded-lg border bg-background px-3 py-2 font-bold text-sky-700 dark:text-sky-300"
                   />
                 </div>
                 <div>
@@ -2645,7 +2645,7 @@ function ReportsPage() {
           <div className="rounded-2xl border bg-card max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b bg-secondary/30 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
+                <div className="h-9 w-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 flex items-center justify-center font-bold">
                   <Mail className="h-5 w-5" />
                 </div>
                 <div>
@@ -2668,7 +2668,7 @@ function ReportsPage() {
             <div className="p-5 space-y-4 overflow-y-auto flex-1 text-sm">
               <div>
                 <label className="block text-xs font-bold text-foreground mb-1">
-                  Recipient Email(s) <span className="text-rose-500">*</span>
+                  Recipient Email(s) <span className="text-rose-500 dark:text-rose-300">*</span>
                 </label>
                 <EmailChipsInput
                   value={recipientEmails}
@@ -2747,7 +2747,7 @@ function ReportsPage() {
                       <RotateCcw className="h-3 w-3" /> Rewrite from report
                     </button>
                   ) : (
-                    <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-300 flex items-center gap-1">
                       <Sparkles className="h-3 w-3" /> Written from the report
                     </span>
                   )}
@@ -2785,7 +2785,7 @@ function ReportsPage() {
                       Subject: {emailSubject}
                     </div>
                     {coverNote.trim() && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg whitespace-pre-wrap">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300 rounded-lg whitespace-pre-wrap">
                         {coverNote}
                       </div>
                     )}
@@ -2800,7 +2800,7 @@ function ReportsPage() {
                         <div className="text-[10px] text-muted-foreground uppercase font-bold">
                           Reg Hours
                         </div>
-                        <div className="font-black text-sm text-sky-600">
+                        <div className="font-black text-sm text-sky-600 dark:text-sky-300">
                           {reportTotals.totalHours.toFixed(1)}h
                         </div>
                       </div>
@@ -2808,7 +2808,7 @@ function ReportsPage() {
                         <div className="text-[10px] text-muted-foreground uppercase font-bold">
                           Accepted OT
                         </div>
-                        <div className="font-black text-sm text-amber-600">
+                        <div className="font-black text-sm text-amber-600 dark:text-amber-300">
                           +{reportTotals.totalOvertime.toFixed(1)}h
                         </div>
                       </div>
@@ -2816,7 +2816,7 @@ function ReportsPage() {
                         <div className="text-[10px] text-muted-foreground uppercase font-bold">
                           Leaves
                         </div>
-                        <div className="font-black text-sm text-emerald-600">
+                        <div className="font-black text-sm text-emerald-600 dark:text-emerald-300">
                           {reportTotals.totalPaidLeave + reportTotals.totalUnpaidLeave}d
                         </div>
                       </div>
@@ -2859,10 +2859,10 @@ function ReportsPage() {
                                 <td className="p-2 text-muted-foreground">
                                   {row.role} · {row.department}
                                 </td>
-                                <td className="p-2 text-right font-bold text-sky-600">
+                                <td className="p-2 text-right font-bold text-sky-600 dark:text-sky-300">
                                   {Number(row.regularHours).toFixed(1)}h
                                 </td>
-                                <td className="p-2 text-right font-bold text-amber-600 whitespace-nowrap">
+                                <td className="p-2 text-right font-bold text-amber-600 dark:text-amber-300 whitespace-nowrap">
                                   {row.overtimeHours > 0
                                     ? `+${Number(row.overtimeHours).toFixed(1)}h`
                                     : "—"}
@@ -2906,7 +2906,7 @@ function ReportsPage() {
                 type="button"
                 disabled={isSendingEmail}
                 onClick={handleSendReportEmail}
-                className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
+                className="px-5 py-2 rounded-lg bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
               >
                 {isSendingEmail ? (
                   <>Sending Report…</>
@@ -2940,7 +2940,7 @@ function ReportsPage() {
             <div className="space-y-3 text-sm">
               <div>
                 <label className="block text-xs font-bold text-muted-foreground mb-1">
-                  Employee / V.A. Name <span className="text-rose-500">*</span>
+                  Employee / V.A. Name <span className="text-rose-500 dark:text-rose-300">*</span>
                 </label>
                 <input
                   type="text"

@@ -25,21 +25,21 @@ export const attendanceStatusLabels: Record<AttendanceLogStatus, string> = {
   review: "Check punch-out",
 };
 const statusAppearance: Record<AttendanceLogStatus, { classes: string; icon: LucideIcon }> = {
-  working: { classes: "border-emerald-700 bg-emerald-700 text-white", icon: LogIn },
-  break: { classes: "border-amber-300 bg-amber-100 text-amber-950", icon: Coffee },
-  completed: { classes: "border-slate-300 bg-slate-200 text-slate-800", icon: LogOut },
-  missing: { classes: "border-rose-300 bg-rose-100 text-rose-900", icon: CircleX },
-  upcoming: { classes: "border-sky-200 bg-sky-50 text-sky-900", icon: Clock3 },
-  leave: { classes: "border-violet-300 bg-violet-100 text-violet-900", icon: CalendarDays },
-  off: { classes: "border-dashed border-slate-300 bg-slate-50 text-slate-600", icon: Moon },
-  review: { classes: "border-orange-300 bg-orange-100 text-orange-950", icon: TriangleAlert },
+  working: { classes: "border-emerald-700 bg-emerald-700 dark:bg-emerald-700 text-white", icon: LogIn },
+  break: { classes: "border-amber-300 dark:border-amber-800 bg-amber-100 dark:bg-amber-950/40 text-amber-950 dark:text-amber-300", icon: Coffee },
+  completed: { classes: "border-slate-300 dark:border-border bg-slate-200 dark:bg-muted text-slate-800 dark:text-slate-300", icon: LogOut },
+  missing: { classes: "border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300", icon: CircleX },
+  upcoming: { classes: "border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 text-sky-900 dark:text-sky-300", icon: Clock3 },
+  leave: { classes: "border-violet-300 dark:border-violet-800 bg-violet-100 dark:bg-violet-950/40 text-violet-900 dark:text-violet-300", icon: CalendarDays },
+  off: { classes: "border-dashed border-slate-300 dark:border-border bg-slate-50 dark:bg-muted text-slate-600 dark:text-slate-300", icon: Moon },
+  review: { classes: "border-orange-300 dark:border-orange-800 bg-orange-100 dark:bg-orange-950/40 text-orange-950 dark:text-orange-300", icon: TriangleAlert },
 };
 function AttendanceStatusBadge({ status, ready }: { status: AttendanceLogStatus; ready: boolean }) {
   const appearance = statusAppearance[status];
   const Icon = ready ? appearance.icon : RefreshCw;
   return (
     <span
-      className={`mt-2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${ready ? appearance.classes : "border-slate-200 bg-slate-50 text-slate-500"}`}
+      className={`mt-2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${ready ? appearance.classes : "border-slate-200 dark:border-border bg-slate-50 dark:bg-muted text-slate-500 dark:text-slate-300"}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} aria-hidden="true" />
       {ready ? attendanceStatusLabels[status] : "Syncing"}
@@ -71,7 +71,7 @@ export function AttendanceLogTable({
           Attendance by employee and client. Hours exclude breaks. Times use the timezone shown in
           each schedule.
         </caption>
-        <thead className="border-y bg-slate-50 text-xs font-medium text-slate-500">
+        <thead className="border-y bg-slate-50 dark:bg-muted text-xs font-medium text-slate-500 dark:text-slate-300">
           <tr>
             {[
               "Date",
@@ -99,7 +99,7 @@ export function AttendanceLogTable({
           {rows.map((row) => (
             <tr
               key={row.id}
-              className={`transition-colors ${ready && row.status === "working" ? "bg-emerald-50/60 hover:bg-emerald-50" : "bg-background hover:bg-slate-50/70"}`}
+              className={`transition-colors ${ready && row.status === "working" ? "bg-emerald-50/60 dark:bg-emerald-950/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/40" : "bg-background hover:bg-slate-50/70 dark:hover:bg-muted"}`}
             >
               <td
                 className={`whitespace-nowrap border-l-4 px-4 py-3 text-xs tabular-nums text-muted-foreground ${ready && row.status === "working" ? "border-l-emerald-600" : "border-l-transparent"}`}
@@ -153,20 +153,20 @@ export function AttendanceLogTable({
                   <span className="mt-1 block text-[10px] text-muted-foreground">Automatic</span>
                 )}
                 {ready && (row.status === "working" || row.status === "break") && (
-                  <span className="mt-1 block text-[10px] text-emerald-700">Open shift</span>
+                  <span className="mt-1 block text-[10px] text-emerald-700 dark:text-emerald-300">Open shift</span>
                 )}
               </td>
               <td className="px-4 py-3 text-right tabular-nums font-medium">
                 {ready && row.hours !== null ? row.hours.toFixed(2) : "—"}
               </td>
               <td
-                className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${ready && row.lateMinutes > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}`}
+                className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${ready && row.lateMinutes > 0 ? "font-semibold text-rose-600 dark:text-rose-300" : "text-muted-foreground"}`}
               >
                 {!ready || !row.timeIn ? (
                   "—"
                 ) : row.excused ? (
                   <span
-                    className="text-emerald-700"
+                    className="text-emerald-700 dark:text-emerald-300"
                     title={row.excuseReason || "Marked not late by an admin"}
                   >
                     Excused

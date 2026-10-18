@@ -69,7 +69,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   return <Context.Provider value={state}>
-    {state.message && <div role="status" className="border-b bg-amber-50 px-4 py-3 text-sm text-amber-950">
+    {state.message && <div role="status" className="border-b bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-950 dark:text-amber-200">
       {state.message}{state.refreshRequired && <button className="ml-3 font-semibold underline" onClick={() => location.reload()}>Refresh app</button>}
     </div>}
     {children}

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth, firebaseConfigured } from "@/lib/firebase";
 import { toast } from "sonner";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -65,7 +66,10 @@ function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-background to-sky-soft">
       <div className="w-full max-w-sm rounded-xl border bg-card p-8 shadow-lift">
-        <h1 className="text-2xl font-bold text-primary">SavyTime</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-2xl font-bold text-primary">SavyTime</h1>
+          <ThemeToggle />
+        </div>
         <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
 
         <button

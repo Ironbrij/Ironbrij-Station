@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -35,6 +36,7 @@
 }
 
 :root {
+  color-scheme: light;
   --radius: 0.625rem;
   /* White canvas, dark blue primary, sky blue accent */
   --background: oklch(1 0 0);
@@ -61,6 +63,53 @@
   --status-in: oklch(0.65 0.17 145);
   --status-out: oklch(0.62 0.22 27);
   --status-leave: oklch(0.72 0.02 250);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #141a22;
+  --foreground: #dce3ec;
+  --card: #1c2430;
+  --card-foreground: #dce3ec;
+  --popover: #222c39;
+  --popover-foreground: #dce3ec;
+  --primary: #9bbff0;
+  --primary-foreground: #142238;
+  --secondary: #283445;
+  --secondary-foreground: #dce3ec;
+  --muted: #263140;
+  --muted-foreground: #aab7c8;
+  --accent: #30445b;
+  --accent-foreground: #e0ebf8;
+  --destructive: #f2939b;
+  --destructive-foreground: #38151b;
+  --border: #3d4d62;
+  --input: #55677e;
+  --ring: #9bbff0;
+  --sky: #8ac5e5;
+  --sky-soft: #22364a;
+  --status-in: #78d5ac;
+  --status-out: #f2939b;
+  --status-leave: #b6c0cf;
+}
+
+/* Sonner sets a light palette inline; keep all toast states in the app theme. */
+.dark [data-sonner-toaster] {
+  --normal-bg: var(--popover) !important;
+  --normal-text: var(--foreground) !important;
+  --normal-border: var(--border) !important;
+  --success-bg: #18382e !important;
+  --success-text: #92dfba !important;
+  --success-border: #35654f !important;
+  --info-bg: #20364f !important;
+  --info-text: #a5cfff !important;
+  --info-border: #3d6086 !important;
+  --warning-bg: #3c301c !important;
+  --warning-text: #f0ce88 !important;
+  --warning-border: #756039 !important;
+  --error-bg: #42252c !important;
+  --error-text: #f5b1ba !important;
+  --error-border: #7b4653 !important;
 }
 
 @layer base {
@@ -140,7 +189,7 @@
   background: linear-gradient(
     90deg,
     var(--sky-soft) 0%,
-    color-mix(in oklab, var(--sky-soft) 60%, white) 50%,
+    color-mix(in oklab, var(--sky-soft) 60%, var(--background)) 50%,
     var(--sky-soft) 100%
   );
   background-size: 200% 100%;

@@ -196,7 +196,7 @@ function UserNoticesPage() {
       <div className="space-y-4">
         {visibleNotices.length === 0 ? (
           <div className="rounded-xl border bg-card p-12 text-center text-sm text-muted-foreground font-medium space-y-3">
-            <CheckCircle2 className="h-10 w-10 text-emerald-600 mx-auto" />
+            <CheckCircle2 className="h-10 w-10 text-emerald-600 dark:text-emerald-300 mx-auto" />
             <div className="text-base font-bold text-primary">
               No Notifications in the Past 4 Days
             </div>
@@ -231,9 +231,9 @@ function UserNoticesPage() {
 
                 <div className="flex items-start gap-3">
                   {n.priority === "urgent" ? (
-                    <ShieldAlert className="h-6 w-6 text-rose-600 shrink-0 mt-0.5" />
+                    <ShieldAlert className="h-6 w-6 text-rose-600 dark:text-rose-300 shrink-0 mt-0.5" />
                   ) : n.priority === "warning" ? (
-                    <AlertCircle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
+                    <AlertCircle className="h-6 w-6 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
                   ) : (
                     <Megaphone className="h-6 w-6 text-primary shrink-0 mt-0.5" />
                   )}
@@ -244,7 +244,7 @@ function UserNoticesPage() {
                       <span
                         className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
                           n.priority === "urgent"
-                            ? "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                            ? "bg-rose-500/10 text-rose-600 dark:text-rose-300 border border-rose-500/20"
                             : n.priority === "warning"
                               ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20"
                               : "bg-primary/10 text-primary border border-primary/20"

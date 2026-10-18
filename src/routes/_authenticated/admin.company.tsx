@@ -482,7 +482,7 @@ function CompanyPage() {
                               className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-colors flex items-center gap-1 ${
                                 isArchived
                                   ? "text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
-                                  : "text-muted-foreground hover:text-amber-600 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
+                                  : "text-muted-foreground hover:text-amber-600 dark:hover:text-amber-300 border-muted hover:border-amber-500/30 hover:bg-amber-500/10"
                               }`}
                               title={isArchived ? "Restore / Unarchive Company" : "Archive Company"}
                             >
@@ -509,7 +509,7 @@ function CompanyPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h3 className="font-extrabold text-base text-primary flex items-center gap-2">
-                  <PartyPopper className="h-5 w-5 text-purple-600" /> Today&apos;s Company Off
+                  <PartyPopper className="h-5 w-5 text-purple-600 dark:text-purple-300" /> Today&apos;s Company Off
                   Status
                 </h3>
                 <p className="text-xs text-muted-foreground font-medium mt-0.5">
@@ -536,7 +536,7 @@ function CompanyPage() {
             </div>
             {isTodayHoliday && (
               <div className="p-3.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-300 text-xs font-bold flex items-center gap-2">
-                <Check className="h-4 w-4 text-purple-600" />
+                <Check className="h-4 w-4 text-purple-600 dark:text-purple-300" />
                 Today is a holiday for every employee.
               </div>
             )}
@@ -636,7 +636,7 @@ function CompanyPage() {
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-lift space-y-4 text-left border border-border">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-                <PartyPopper className="h-5 w-5 text-purple-600" />
+                <PartyPopper className="h-5 w-5 text-purple-600 dark:text-purple-300" />
                 {isTodayHoliday ? "Cancel Today's Holiday" : "Confirm Today's Holiday"}
               </h3>
               <button
@@ -1025,7 +1025,7 @@ function CompanyModal({
                 type="checkbox"
                 checked={archived}
                 onChange={(e) => setArchived(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-primary"
+                className="h-4 w-4 rounded border-gray-300 dark:border-border text-primary"
               />
             </label>
           </div>

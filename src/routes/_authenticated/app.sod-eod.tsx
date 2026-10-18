@@ -462,7 +462,7 @@ function EmployeeSodEodPage() {
                 </div>
 
                 {recentlySubmitted === type && (
-                  <div className="mt-4 flex animate-in items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">
+                  <div className="mt-4 flex animate-in items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm font-medium text-emerald-700 dark:text-emerald-300">
                     <CheckCircle2 className="h-5 w-5" /> Submitted successfully
                   </div>
                 )}
@@ -584,7 +584,7 @@ function EmployeeSodEodPage() {
                       {formatSubmissionTime(report)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      <span className="inline-flex rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                         Submitted
                       </span>
                       {report.editedAt && <EditedTag />}
@@ -644,10 +644,10 @@ function UserStatusBadge({
 }) {
   const label = report ? "Submitted" : deadlinePassed ? "Missed" : "Not submitted";
   const className = report
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
     : deadlinePassed
-      ? "border-red-200 bg-red-50 text-red-700"
-      : "border-slate-200 bg-slate-50 text-slate-600";
+      ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300"
+      : "border-slate-200 dark:border-border bg-slate-50 dark:bg-muted text-slate-600 dark:text-slate-300";
   return (
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}
@@ -726,7 +726,7 @@ function ReportViewModal({ report, onClose }: { report: DailyReport; onClose: ()
 
 function EditedTag() {
   return (
-    <span className="ml-1.5 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+    <span className="ml-1.5 inline-flex rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
       Edited
     </span>
   );

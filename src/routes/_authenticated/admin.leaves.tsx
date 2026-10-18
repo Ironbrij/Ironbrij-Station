@@ -656,7 +656,7 @@ function LeaveRequestsPage() {
                         type="button"
                         disabled={Boolean(busyId)}
                         onClick={() => revokeLeave(leave.id)}
-                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 disabled:opacity-50"
+                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-950/40 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 disabled:opacity-50"
                       >
                         {isBusy ? "Revoking..." : "Revoke Leave"}
                       </button>
@@ -1055,8 +1055,8 @@ function EditLeaveModal({
                       }
                       className={`rounded-md border px-2 py-1 text-xs font-bold outline-none ${
                         item.paymentStatus === "unpaid"
-                          ? "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300"
-                          : "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300"
+                          ? "bg-amber-50 text-amber-800 border-amber-300 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                          : "bg-emerald-50 text-emerald-800 border-emerald-300 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
                       }`}
                     >
                       <option value="paid">Paid</option>
@@ -1083,7 +1083,7 @@ function EditLeaveModal({
                     <button
                       type="button"
                       onClick={() => handleRemoveDate(item.date)}
-                      className="p-1 rounded-md text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      className="p-1 rounded-md text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                       title="Remove date"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

@@ -14,6 +14,7 @@ import {
 } from "@/lib/company-context";
 import { getActiveWorkingSession, getLiveAttendanceStatus } from "@/lib/attendance";
 import { CompanySelector } from "@/components/CompanySelector";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface NavItem {
   to: string;
@@ -93,6 +94,7 @@ export function AppShell({
           </Link>
 
           <div className="flex shrink-0 items-center gap-2.5">
+            <ThemeToggle />
             {isAdmin && (
               <>
                 <Link
@@ -125,7 +127,7 @@ export function AppShell({
                 {isAdmin ? "Admin / Owner" : employee?.jobTitle || "Employee"}
               </div>
               {activeCompanyId !== "all" && activeAttendanceCompanyIds.some((id) => id !== activeCompanyId) && (
-                <div className="text-[10px] font-semibold text-amber-700">
+                <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
                   Active shift elsewhere
                 </div>
               )}
@@ -137,7 +139,7 @@ export function AppShell({
                 await logout();
                 navigate({ to: "/login" });
               }}
-              className="rounded-md border p-2 text-muted-foreground transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md border p-2 text-muted-foreground transition-colors hover:border-rose-200 dark:hover:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Sign out"
             >
               <LogOut className="h-4 w-4" />

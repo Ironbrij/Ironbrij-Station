@@ -120,7 +120,7 @@ export function CompanyOverviewCard({
 
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-          <CalendarDays className="h-3.5 w-3.5 text-purple-600" /> Next holidays
+          <CalendarDays className="h-3.5 w-3.5 text-purple-600 dark:text-purple-300" /> Next holidays
         </div>
         {upcoming.length === 0 ? (
           <p className="text-xs text-muted-foreground">No holidays added yet.</p>

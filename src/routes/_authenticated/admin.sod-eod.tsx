@@ -864,10 +864,10 @@ function ReportStatusBadge({
     status === "submitted" ? "Submitted" : status === "missed" ? "Missed" : "Not submitted";
   const className =
     status === "submitted"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
       : status === "missed"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : "border-slate-200 bg-slate-50 text-slate-600";
+        ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300"
+        : "border-slate-200 dark:border-border bg-slate-50 dark:bg-muted text-slate-600 dark:text-slate-300";
 
   if (onClick && status === "submitted") {
     return (
@@ -875,7 +875,7 @@ function ReportStatusBadge({
         type="button"
         onClick={onClick}
         title="View report details"
-        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold hover:bg-emerald-100 transition-colors cursor-pointer ${className}`}
+        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer ${className}`}
       >
         <Eye className="h-3 w-3" />
         {label}
@@ -1068,12 +1068,12 @@ function ReportHistoryModal({
                     </td>
                     <td className="px-4 py-3">
                       {report.submittedLate ? (
-                        <span className="text-rose-600 font-semibold">Late</span>
+                        <span className="text-rose-600 dark:text-rose-300 font-semibold">Late</span>
                       ) : (
-                        <span className="text-emerald-600 font-semibold">On time</span>
+                        <span className="text-emerald-600 dark:text-emerald-300 font-semibold">On time</span>
                       )}
                       {report.editedAt && (
-                        <span className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <span className="ml-1.5 rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
                           Edited
                         </span>
                       )}

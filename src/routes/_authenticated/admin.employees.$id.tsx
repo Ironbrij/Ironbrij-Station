@@ -661,7 +661,7 @@ function EmployeeDetail() {
       {scopedOutsideSelection && (
         <div
           role="status"
-          className="flex items-start gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-900"
+          className="flex items-start gap-2 rounded-xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 px-4 py-3 text-xs font-semibold text-sky-900 dark:text-sky-300"
         >
           <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
@@ -687,14 +687,14 @@ function EmployeeDetail() {
                 <span
                   className={`rounded-full px-2.5 py-1 text-xs font-bold ${
                     employee.status === "inactive"
-                      ? "bg-rose-500/10 text-rose-700"
-                      : "bg-emerald-500/10 text-emerald-700"
+                      ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                   }`}
                 >
                   {employee.status === "inactive" ? "Suspended" : liveLabel}
                 </span>
                 {!onHolidayToday && !approvedLeaveToday && !activeLeave && liveStatus?.isLate && (
-                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700">
+                  <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-700 dark:text-amber-300">
                     {liveStatus.isMissingLate ? "Not punched in · " : ""}
                     {liveStatus.minutesLate} min late
                   </span>
@@ -922,7 +922,7 @@ function EmployeeDetail() {
               Every late arrival on record. Punches 5 minutes late or less are excluded.
             </p>
           </div>
-          <span className="w-fit rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-700">
+          <span className="w-fit rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300">
             {lateRows.length} {lateRows.length === 1 ? "late arrival" : "late arrivals"}
           </span>
         </div>
@@ -1102,8 +1102,8 @@ function EmployeeDetail() {
                             : row.minutesLate
                               ? "bg-rose-600 text-white"
                               : row.isAutoPunchOut
-                                ? "bg-sky-600 text-white"
-                                : "bg-emerald-600 text-white"
+                                ? "bg-sky-600 dark:bg-sky-700 text-white"
+                                : "bg-emerald-600 dark:bg-emerald-700 text-white"
                         }`}
                       >
                         {row.minutesLate ? `Late ${row.minutesLate} min` : row.status}
@@ -1155,9 +1155,9 @@ function EmployeeDetail() {
                                 className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground"
                               >
                                 {punch.type === "in" || punch.type === "extra_in" ? (
-                                  <LogIn className="h-3 w-3 text-emerald-600" />
+                                  <LogIn className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
                                 ) : (
-                                  <LogIn className="h-3 w-3 rotate-180 text-slate-500" />
+                                  <LogIn className="h-3 w-3 rotate-180 text-slate-500 dark:text-slate-300" />
                                 )}
                                 {formatPunchType(punch.type)}{" "}
                                 {formatInTimezone(toDate(punch.timestamp) ?? new Date(), timezone)}
@@ -1231,10 +1231,10 @@ function EmployeeDetail() {
                   <span
                     className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
                       leave.status === "approved"
-                        ? "bg-emerald-500/10 text-emerald-700"
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                         : leave.status === "rejected"
-                          ? "bg-rose-500/10 text-rose-700"
-                          : "bg-amber-500/10 text-amber-700"
+                          ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                          : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
                     }`}
                   >
                     {leave.status}
@@ -1389,9 +1389,9 @@ function MetricCard({
 }) {
   const toneClass =
     tone === "amber"
-      ? "border-amber-500/20 bg-amber-500/5 text-amber-800"
+      ? "border-amber-500/20 bg-amber-500/5 text-amber-800 dark:text-amber-300"
       : tone === "green"
-        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-800"
+        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300"
         : "bg-card text-primary";
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${toneClass}`}>

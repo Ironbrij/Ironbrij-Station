@@ -550,7 +550,7 @@ export function HolidayPlanner({
                 >
                   {Number(dateKey.slice(8))}
                   {scheduled.length === 0 && publicDay.length > 0 && (
-                    <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-amber-500" />
+                    <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-amber-500 dark:bg-amber-700" />
                   )}
                 </button>
               );
@@ -561,7 +561,7 @@ export function HolidayPlanner({
               <span className="h-2.5 w-2.5 rounded-sm bg-purple-600" /> Holiday
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Public holiday
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-700" /> Public holiday
             </span>
           </div>
         </div>
@@ -610,7 +610,7 @@ export function HolidayPlanner({
                 <button
                   type="button"
                   onClick={() => remove(holiday)}
-                  className="rounded p-1.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"
+                  className="rounded p-1.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-300"
                   title="Remove holiday"
                   aria-label={`Remove ${holiday.name || "holiday"}`}
                 >
@@ -797,7 +797,7 @@ export function HolidayPlanner({
                     <button
                       type="button"
                       onClick={() => remove(holiday)}
-                      className="font-bold text-rose-600 hover:underline"
+                      className="font-bold text-rose-600 dark:text-rose-300 hover:underline"
                     >
                       Remove
                     </button>

@@ -211,7 +211,7 @@ export function EmailChipsInput({
           ))}
         </ul>
       )}
-      {error && <p className="mt-1 text-[11px] font-semibold text-rose-600">{error}</p>}
+      {error && <p className="mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-300">{error}</p>}
       {value.length > 0 && !error && (
         <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-400">
           ✓ {value.length} {value.length === 1 ? "address" : "addresses"} set up to receive

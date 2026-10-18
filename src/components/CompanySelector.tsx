@@ -274,8 +274,8 @@ export function CompanySelector({
                         )}
                       </div>
                       {hasActiveShift && (
-                        <span className="text-[10px] text-amber-700 font-bold flex items-center gap-1 mt-0.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="text-[10px] text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1 mt-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-700 animate-pulse" />
                           Active shift running
                         </span>
                       )}

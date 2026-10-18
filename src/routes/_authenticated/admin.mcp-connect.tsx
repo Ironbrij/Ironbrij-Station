@@ -250,7 +250,7 @@ export function McpConnectPage() {
       <div className="rounded-2xl border bg-card p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2 border-b pb-3">
           <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-emerald-600" />
+            <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
             <h2 className="font-bold text-sm text-foreground">
               Admin Access Token & Authentication
             </h2>
@@ -279,7 +279,7 @@ export function McpConnectPage() {
                 >
                   {copiedKey === activeToken.token ? (
                     <>
-                      <Check className="h-4 w-4 text-emerald-600" /> Copied
+                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> Copied
                     </>
                   ) : (
                     <>
@@ -289,7 +289,7 @@ export function McpConnectPage() {
                 </button>
                 <button
                   onClick={() => handleRevokeToken(activeToken.token)}
-                  className="p-2.5 rounded-lg border text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition"
+                  className="p-2.5 rounded-lg border text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                   title="Revoke this key"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -536,7 +536,7 @@ export function McpConnectPage() {
               {/* Punch & Overtime Commands */}
               <div className="p-4 rounded-xl border bg-card space-y-3">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Clock className="h-4 w-4 text-emerald-600" /> 2. Punches & Overtime Approvals
+                  <Clock className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> 2. Punches & Overtime Approvals
                 </div>
                 <div className="space-y-2">
                   {[
@@ -560,7 +560,7 @@ export function McpConnectPage() {
               {/* Leaves & SOD/EOD Reports */}
               <div className="p-4 rounded-xl border bg-card space-y-3">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Calendar className="h-4 w-4 text-purple-600" /> 3. Leaves & SOD/EOD Reports
+                  <Calendar className="h-4 w-4 text-purple-600 dark:text-purple-300" /> 3. Leaves & SOD/EOD Reports
                 </div>
                 <div className="space-y-2">
                   {[
@@ -584,7 +584,7 @@ export function McpConnectPage() {
               {/* Employee Management */}
               <div className="p-4 rounded-xl border bg-card space-y-3">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Sparkles className="h-4 w-4 text-amber-600" /> 4. Employee Management
+                  <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-300" /> 4. Employee Management
                 </div>
                 <div className="space-y-2">
                   {[
@@ -608,7 +608,7 @@ export function McpConnectPage() {
               {/* Company & Client Management */}
               <div className="p-4 rounded-xl border bg-card space-y-3 md:col-span-2">
                 <div className="flex items-center gap-2 font-bold text-xs text-foreground uppercase tracking-wider">
-                  <Bot className="h-4 w-4 text-blue-600" /> 5. Company &amp; Client Setup with Full
+                  <Bot className="h-4 w-4 text-blue-600 dark:text-blue-300" /> 5. Company &amp; Client Setup with Full
                   Details
                 </div>
                 <div className="grid md:grid-cols-2 gap-2">

@@ -58,10 +58,10 @@ export function HolidayAnswersCard({ todayStr }: { todayStr: string }) {
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-bold ${
                 answer.decision === "work"
-                  ? "bg-emerald-500/15 text-emerald-700"
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                   : answer.decision === "off"
-                    ? "bg-slate-500/15 text-slate-700"
-                    : "bg-amber-500/15 text-amber-700"
+                    ? "bg-slate-500/15 text-slate-700 dark:text-slate-300"
+                    : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
               }`}
             >
               {answer.decision === "work"

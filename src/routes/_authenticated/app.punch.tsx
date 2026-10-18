@@ -1201,7 +1201,7 @@ function PunchPage() {
       {/* Active leave or scheduled break banner */}
       {onLeaveToday && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 flex items-center gap-3 shadow-xs">
-          <Lock className="h-5 w-5 text-amber-600 shrink-0" />
+          <Lock className="h-5 w-5 text-amber-600 dark:text-amber-300 shrink-0" />
           <div>
             <span className="font-extrabold block text-sm text-amber-900 dark:text-amber-200">
               {getLeaveLabel(activeLeave)}
@@ -1234,7 +1234,7 @@ function PunchPage() {
                 className="p-4 rounded-xl border bg-amber-500/10 border-amber-500/20 text-amber-900 dark:text-amber-300 flex items-start justify-between gap-3 shadow-sm transition-all"
               >
                 <div className="flex items-start gap-3">
-                  <Megaphone className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <Megaphone className="h-5 w-5 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-sm text-primary">{n.title}</span>
@@ -1260,7 +1260,7 @@ function PunchPage() {
 
                   <button
                     onClick={() => dismissNotice(n.id)}
-                    className="btn-lift p-1.5 rounded-lg border bg-background hover:bg-rose-500/10 hover:text-rose-600 transition-colors text-muted-foreground"
+                    className="btn-lift p-1.5 rounded-lg border bg-background hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-300 transition-colors text-muted-foreground"
                     title="Dismiss from main screen"
                   >
                     <X className="h-4 w-4" />
@@ -1283,7 +1283,7 @@ function PunchPage() {
             </p>
           </div>
           {attendanceStatus?.isLate && !approvedLeaveToday && !isHoliday && (
-            <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-600">
+            <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-600 dark:text-rose-300">
               {attendanceStatus.isMissingLate ? "Not punched in" : "Late arrival"} ·{" "}
               {attendanceStatus.minutesLate} min
             </span>
@@ -1313,7 +1313,7 @@ function PunchPage() {
         {/* Left Column: Recent Activity Card (7 cols) */}
         <div className="order-2 flex flex-col overflow-hidden rounded-xl border bg-card shadow-lift md:order-1 md:col-span-7">
           {/* Blue Header Bar */}
-          <div className="bg-sky-600 text-white font-bold text-base px-5 py-3 flex items-center justify-between shadow-sm">
+          <div className="bg-sky-600 dark:bg-sky-700 text-white font-bold text-base px-5 py-3 flex items-center justify-between shadow-sm">
             <span>Recent Activity</span>
             <span className="text-xs font-medium opacity-90">Last 10 Logs</span>
           </div>
@@ -1344,11 +1344,11 @@ function PunchPage() {
                         : "Out";
 
                   const dotColor = isLunchStart
-                    ? "bg-amber-500"
+                    ? "bg-amber-500 dark:bg-amber-700"
                     : isLunchEnd
-                      ? "bg-sky-500"
+                      ? "bg-sky-500 dark:bg-sky-700"
                       : isPunchIn
-                        ? "bg-emerald-500"
+                        ? "bg-emerald-500 dark:bg-emerald-700"
                         : "bg-rose-500";
 
                   return (
@@ -1357,11 +1357,11 @@ function PunchPage() {
                         <span
                           className={`h-3 w-3 rounded-full shrink-0 inline-block shadow-sm ${dotColor}`}
                         />
-                        <span className="text-slate-800 font-semibold text-xs">
+                        <span className="text-slate-800 dark:text-slate-300 font-semibold text-xs">
                           {label} at {timeStr} On {dateStr}
                         </span>
                       </td>
-                      <td className="py-3 px-2 text-right text-slate-700 font-semibold text-xs">
+                      <td className="py-3 px-2 text-right text-slate-700 dark:text-slate-300 font-semibold text-xs">
                         {deptName}
                       </td>
                     </tr>
@@ -1389,7 +1389,7 @@ function PunchPage() {
             <span>Web Punch</span>
             {isOnLunch && (
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1.5 animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-700" />
                 Break Active
               </span>
             )}
@@ -1419,11 +1419,11 @@ function PunchPage() {
                     <div className="text-xs mt-1">{holiday?.name || "Company Holiday"}</div>
                   </div>
                 ) : isPunchedIn && lastIn ? (
-                  <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 p-5 text-emerald-950">
+                  <div className="space-y-1 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/40 p-5 text-emerald-950 dark:text-emerald-300">
                     <div className="text-lg font-semibold flex items-center justify-center gap-2">
                       {latestCompanyPunch?.type === "extra_in" ? (
                         <>
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 dark:bg-amber-700 animate-pulse" />
                           <span>⚡ Overtime Active · Working since {format(lastIn, "h:mm a")}</span>
                         </>
                       ) : lastIn &&
@@ -1431,18 +1431,18 @@ function PunchPage() {
                         lastIn.getTime() < attendanceStatus.shift.start.getTime() &&
                         attendanceNow().getTime() < attendanceStatus.shift.start.getTime() ? (
                         <>
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 dark:bg-amber-700 animate-pulse" />
                           <span>🌅 Early Start · Working since {format(lastIn, "h:mm a")}</span>
                         </>
                       ) : (
                         <>
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 dark:bg-emerald-700 animate-pulse" />
                           <span>Working since {format(lastIn, "h:mm a")}</span>
                         </>
                       )}
                     </div>
                     <div className="text-sm">On {format(lastIn, "dd/MM/yyyy")}</div>
-                    <div className="mt-1 text-sm font-medium text-emerald-900">
+                    <div className="mt-1 text-sm font-medium text-emerald-900 dark:text-emerald-300">
                       {company?.name || "Company"} · {deptName}
                     </div>
 
@@ -1498,7 +1498,7 @@ function PunchPage() {
                           <button
                             type="button"
                             onClick={() => setActiveCompanyId(activeOtherCompany.companyId)}
-                            className="btn-lift inline-flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 shadow-xs transition-all cursor-pointer"
+                            className="btn-lift inline-flex items-center gap-1 rounded-lg bg-amber-500 dark:bg-amber-700 hover:bg-amber-600 dark:hover:bg-amber-800 active:bg-amber-700 dark:active:bg-amber-800 text-white font-bold text-xs px-3.5 py-2 shadow-xs transition-all cursor-pointer"
                           >
                             Switch to {activeOtherCompany.companyName} &rarr;
                           </button>
@@ -1546,7 +1546,7 @@ function PunchPage() {
               </div>
             )}
 
-            {(!punchesReady || punchError) && <p role="status" className="text-sm text-amber-700">
+            {(!punchesReady || punchError) && <p role="status" className="text-sm text-amber-700 dark:text-amber-300">
               {punchError || "Syncing attendance. Please wait before recording another action."}
             </p>}
             {/* ----- Punch Action Buttons ----- */}
@@ -1575,7 +1575,7 @@ function PunchPage() {
                 <button
                   disabled={busy || !runtime.ready || !punchesReady}
                   onClick={handlePunchClick}
-                  className="w-full rounded-xl border border-rose-500/25 bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 font-bold py-2.5 text-xs transition-colors"
+                  className="w-full rounded-xl border border-rose-500/25 bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 dark:text-rose-300 font-bold py-2.5 text-xs transition-colors"
                 >
                   Stop Work (End Shift Directly)
                 </button>
@@ -1590,11 +1590,11 @@ function PunchPage() {
                         : isPunchedIn
                           ? "bg-rose-600 hover:bg-rose-700"
                           : activeOtherCompany
-                            ? "bg-amber-500 hover:bg-amber-600"
+                            ? "bg-amber-500 dark:bg-amber-700 hover:bg-amber-600 dark:hover:bg-amber-800"
                             : attendanceStatus?.isPastShiftEnd && attendanceStatus?.hasCompletedAllShiftsToday
-                              ? "bg-amber-500 hover:bg-amber-600"
+                              ? "bg-amber-500 dark:bg-amber-700 hover:bg-amber-600 dark:hover:bg-amber-800"
                               : isEarlyBeforeShift && shiftWindow?.start
-                                ? "bg-amber-500 hover:bg-amber-600"
+                                ? "bg-amber-500 dark:bg-amber-700 hover:bg-amber-600 dark:hover:bg-amber-800"
                                 : "bg-primary hover:bg-primary/90"
                     }`}
                   >
@@ -1632,7 +1632,7 @@ function PunchPage() {
                       type="button"
                       disabled={busy || !runtime.ready || !punchesReady}
                       onClick={() => doLunchPunch("lunch_start")}
-                      className="btn-lift w-full rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold py-3 px-4 text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="btn-lift w-full rounded-xl bg-amber-500 dark:bg-amber-700 hover:bg-amber-600 dark:hover:bg-amber-800 active:bg-amber-700 dark:active:bg-amber-800 text-white font-bold py-3 px-4 text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       <Coffee className="h-4 w-4 text-white" />
                       <span>
@@ -1650,12 +1650,12 @@ function PunchPage() {
                 <div className="text-2xl font-mono font-semibold text-foreground tabular-nums flex items-center justify-center gap-2">
                   <span>{formatDurationHMS(totalWorkedMs)}</span>
                   {isOnLunch && (
-                    <span className="text-xs font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
                       ⏸ Paused
                     </span>
                   )}
                   {latestCompanyPunch?.type === "extra_in" && (
-                    <span className="text-xs font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
                       ⚡ Overtime
                     </span>
                   )}
@@ -1686,14 +1686,14 @@ function PunchPage() {
                 <div
                   className={`flex h-12 w-12 items-center justify-center rounded-xl font-bold shadow-xs ${
                     showNotepadModal === "sod"
-                      ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                      : "bg-indigo-500/10 text-indigo-600 border border-indigo-500/20"
+                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20"
+                      : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20"
                   }`}
                 >
                   {showNotepadModal === "sod" ? (
-                    <Sun className="h-6 w-6 animate-pulse text-amber-500" />
+                    <Sun className="h-6 w-6 animate-pulse text-amber-500 dark:text-amber-300" />
                   ) : (
-                    <Moon className="h-6 w-6 animate-pulse text-indigo-500" />
+                    <Moon className="h-6 w-6 animate-pulse text-indigo-500 dark:text-indigo-300" />
                   )}
                 </div>
                 <div>
@@ -1721,7 +1721,7 @@ function PunchPage() {
             {/* Info & Duration Badge */}
             <div className="flex items-center justify-between text-xs font-semibold bg-muted/40 p-3 rounded-lg border">
               <span className="flex items-center gap-1.5 text-primary">
-                <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                <Sparkles className="h-4 w-4 text-amber-500 dark:text-amber-300 shrink-0" />
                 Report auto-syncs to <strong>SOD & EOD Tab</strong>
               </span>
               <span className="font-mono text-muted-foreground">
@@ -1750,7 +1750,7 @@ function PunchPage() {
                       <span>
                         <span className="text-primary mr-1">#{index + 1}</span> {question.question}
                       </span>
-                      <span className="text-[10px] text-amber-600 font-semibold">Required</span>
+                      <span className="text-[10px] text-amber-600 dark:text-amber-300 font-semibold">Required</span>
                     </label>
                     <MentionTextarea
                       rows={3}
@@ -1780,7 +1780,7 @@ function PunchPage() {
                 onClick={() => submitNotepadReport(showNotepadModal)}
                 className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-md flex items-center justify-center gap-2 transition-all btn-lift ${
                   showNotepadModal === "sod"
-                    ? "bg-amber-600 hover:bg-amber-700"
+                    ? "bg-amber-600 dark:bg-amber-700 hover:bg-amber-700 dark:hover:bg-amber-800"
                     : "bg-indigo-600 hover:bg-indigo-700"
                 }`}
               >
@@ -1822,8 +1822,8 @@ function PunchPage() {
           <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-5 text-left">
             <div className="flex items-start justify-between border-b pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 shrink-0">
-                  <Clock className="h-6 w-6 text-amber-500 animate-pulse" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-300 shrink-0">
+                  <Clock className="h-6 w-6 text-amber-500 dark:text-amber-300 animate-pulse" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-foreground">Start Overtime Shift?</h3>
@@ -1884,7 +1884,7 @@ function PunchPage() {
                   type="button"
                   disabled={busy || !runtime.ready || !punchesReady}
                   onClick={() => doPunch("extra_in", overtimeReason)}
-                  className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+                  className="btn-lift rounded-xl bg-amber-600 dark:bg-amber-700 hover:bg-amber-700 dark:hover:bg-amber-800 px-4 py-2 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
                 >
                   {busy ? "Starting..." : "⚡ Yes, Start Overtime"}
                 </button>
@@ -1900,8 +1900,8 @@ function PunchPage() {
           <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-5 text-left">
             <div className="flex items-start justify-between border-b pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 shrink-0">
-                  <Sun className="h-6 w-6 text-amber-500 animate-pulse" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-300 shrink-0">
+                  <Sun className="h-6 w-6 text-amber-500 dark:text-amber-300 animate-pulse" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-foreground">You're Clocking In Early</h3>
@@ -1919,18 +1919,18 @@ function PunchPage() {
               </button>
             </div>
 
-            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 font-medium leading-relaxed space-y-2">
+            <div className="rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 dark:text-amber-300 font-medium leading-relaxed space-y-2">
               <p>
                 You are starting work <strong>{formatWorkMinutes(earlyMinutes)} before</strong> your
                 scheduled shift ({format(shiftWindow.start, "h:mm a")}).
               </p>
               <div className="space-y-1 pt-1 border-t border-amber-500/20">
                 <p className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600 dark:bg-amber-700" />
                   This early time will be counted as <strong>Overtime</strong>, not a regular shift.
                 </p>
                 <p className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-700" />
                   At <strong>{format(shiftWindow.start, "h:mm a")}</strong>, regular shift hours
                   will start counting toward your scheduled shift duration (
                   {formatWorkMinutes(getRequiredWorkMinutes(employee, company))}).
@@ -1953,7 +1953,7 @@ function PunchPage() {
                   setShowEarlyModal(false);
                   doPunch("in");
                 }}
-                className="btn-lift rounded-xl bg-amber-600 hover:bg-amber-700 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
+                className="btn-lift rounded-xl bg-amber-600 dark:bg-amber-700 hover:bg-amber-700 dark:hover:bg-amber-800 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
               >
                 {busy ? "Starting..." : "🌅 Yes, Clock In Early"}
               </button>

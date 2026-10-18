@@ -396,7 +396,7 @@ function LateArrivalsPage() {
       </div>
 
       {(punchesError || !punchesReady) && (
-        <p role="status" className="rounded-lg border bg-amber-50 px-4 py-2 text-xs text-amber-900">
+        <p role="status" className="rounded-lg border bg-amber-50 dark:bg-amber-950/40 px-4 py-2 text-xs text-amber-900 dark:text-amber-300">
           {punchesError
             ? "Late logs lost their connection and are reconnecting. Figures may be out of date."
             : "Syncing attendance…"}
@@ -409,7 +409,7 @@ function LateArrivalsPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 w-full">
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
           Punctuality Dashboard
         </span>
 
@@ -516,15 +516,15 @@ function LateArrivalsPage() {
                   </td>
                   <td className="p-3.5 font-bold">
                     {record.kind === "missing" ? (
-                      <span className="text-rose-600 font-extrabold">
+                      <span className="text-rose-600 dark:text-rose-300 font-extrabold">
                         {record.minutesLate}m overdue
                       </span>
                     ) : record.isExcused ? (
-                      <span className="text-emerald-600 line-through font-extrabold">
+                      <span className="text-emerald-600 dark:text-emerald-300 line-through font-extrabold">
                         {record.minutesLate} min
                       </span>
                     ) : (
-                      <span className="text-rose-600 font-extrabold">{record.minutesLate} min</span>
+                      <span className="text-rose-600 dark:text-rose-300 font-extrabold">{record.minutesLate} min</span>
                     )}
                   </td>
                   <td className="p-3.5">
@@ -534,7 +534,7 @@ function LateArrivalsPage() {
                       </span>
                     ) : record.isExcused ? (
                       <div>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 dark:bg-emerald-700 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
                           <CheckCircle2 className="h-3.5 w-3.5" /> Excused (Not Late)
                         </span>
                         {record.excuseReason && (
@@ -572,7 +572,7 @@ function LateArrivalsPage() {
                           className={`rounded-lg px-3 py-1 text-xs font-bold transition-all border ${
                             record.isExcused
                               ? "bg-secondary text-muted-foreground hover:bg-muted"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                              : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
                           }`}
                         >
                           {record.isExcused ? "Un-excuse" : "Mark Not Late"}
@@ -662,7 +662,7 @@ function LateArrivalsPage() {
             <div className="space-y-3.5 overflow-y-auto pr-1 flex-1 min-h-0">
               <div>
                 <label className="block text-xs font-bold text-foreground mb-1">
-                  Employee <span className="text-rose-500">*</span>
+                  Employee <span className="text-rose-500 dark:text-rose-300">*</span>
                 </label>
                 <select
                   value={selectedEmpId}
@@ -709,7 +709,7 @@ function LateArrivalsPage() {
                     {targetCompanyIds.length > 0 && (
                       <div>
                         <label className="block text-xs font-bold text-foreground mb-1">
-                          Target Company <span className="text-rose-500">*</span>
+                          Target Company <span className="text-rose-500 dark:text-rose-300">*</span>
                         </label>
                         <select
                           value={effectiveCompanyId}
@@ -833,7 +833,7 @@ function LateArrivalsPage() {
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <label className="block text-xs font-bold text-foreground mb-1">
-                        Shift Date <span className="text-rose-500">*</span>
+                        Shift Date <span className="text-rose-500 dark:text-rose-300">*</span>
                       </label>
                       <input
                         type="date"
@@ -845,7 +845,7 @@ function LateArrivalsPage() {
 
                     <div>
                       <label className="block text-xs font-bold text-foreground mb-1">
-                        Timezone <span className="text-rose-500">*</span>
+                        Timezone <span className="text-rose-500 dark:text-rose-300">*</span>
                       </label>
                       <select
                         value={manualTimezone}
@@ -860,7 +860,7 @@ function LateArrivalsPage() {
 
                     <div>
                       <label className="block text-xs font-bold text-foreground mb-1">
-                        Clock-In Time <span className="text-rose-500">*</span>
+                        Clock-In Time <span className="text-rose-500 dark:text-rose-300">*</span>
                       </label>
                       <input
                         type="time"
@@ -979,7 +979,7 @@ function LateArrivalsPage() {
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <label className="block text-xs font-bold text-foreground mb-1">
-                        First day away <span className="text-rose-500">*</span>
+                        First day away <span className="text-rose-500 dark:text-rose-300">*</span>
                       </label>
                       <input
                         type="date"
@@ -1021,7 +1021,7 @@ function LateArrivalsPage() {
                   <div>
                     <label className="block text-xs font-bold text-foreground mb-1">
                       {leaveKind === "holiday" ? "Which holiday?" : "Why are they away?"}{" "}
-                      <span className="text-rose-500">*</span>
+                      <span className="text-rose-500 dark:text-rose-300">*</span>
                     </label>
                     <textarea
                       rows={3}
@@ -1111,7 +1111,7 @@ function LateArrivalsPage() {
           <div className="w-full max-w-md rounded-2xl border bg-card p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-start justify-between border-b pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 font-bold">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 font-bold">
                   <CheckCircle2 className="h-5 w-5" />
                 </div>
                 <div>
@@ -1182,7 +1182,7 @@ function LateArrivalsPage() {
                 onClick={() =>
                   toggleExcuse(excuseModal.punchId, false, excuseModal.reason)
                 }
-                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors shadow-xs"
+                className="rounded-lg bg-emerald-600 dark:bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 dark:hover:bg-emerald-800 transition-colors shadow-xs"
               >
                 Save as Not Late ✓
               </button>
@@ -1204,7 +1204,7 @@ function Stat({
   tone: "rose" | "amber" | "primary";
 }) {
   const color =
-    tone === "rose" ? "text-rose-600" : tone === "amber" ? "text-amber-600" : "text-primary";
+    tone === "rose" ? "text-rose-600 dark:text-rose-300" : tone === "amber" ? "text-amber-600 dark:text-amber-300" : "text-primary";
   return (
     <div className="rounded-xl border bg-card p-5 shadow-lift">
       <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>

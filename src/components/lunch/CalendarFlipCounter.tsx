@@ -54,8 +54,8 @@ export function CalendarFlipCounter({
 
       {/* Clean Static Colon */}
       <div className="flex flex-col items-center justify-center gap-2 pb-6">
-        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500"}`} />
-        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500"}`} />
+        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500 dark:bg-amber-700"}`} />
+        <span className={`w-2 h-2 rounded-full ${isOverdue ? "bg-rose-500" : "bg-amber-500 dark:bg-amber-700"}`} />
       </div>
 
       {/* Seconds Card */}

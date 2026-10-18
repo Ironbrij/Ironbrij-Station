@@ -676,7 +676,7 @@ function HelpFeedbackAutomationPage() {
                 type="button"
                 disabled={busyApi}
                 onClick={revokeUrl}
-                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-bold text-rose-600 border-rose-200 dark:border-rose-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-bold text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" /> Revoke
               </button>

@@ -96,7 +96,7 @@ export function LunchBreakCard({
           <div className="w-full h-2.5 rounded-full bg-secondary overflow-hidden border border-border/50 p-0.5">
             <div
               className={`h-full rounded-full transition-all duration-300 ${
-                isOverdue ? "bg-rose-500" : "bg-amber-500"
+                isOverdue ? "bg-rose-500" : "bg-amber-500 dark:bg-amber-700"
               }`}
               style={{ width: `${progressPercent}%` }}
             />
@@ -120,7 +120,7 @@ export function LunchBreakCard({
             className={`btn-lift w-full py-3.5 px-6 rounded-2xl font-bold text-sm shadow-md flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer ${
               isOverdue
                 ? "bg-rose-600 hover:bg-rose-700 text-white"
-                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                : "bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-800 text-white"
             }`}
           >
             <Play className="h-4 w-4 fill-current" />

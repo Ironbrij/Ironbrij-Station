@@ -46,7 +46,7 @@ export function ShiftConflictAlert({ conflicts, className = "" }: ShiftConflictA
                   <span className="text-muted-foreground font-normal">
                     ({conflict.shift1TimeFormatted})
                   </span>
-                  <span className="text-rose-500 font-extrabold">&harr;</span>
+                  <span className="text-rose-500 dark:text-rose-300 font-extrabold">&harr;</span>
                   <span>{conflict.shift2Name}</span>
                   <span className="text-muted-foreground font-normal">
                     ({conflict.shift2TimeFormatted})

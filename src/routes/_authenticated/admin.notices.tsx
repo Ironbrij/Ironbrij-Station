@@ -929,7 +929,7 @@ function NotificationsPage() {
                       toast.success("Notification deleted"),
                     )
                   }
-                  className="rounded-lg border p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  className="rounded-lg border p-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                   title="Delete announcement"
                 >
                   <Trash2 className="h-4 w-4" />

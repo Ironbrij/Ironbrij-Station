@@ -167,13 +167,13 @@ function AdminHome() {
                 <>
                   {" "}
                   <span aria-hidden="true">·</span>{" "}
-                  <span className="font-medium text-emerald-700">{working} working now</span>
+                  <span className="font-medium text-emerald-700 dark:text-emerald-300">{working} working now</span>
                 </>
               )}
             </p>
           </div>
           <div
-            className={`flex items-center gap-1.5 text-xs ${ready ? "text-emerald-700" : "text-amber-700"}`}
+            className={`flex items-center gap-1.5 text-xs ${ready ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}
             role="status"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -271,7 +271,7 @@ function AdminHome() {
           </div>
         )}
         {!ready && (
-          <div role="status" className="border-t bg-amber-50 px-5 py-3 text-xs text-amber-900">
+          <div role="status" className="border-t bg-amber-50 dark:bg-amber-950/40 px-5 py-3 text-xs text-amber-900 dark:text-amber-300">
             {error ||
               runtime.message ||
               "Syncing attendance. Live status and totals will appear when connected."}

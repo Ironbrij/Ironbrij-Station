@@ -612,7 +612,7 @@ function DepartmentsPage() {
             <button
               type="button"
               onClick={() => downloadAllDepartmentsCsv(allReportDays, allReportDeptId)}
-              className="btn-lift inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 shrink-0 mt-5"
+              className="btn-lift inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 dark:bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 dark:hover:bg-emerald-800 shrink-0 mt-5"
             >
               <Download className="h-4 w-4" /> CSV
             </button>
@@ -756,7 +756,7 @@ function DepartmentsPage() {
 
                   <button
                     onClick={() => downloadDeptReport(d, selectedDays, "csv")}
-                    className="btn-lift rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                    className="btn-lift rounded-md bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-800 text-white px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-sm"
                     title={`Export ${d.name} ${selectedDays}-day CSV Report`}
                   >
                     <Download className="h-3.5 w-3.5" /> CSV

@@ -385,7 +385,7 @@ function EmployeesListPage() {
                       </div>
                       <div className="flex shrink-0 gap-2">
                         <button type="button" onClick={() => setEmpToPromote(employee)} className="rounded border px-2.5 py-1 text-xs font-semibold">Edit / Keep</button>
-                        <button type="button" onClick={() => setEmpToDelete(employee)} className="rounded border border-rose-500/40 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-600 hover:text-white">Remove duplicate</button>
+                        <button type="button" onClick={() => setEmpToDelete(employee)} className="rounded border border-rose-500/40 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:text-rose-300 hover:bg-rose-600 hover:text-white dark:hover:text-white">Remove duplicate</button>
                       </div>
                     </div>
                   ))}
@@ -468,7 +468,7 @@ function EmployeesListPage() {
                         const punchInfo = getPunchStatus(e.id, e.authUid);
                         if (e.inviteStatus === "pending") {
                           return (
-                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-2xs">
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 dark:bg-amber-900 text-slate-950 dark:text-slate-300 shadow-2xs">
                               Pending Invite
                             </span>
                           );
@@ -482,7 +482,7 @@ function EmployeesListPage() {
                         }
                         if (punchInfo.status === "break") {
                           return (
-                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-2xs inline-flex items-center gap-1.5">
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 dark:bg-amber-900 text-slate-950 dark:text-slate-300 shadow-2xs inline-flex items-center gap-1.5">
                               <span className="h-1.5 w-1.5 rounded-full bg-slate-950 animate-pulse" />
                               On Break ({punchInfo.elapsedMinutes}m)
                             </span>
@@ -490,7 +490,7 @@ function EmployeesListPage() {
                         }
                         if (punchInfo.status === "in") {
                           return (
-                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs inline-flex items-center gap-1.5">
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 dark:bg-emerald-700 text-white shadow-2xs inline-flex items-center gap-1.5">
                               <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                               Active (Punched In)
                             </span>
@@ -534,7 +534,7 @@ function EmployeesListPage() {
                         <button
                           type="button"
                           onClick={() => setEmpToDelete(e)}
-                          className="btn-lift text-xs px-3 py-1 rounded-md border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white font-semibold transition-colors shadow-2xs"
+                          className="btn-lift text-xs px-3 py-1 rounded-md border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white dark:hover:text-white font-semibold transition-colors shadow-2xs"
                         >
                           Remove
                         </button>
@@ -990,7 +990,7 @@ function CompanyMembershipSettings({
                             <button
                               type="button"
                               onClick={() => handleRemoveShiftSlot(companyId, idx)}
-                              className="p-1 rounded text-rose-500 hover:bg-rose-500/10 font-bold text-xs"
+                              className="p-1 rounded text-rose-500 dark:text-rose-300 hover:bg-rose-500/10 font-bold text-xs"
                               title="Remove shift"
                             >
                               ✕
