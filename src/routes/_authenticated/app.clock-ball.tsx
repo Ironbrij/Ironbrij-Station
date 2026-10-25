@@ -67,8 +67,10 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "Load the folder",
     body: (
       <>
-        Click <strong>Load unpacked</strong> and pick the <code>savytime-clock-ball</code> folder
-        you unzipped (the one with <code>manifest.json</code> inside).
+        Click <strong>Load unpacked</strong>. Go to the folder that <em>holds</em>{" "}
+        <code>savytime-clock-ball</code>, click <code>savytime-clock-ball</code> once, then click{" "}
+        <strong>Select Folder</strong>. Don't open it first: inside, the <code>icons</code> folder
+        gets picked by mistake and Chrome says "Manifest file is missing".
       </>
     ),
   },
