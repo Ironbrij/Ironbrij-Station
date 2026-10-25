@@ -27,6 +27,7 @@ import { resolveProfilePhoto } from "./profile-photo";
 import { toast } from "sonner";
 import { getEmployeeCompanyIds, getEmployeeForCompany, getEmployeePortalCompanies, resolveEmployeeCompanyId } from "./company-context";
 import { liveStore } from "./live-data";
+import { CLOCK_BALL_MESSAGE } from "./clock-ball";
 import { findHolidaySource, sharedCalendar, shareHolidays, withSharedHolidays } from "./holidays";
 
 interface AuthState {
@@ -382,6 +383,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveCompanyId,
     loading,
     logout: async () => {
+      // The Clock Ball extension forgets this sign-in and hides the ball.
+      window.postMessage({ source: CLOCK_BALL_MESSAGE, signedOut: true }, window.location.origin);
       if (firebaseConfigured) await signOut(auth());
     },
     refresh: async () => {

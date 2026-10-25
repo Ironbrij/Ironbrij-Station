@@ -3,7 +3,9 @@
   "name": "SavyTime Clock Ball",
   "version": "1.0.0",
   "description": "A little robot ball that counts your worked time while you're clocked in to SavyTime.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "scripting", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
   "icons": {
     "16": "icons/16.png",
     "32": "icons/32.png",
@@ -20,7 +22,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://station.savykids.com/*"],
+      "matches": ["https://station.savykids.com/*", "http://localhost:5173/*"],
       "js": ["bridge.js"],
       "run_at": "document_start"
     },

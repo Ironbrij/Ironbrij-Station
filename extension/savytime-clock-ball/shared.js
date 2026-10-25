@@ -1,6 +1,7 @@
 // Shared by the ball on web pages (ball.js) and the toolbar popup (popup.js).
+// `var` so a second injection into the same page (after an update) cannot fail on redeclaring.
 
-const CLOCK_BALL_COLORS = {
+var CLOCK_BALL_COLORS = {
   blue: {
     name: "Ironbrij blue",
     light: "#6aa8ff",
@@ -22,9 +23,9 @@ const CLOCK_BALL_COLORS = {
   },
 };
 
-const CLOCK_BALL_SIZE = 84;
-// Overtime has no set end, so without word from SavyTime the ball gives up after this.
-const CLOCK_BALL_MAX_OPEN_MS = 16 * 60 * 60 * 1000;
+var CLOCK_BALL_SIZE = 84;
+// Overtime has no set end; if SavyTime can't be reached at all, the ball gives up after this.
+var CLOCK_BALL_MAX_OPEN_MS = 16 * 60 * 60 * 1000;
 
 /** What the ball shows at `now` (SavyTime's clock), or null when it should be hidden. */
 function clockBallView(shift, now) {
@@ -39,6 +40,56 @@ function clockBallView(shift, now) {
     paused: Boolean(shift.pausedAt),
     // Shown on the computer's own clock.
     until: shift.endsAt ? endsAt - (shift.clockOffset || 0) : 0,
+  };
+}
+
+/** A punch as the Firestore REST API returns it, cut down to what the ball needs. */
+function clockBallPunch(doc) {
+  const f = doc.fields || {};
+  const str = (name) => (f[name] && (f[name].stringValue || f[name].timestampValue)) || "";
+  return {
+    id: doc.name.split("/").pop(),
+    type: str("type"),
+    company: str("companyId") || "default",
+    companyName: str("companyName"),
+    at: Date.parse(str("timestamp")) || 0,
+    endsAt: Date.parse(str("scheduledShiftEnd")) || 0,
+    voided: Boolean(f.voidedAt && !("nullValue" in f.voidedAt)),
+  };
+}
+
+/**
+ * The ball's state from the employee's recent punches (oldest first), read the
+ * way SavyTime reads them: a start opens a session, and only a punch from that
+ * session's company pauses or closes it.
+ */
+function clockBallFromPunches(punches) {
+  let start = null;
+  let breakMs = 0;
+  let pausedAt = 0;
+  for (const p of punches) {
+    if (p.voided) continue;
+    if (p.type === "in" || p.type === "extra_in") {
+      start = p;
+      breakMs = 0;
+      pausedAt = 0;
+      continue;
+    }
+    if (!start || p.company !== start.company) continue;
+    if (p.type === "out" || p.type === "extra_out") start = null;
+    else if (p.type === "lunch_start") pausedAt = p.at;
+    else if (p.type === "lunch_end" && pausedAt) {
+      breakMs += p.at - pausedAt;
+      pausedAt = 0;
+    }
+  }
+  if (!start) return { active: false, countFrom: 0, pausedAt: 0, endsAt: 0, company: "" };
+  return {
+    active: true,
+    countFrom: start.at + breakMs,
+    pausedAt,
+    endsAt: start.type === "in" && start.endsAt > start.at ? start.endsAt + breakMs : 0,
+    company: start.companyName,
   };
 }
 

@@ -71,3 +71,141 @@ test("stopping work hides the ball", () => {
   assert.equal(state.active, false);
   assert.equal(view(state, "11:05"), null);
 });
+
+// The extension's background worker, with Chrome and the network faked.
+function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[]) {
+  const local = new Map<string, unknown>();
+  const session = new Map<string, unknown>();
+  const area = (store: Map<string, unknown>) => ({
+    get: async (keys: string | string[]) =>
+      Object.fromEntries([keys].flat().map((key) => [key, store.get(key)])),
+    set: async (values: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(values)) store.set(key, structuredClone(value));
+    },
+    remove: async (keys: string | string[]) => [keys].flat().forEach((key) => store.delete(key)),
+  });
+  const listener = { addListener() {} };
+  const net = { tokenStatus: 200, queries: [] as string[] };
+  const context = vm.createContext({
+    console,
+    URLSearchParams,
+    chrome: {
+      storage: { local: area(local), session: area(session) },
+      alarms: { create() {}, onAlarm: listener },
+      runtime: { onInstalled: listener, onStartup: listener, onMessage: listener },
+    },
+    importScripts: () =>
+      vm.runInContext(
+        readFileSync(
+          new URL("../extension/savytime-clock-ball/shared.js", import.meta.url),
+          "utf8",
+        ),
+        context,
+      ),
+    fetch: async (url: string, init: { body: string }) => {
+      if (url.startsWith("https://securetoken.googleapis.com/")) {
+        return new Response(JSON.stringify({ id_token: "id", expires_in: "3600" }), {
+          status: net.tokenStatus,
+        });
+      }
+      const since = JSON.parse(init.body).structuredQuery.where.compositeFilter.filters[1]
+        .fieldFilter.value.timestampValue;
+      net.queries.push(since);
+      const rows = db
+        .filter(
+          (doc) => (doc.fields.timestamp as { timestampValue: string }).timestampValue > since,
+        )
+        .map((doc) => ({ document: { name: `projects/p/documents/punches/${doc.id}`, ...doc } }));
+      return new Response(JSON.stringify(rows.length ? rows : [{ readTime: "now" }]));
+    },
+  });
+  vm.runInContext(
+    readFileSync(
+      new URL("../extension/savytime-clock-ball/background.js", import.meta.url),
+      "utf8",
+    ),
+    context,
+  );
+  local.set("link", {
+    refreshToken: "refresh",
+    apiKey: "key",
+    projectId: "p",
+    employeeIds: ["va"],
+  });
+  return { sync: () => context.sync() as Promise<void>, local, net };
+}
+
+const stored = (type: string, minutesAgo: number, extra: Record<string, unknown> = {}) => ({
+  id: `${type}-${minutesAgo}`,
+  fields: {
+    type: { stringValue: type },
+    companyId: { stringValue: "alpha" },
+    companyName: { stringValue: "Ironbrij" },
+    timestamp: { timestampValue: new Date(Date.now() - minutesAgo * 60e3).toISOString() },
+    ...extra,
+  },
+});
+
+test("the extension finds a punch-in in the database on its own", async () => {
+  const end = new Date(Date.now() + 60 * 60e3).toISOString();
+  const worker = backgroundWorker([stored("in", 120, { scheduledShiftEnd: { stringValue: end } })]);
+  await worker.sync();
+  const shift = worker.local.get("shift") as {
+    active: boolean;
+    countFrom: number;
+    endsAt: number;
+    company: string;
+  };
+  assert.equal(shift.active, true);
+  assert.equal(shift.endsAt, Date.parse(end));
+  assert.equal(shift.company, "Ironbrij");
+  assert.ok(Math.abs(Date.now() - 120 * 60e3 - shift.countFrom) < 2000);
+});
+
+test("a punch-out made elsewhere, with no SavyTime tab open, hides the ball", async () => {
+  const db = [stored("in", 120)];
+  const worker = backgroundWorker(db);
+  await worker.sync();
+  assert.equal((worker.local.get("shift") as { active: boolean }).active, true);
+  db.push(stored("out", 0));
+  await worker.sync();
+  assert.equal((worker.local.get("shift") as { active: boolean }).active, false);
+  // The second check only asked for punches after the last one it had.
+  assert.equal(
+    worker.net.queries[1],
+    (db[0].fields.timestamp as { timestampValue: string }).timestampValue,
+  );
+});
+
+test("breaks, voided punches and other companies are read like SavyTime reads them", () => {
+  const p = (type: string, at: number, extra = {}) => ({
+    id: type + at,
+    type,
+    company: "alpha",
+    companyName: "",
+    at,
+    endsAt: 0,
+    voided: false,
+    ...extra,
+  });
+  const state = ball.clockBallFromPunches([
+    p("in", 1000, { endsAt: 9000 }),
+    p("lunch_start", 2000),
+    p("lunch_end", 2500),
+    p("out", 3000, { voided: true }),
+    p("out", 3100, { company: "beta" }),
+    p("lunch_start", 4000),
+  ]);
+  assert.equal(state.active, true);
+  assert.equal(state.countFrom, 1500);
+  assert.equal(state.endsAt, 9500);
+  assert.equal(state.pausedAt, 4000);
+  assert.equal(ball.clockBallFromPunches([p("in", 1), p("out", 2)]).active, false);
+});
+
+test("a sign-in that no longer works is forgotten", async () => {
+  const worker = backgroundWorker([stored("in", 10)]);
+  worker.net.tokenStatus = 400;
+  await worker.sync();
+  assert.equal(worker.local.has("link"), false);
+});

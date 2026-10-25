@@ -73,11 +73,12 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     ),
   },
   {
-    title: "Pin it and refresh SavyTime",
+    title: "Pin it, and you're done",
     body: (
       <>
         Click the puzzle-piece icon in Chrome's toolbar and pin <strong>SavyTime Clock Ball</strong>
-        . Then refresh this page. When you start work, the ball pops up.
+        . It connects to your SavyTime sign-in by itself. If you're already clocked in, the ball
+        pops up straight away.
       </>
     ),
   },
@@ -92,7 +93,7 @@ const TIPS = [
   { icon: Palette, text: "Click the extension icon to make it pink, purple, green and more." },
   {
     icon: RotateCcw,
-    text: "Keeps counting if you close SavyTime, and comes back if you reopen Chrome mid-shift. It goes away when your shift ends or you stop work.",
+    text: "Linked to your punches: it keeps going if you close SavyTime or reopen Chrome, and vanishes as soon as you stop work, even from your phone, or when your shift ends.",
   },
 ];
 

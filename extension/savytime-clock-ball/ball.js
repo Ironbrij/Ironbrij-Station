@@ -33,6 +33,12 @@
   }
 
   function render() {
+    // An updated extension injects a fresh copy; this old one steps aside.
+    if (!chrome.runtime?.id) {
+      host?.remove();
+      window.clearInterval(timer);
+      return;
+    }
     const view = clockBallView(shift, Date.now() + ((shift && shift.clockOffset) || 0));
     if (!view) {
       host?.remove();
@@ -95,5 +101,5 @@
     render();
   });
   window.addEventListener("resize", () => parts && place());
-  window.setInterval(render, 1000);
+  const timer = window.setInterval(render, 1000);
 })();
