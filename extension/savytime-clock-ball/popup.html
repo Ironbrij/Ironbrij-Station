@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SavyTime Clock Ball</title>
+    <style>
+      body {
+        margin: 0;
+        width: 260px;
+        font:
+          13px/1.4 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        color: #14213d;
+        background: #fff;
+      }
+      header {
+        padding: 18px 16px 14px;
+        text-align: center;
+        background: linear-gradient(160deg, #0b2a7a, #1d4ed8);
+        color: #fff;
+      }
+      header h1 {
+        margin: 10px 0 2px;
+        font-size: 15px;
+      }
+      header p {
+        margin: 0;
+        font-size: 12px;
+        opacity: 0.85;
+      }
+      #preview {
+        display: flex;
+        justify-content: center;
+      }
+      main {
+        padding: 14px 16px 16px;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #5b6b8c;
+      }
+      .swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+      .swatches button {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        cursor: pointer;
+        padding: 0;
+        box-shadow: 0 2px 6px rgba(11, 42, 122, 0.25);
+      }
+      .swatches button[aria-pressed="true"] {
+        border-color: #14213d;
+        outline: 2px solid #fff;
+        outline-offset: -4px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row > * {
+        flex: 1;
+        padding: 8px;
+        border-radius: 10px;
+        font: inherit;
+        font-weight: 600;
+        text-align: center;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      #reset {
+        border: 1px solid #d6deef;
+        background: #f4f7fd;
+        color: #14213d;
+      }
+      #open {
+        border: 0;
+        background: #1d4ed8;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div id="preview"></div>
+      <h1 id="title">Not clocked in</h1>
+      <p id="detail">Start work on SavyTime and the ball pops up.</p>
+    </header>
+    <main>
+      <h2>Ball colour</h2>
+      <div class="swatches" id="swatches"></div>
+      <div class="row">
+        <button id="reset" type="button">Reset position</button>
+        <a id="open" href="https://station.savykids.com/app/punch" target="_blank">Open SavyTime</a>
+      </div>
+    </main>
+    <script src="shared.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

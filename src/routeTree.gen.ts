@@ -50,6 +50,7 @@ import { Route as AuthenticatedAdminSodEodRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminSupportRouteImport } from './routes/_authenticated/admin.support'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAppAutomationRouteImport } from './routes/_authenticated/app.automation'
+import { Route as AuthenticatedAppClockBallRouteImport } from './routes/_authenticated/app.clock-ball'
 import { Route as AuthenticatedAppExtraRouteImport } from './routes/_authenticated/app.extra'
 import { Route as AuthenticatedAppLeaveRouteImport } from './routes/_authenticated/app.leave'
 import { Route as AuthenticatedAppNoticesRouteImport } from './routes/_authenticated/app.notices'
@@ -278,6 +279,12 @@ const AuthenticatedAppAutomationRoute =
     path: '/automation',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppClockBallRoute =
+  AuthenticatedAppClockBallRouteImport.update({
+    id: '/clock-ball',
+    path: '/clock-ball',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppExtraRoute = AuthenticatedAppExtraRouteImport.update({
   id: '/extra',
   path: '/extra',
@@ -350,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/automation': typeof AuthenticatedAppAutomationRoute
+  '/app/clock-ball': typeof AuthenticatedAppClockBallRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -397,6 +405,7 @@ export interface FileRoutesByTo {
   '/admin/support': typeof AuthenticatedAdminSupportRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/app/automation': typeof AuthenticatedAppAutomationRoute
+  '/app/clock-ball': typeof AuthenticatedAppClockBallRoute
   '/app/extra': typeof AuthenticatedAppExtraRoute
   '/app/leave': typeof AuthenticatedAppLeaveRoute
   '/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -447,6 +456,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/support': typeof AuthenticatedAdminSupportRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/app/automation': typeof AuthenticatedAppAutomationRoute
+  '/_authenticated/app/clock-ball': typeof AuthenticatedAppClockBallRoute
   '/_authenticated/app/extra': typeof AuthenticatedAppExtraRoute
   '/_authenticated/app/leave': typeof AuthenticatedAppLeaveRoute
   '/_authenticated/app/notices': typeof AuthenticatedAppNoticesRoute
@@ -497,6 +507,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/users'
     | '/app/automation'
+    | '/app/clock-ball'
     | '/app/extra'
     | '/app/leave'
     | '/app/notices'
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/users'
     | '/app/automation'
+    | '/app/clock-ball'
     | '/app/extra'
     | '/app/leave'
     | '/app/notices'
@@ -593,6 +605,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/support'
     | '/_authenticated/admin/users'
     | '/_authenticated/app/automation'
+    | '/_authenticated/app/clock-ball'
     | '/_authenticated/app/extra'
     | '/_authenticated/app/leave'
     | '/_authenticated/app/notices'
@@ -919,6 +932,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAutomationRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/clock-ball': {
+      id: '/_authenticated/app/clock-ball'
+      path: '/clock-ball'
+      fullPath: '/app/clock-ball'
+      preLoaderRoute: typeof AuthenticatedAppClockBallRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/extra': {
       id: '/_authenticated/app/extra'
       path: '/extra'
@@ -1016,6 +1036,7 @@ const AuthenticatedAdminRouteWithChildren =
 
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppAutomationRoute: typeof AuthenticatedAppAutomationRoute
+  AuthenticatedAppClockBallRoute: typeof AuthenticatedAppClockBallRoute
   AuthenticatedAppExtraRoute: typeof AuthenticatedAppExtraRoute
   AuthenticatedAppLeaveRoute: typeof AuthenticatedAppLeaveRoute
   AuthenticatedAppNoticesRoute: typeof AuthenticatedAppNoticesRoute
@@ -1025,6 +1046,7 @@ interface AuthenticatedAppRouteChildren {
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppAutomationRoute: AuthenticatedAppAutomationRoute,
+  AuthenticatedAppClockBallRoute: AuthenticatedAppClockBallRoute,
   AuthenticatedAppExtraRoute: AuthenticatedAppExtraRoute,
   AuthenticatedAppLeaveRoute: AuthenticatedAppLeaveRoute,
   AuthenticatedAppNoticesRoute: AuthenticatedAppNoticesRoute,
