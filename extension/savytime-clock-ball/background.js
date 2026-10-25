@@ -56,8 +56,10 @@ async function idToken(link) {
     },
   );
   if (!response.ok) {
+    // Google's own reason, shown in the popup so a failed sign-in can be told apart.
+    const reason = (await response.json().catch(() => null))?.error?.message || response.status;
     // 400 means the sign-in was revoked or the password changed: sign out.
-    throw Object.assign(new Error("Your sign-in has expired. Please sign in again."), {
+    throw Object.assign(new Error(`Google didn't accept the sign-in (${reason}).`), {
       signedOut: response.status === 400,
     });
   }
@@ -137,7 +139,8 @@ async function runSync() {
   } catch (error) {
     if (error.signedOut) {
       await chrome.storage.local.remove(["link", "cache"]);
-      await chrome.storage.local.set({ shift: { active: false } });
+      // Remembered so SavyTime doesn't hand the same refused sign-in over again.
+      await chrome.storage.local.set({ shift: { active: false }, refused: link.refreshToken });
     }
     // Otherwise (offline, SavyTime unreachable) the ball keeps its last known state.
     await chrome.storage.local.set({ synced: { at: now, error: String(error.message || error) } });

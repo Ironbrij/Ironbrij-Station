@@ -40,16 +40,23 @@ window.addEventListener("message", (event) => {
         .slice(0, 10);
       if (!employeeIds.length) return;
       chrome.storage.local
-        .set({
-          link: {
-            refreshToken: connect.refreshToken,
-            email: connect.email,
-            name: text(connect.name, 200),
-            employeeIds,
-          },
+        .get("refused")
+        .then(({ refused }) => {
+          if (refused === connect.refreshToken) throw new Error("refused before");
         })
+        .then(() =>
+          chrome.storage.local.set({
+            link: {
+              refreshToken: connect.refreshToken,
+              email: connect.email,
+              name: text(connect.name, 200),
+              employeeIds,
+            },
+          }),
+        )
         .then(() => chrome.storage.local.remove("cache"))
         .then(() => chrome.runtime.sendMessage("sync"))
+        .catch(() => {})
         .finally(announce);
     }
   } catch {

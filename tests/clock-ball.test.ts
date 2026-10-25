@@ -95,7 +95,11 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     importScripts: () => vm.runInContext(extensionFile("shared.js"), context),
     fetch: async (url: string, init: { body: string }) => {
       if (url.startsWith("https://securetoken.googleapis.com/")) {
-        return new Response(JSON.stringify({ id_token: "id", expires_in: "3600" }), {
+        const body =
+          net.tokenStatus === 200
+            ? { id_token: "id", expires_in: "3600" }
+            : { error: { message: "INVALID_REFRESH_TOKEN" } };
+        return new Response(JSON.stringify(body), {
           status: net.tokenStatus,
         });
       }
@@ -167,7 +171,12 @@ test("a sign-in that no longer works signs the extension out and hides the ball"
   await worker.sync();
   assert.equal(worker.local.has("link"), false);
   assert.equal(shiftOf(worker).active, false);
-  assert.match((worker.local.get("synced") as { error: string }).error, /sign in again/);
+  assert.equal(
+    (worker.local.get("synced") as { error: string }).error,
+    "Google didn't accept the sign-in (INVALID_REFRESH_TOKEN).",
+  );
+  // So SavyTime's side panel can't hand the same sign-in over again and again.
+  assert.equal(worker.local.get("refused"), "refresh");
 });
 
 test("a fresh install wears the Ironbrij logo, and each pick overrides only itself", () => {

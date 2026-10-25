@@ -46,6 +46,11 @@ function render() {
   if (!link) {
     $("title").textContent = "Sign in to start";
     $("detail").textContent = "Use your Ironbrij SavyTime account.";
+    // Why the last sign-in didn't stick, if one was tried.
+    $("signinProblem").hidden = !synced?.error;
+    $("signinProblem").textContent = synced?.error
+      ? `Last sign-in ${minutesAgo(synced.at)} didn't work: ${synced.error}`
+      : "";
     return;
   }
   const until = view?.until
