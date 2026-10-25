@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useClockBallExtension } from "@/lib/use-clock-ball";
+import { DEFAULT_LOGO } from "@/lib/types";
 
-/** A still picture of the extension's ball, in Ironbrij blue. */
+/** A still picture of the extension's ball with its default face, the Ironbrij logo. */
 export function ClockBallPreview({
   size = 84,
   time = "2:14:09",
@@ -13,42 +14,25 @@ export function ClockBallPreview({
   return (
     <div
       aria-hidden
-      className="flex shrink-0 flex-col items-center justify-center rounded-full"
+      className="flex shrink-0 flex-col items-center justify-end rounded-full bg-cover bg-center"
       style={{
         width: size,
         height: size,
-        gap: 5 * scale,
-        background: "radial-gradient(circle at 32% 26%, #6aa8ff 0%, #1d4ed8 52%, #0b2a7a 100%)",
-        boxShadow:
-          "0 10px 24px rgba(11,42,122,.45), inset 0 -6px 12px rgba(0,0,0,.28), inset 0 4px 10px rgba(255,255,255,.35)",
+        paddingBottom: 11 * scale,
+        backgroundColor: "#04307f",
+        backgroundImage: `url("${DEFAULT_LOGO}")`,
+        boxShadow: "0 10px 24px rgba(11,42,122,.45)",
       }}
     >
-      <div
-        className="flex items-center justify-center"
-        style={{
-          width: 46 * scale,
-          height: 20 * scale,
-          gap: 9 * scale,
-          borderRadius: 10 * scale,
-          background: "#0a1330",
-        }}
-      >
-        {[0, 1].map((eye) => (
-          <span
-            key={eye}
-            style={{
-              width: 8 * scale,
-              height: 11 * scale,
-              borderRadius: 4 * scale,
-              background: "#7dd3fc",
-              boxShadow: "0 0 6px #7dd3fc",
-            }}
-          />
-        ))}
-      </div>
       <span
         className="font-mono font-bold text-white tabular-nums"
-        style={{ fontSize: 13 * scale, textShadow: "0 1px 2px rgba(0,0,0,.4)" }}
+        style={{
+          fontSize: 11.5 * scale,
+          padding: `${3 * scale}px ${6 * scale}px`,
+          borderRadius: 7 * scale,
+          background: "rgba(3,22,66,.82)",
+          boxShadow: "0 0 0 1px rgba(255,255,255,.35)",
+        }}
       >
         {time}
       </span>

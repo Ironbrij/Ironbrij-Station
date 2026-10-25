@@ -32,6 +32,39 @@ var CLOCK_BALL_COLORS = {
 };
 
 var CLOCK_BALL_SIZES = { tiny: 52, small: 68, medium: 84, large: 108 };
+// What a fresh install looks like; each can be changed from the popup.
+var CLOCK_BALL_DEFAULTS = {
+  face: "logo",
+  color: "blue",
+  size: "medium",
+  blink: true,
+  jokes: true,
+  hat: "",
+};
+// Its own little jokes, shown now and then in a speech bubble.
+var CLOCK_BALL_JOKES = [
+  "Fun fact: I have never dropped the ball. I am the ball.",
+  "No hands, no feet, still clocking more hours than my legs would.",
+  "I am 100% circle. Can't cut corners even if I wanted to.",
+  "My only skill is counting. Please don't tell my manager.",
+  "Some balls go to the World Cup. I go to work.",
+  "Keep the ball rolling, they said. I'm trying, I'm just a bit flat today.",
+  "I blink so you think I'm working.",
+  "Drag me anywhere. I have zero opinions and zero spine.",
+  "I'm not lazy, I'm energy efficient. Mostly sphere.",
+  "If I had a coffee I'd spill it. No hands, remember?",
+  "I've been staring at this timer all day. It's literally my face.",
+  "Round, blue and always on the clock. Living the dream.",
+  "Break time? I'll just sit here. Like always.",
+  "Technically I'm always on the ball. Technically.",
+  "Someone please invent tiny arms so I can stretch.",
+];
+/** The look the employee picked, with the defaults filled in. */
+function clockBallLook(saved) {
+  const look = {};
+  for (const [key, value] of Object.entries(CLOCK_BALL_DEFAULTS)) look[key] = saved[key] ?? value;
+  return look;
+}
 // Overtime has no set end; if SavyTime can't be reached at all, the ball gives up after this.
 var CLOCK_BALL_MAX_OPEN_MS = 16 * 60 * 60 * 1000;
 
@@ -126,10 +159,17 @@ function clockBallTime(ms) {
   return `${Math.floor(total / 3600)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
 }
 
-/** The ball itself: a visor with two robot eyes and the time underneath. */
+/**
+ * The ball itself: the Ironbrij logo (or a robot visor) with the time on it,
+ * an optional hat on top and a speech bubble for its jokes.
+ */
 function clockBallElement(doc) {
   const ball = doc.createElement("div");
   ball.className = "ball";
+  const hat = doc.createElement("img");
+  hat.className = "hat";
+  hat.alt = "";
+  hat.hidden = true;
   const visor = doc.createElement("div");
   visor.className = "visor";
   visor.append(doc.createElement("i"), doc.createElement("i"));
@@ -138,13 +178,25 @@ function clockBallElement(doc) {
   const label = doc.createElement("div");
   label.className = "label";
   label.textContent = "BREAK";
-  ball.append(visor, time, label);
-  return { ball, time };
+  const bubble = doc.createElement("div");
+  bubble.className = "bubble";
+  ball.append(hat, visor, time, label, bubble);
+  return { ball, time, hat, bubble };
+}
+
+/** Puts the chosen face, blink and hat on a ball made by clockBallElement. */
+function clockBallDress(parts, look) {
+  parts.ball.classList.toggle("logo", look.face !== "robot");
+  parts.ball.classList.toggle("still", !look.blink);
+  parts.hat.hidden = !look.hat;
+  // shortcut: a page whose CSP forbids data: images shows no hat; fine for a decoration.
+  if (look.hat && parts.hat.src !== look.hat) parts.hat.src = look.hat;
 }
 
 /** Drawn at 84px and scaled, so every size keeps the same look. */
-function clockBallCss(color, size = CLOCK_BALL_SIZES.medium) {
+function clockBallCss(color, size, logoUrl) {
   const px = (n) => `${Math.round(((n * size) / 84) * 10) / 10}px`;
+  const shadow = `0 ${px(10)} ${px(24)} ${color.dark}73`;
   return `
 :host { all: initial; }
 .ball {
@@ -152,8 +204,8 @@ function clockBallCss(color, size = CLOCK_BALL_SIZES.medium) {
   width: ${size}px; height: ${size}px; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: ${px(5)};
   background: radial-gradient(circle at 32% 26%, ${color.light} 0%, ${color.main} 52%, ${color.dark} 100%);
-  box-shadow: 0 ${px(10)} ${px(24)} ${color.dark}73, inset 0 ${px(-6)} ${px(12)} rgba(0,0,0,.28), inset 0 ${px(4)} ${px(10)} rgba(255,255,255,.35);
-  cursor: grab; user-select: none; touch-action: none;
+  box-shadow: ${shadow}, inset 0 ${px(-6)} ${px(12)} rgba(0,0,0,.28), inset 0 ${px(4)} ${px(10)} rgba(255,255,255,.35);
+  cursor: pointer; user-select: none; touch-action: none;
   font: 700 ${px(13)}/1 ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
   transition: transform .15s ease;
 }
@@ -173,6 +225,40 @@ function clockBallCss(color, size = CLOCK_BALL_SIZES.medium) {
 .label { display: none; color: #fff; font-size: ${px(8)}; letter-spacing: ${px(1.5)}; opacity: .85; margin-top: ${px(-2)}; }
 .paused .visor i { height: ${px(3)}; animation: none; }
 .paused .label { display: block; }
+
+/* Ironbrij logo face: the time sits in a pill over the logo's dark lower half. */
+.ball.logo {
+  justify-content: flex-end; padding-bottom: ${px(11)};
+  background: #04307f url("${logoUrl}") center / cover no-repeat;
+  box-shadow: ${shadow};
+  animation: glow 3.2s ease-in-out infinite;
+}
+.logo .visor, .logo .label { display: none; }
+.logo .time {
+  font-size: ${px(11.5)}; padding: ${px(3)} ${px(6)}; border-radius: ${px(7)};
+  background: rgba(3, 22, 66, .82); box-shadow: 0 0 0 1px rgba(255,255,255,.35);
+}
+.logo.paused .time { background: rgba(180, 83, 9, .9); }
+.still, .still .visor i { animation: none; }
+
+.hat {
+  position: absolute; left: 50%; bottom: 80%; width: 80%; height: auto;
+  transform: translateX(-50%) rotate(-8deg); pointer-events: none;
+}
+.hat[hidden] { display: none; }
+.bubble {
+  position: absolute; top: 50%; right: calc(100% + ${px(10)}); transform: translateY(-50%);
+  width: max-content; max-width: 220px; padding: 8px 11px; border-radius: 12px;
+  background: #fff; color: #14213d; box-shadow: 0 6px 20px rgba(11,42,122,.25);
+  font: 600 12px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; text-align: left;
+  opacity: 0; visibility: hidden; transition: opacity .25s ease; pointer-events: none;
+}
+.bubble.right { right: auto; left: calc(100% + ${px(10)}); }
+.bubble.show { opacity: 1; visibility: visible; }
 @keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@keyframes glow {
+  0%, 100% { box-shadow: ${shadow}, 0 0 0 0 rgba(106,168,255,0); }
+  50% { box-shadow: ${shadow}, 0 0 0 ${px(5)} rgba(106,168,255,.35); }
+}
 `;
 }

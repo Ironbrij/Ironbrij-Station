@@ -17,22 +17,29 @@ function minutesAgo(at) {
 }
 
 function render() {
-  const { shift, link, synced, color, size } = saved;
+  const { shift, link, synced } = saved;
+  const look = clockBallLook(saved);
   const view = link ? clockBallView(shift, Date.now()) : null;
   parts.time.textContent = view ? view.time : "0:00:00";
   parts.ball.classList.toggle("paused", Boolean(view && view.paused));
   sheet.replaceSync(
     clockBallCss(
-      CLOCK_BALL_COLORS[color] || CLOCK_BALL_COLORS.blue,
-      CLOCK_BALL_SIZES[size] || CLOCK_BALL_SIZES.medium,
+      CLOCK_BALL_COLORS[look.color] || CLOCK_BALL_COLORS.blue,
+      CLOCK_BALL_SIZES[look.size] || CLOCK_BALL_SIZES.medium,
+      chrome.runtime.getURL("logo.png"),
     ),
   );
-  for (const button of document.querySelectorAll("[data-color]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.color === (color || "blue")));
+  clockBallDress(parts, look);
+  for (const key of ["color", "size", "face"]) {
+    for (const button of document.querySelectorAll(`[data-${key}]`)) {
+      button.setAttribute("aria-pressed", String(button.dataset[key] === look[key]));
+    }
   }
-  for (const button of document.querySelectorAll("[data-size]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.size === (size || "medium")));
-  }
+  // Colours tint the robot; the logo keeps Ironbrij's own.
+  $("colours").hidden = look.face !== "robot";
+  $("blink").checked = look.blink;
+  $("jokes").checked = look.jokes;
+  $("removeHat").hidden = !look.hat;
 
   $("signin").hidden = Boolean(link);
   $("signedin").hidden = !link;
@@ -75,8 +82,36 @@ for (const key of Object.keys(CLOCK_BALL_SIZES)) {
   $("sizes").append(button);
 }
 
+for (const button of document.querySelectorAll("[data-face]")) {
+  button.addEventListener("click", () => chrome.storage.local.set({ face: button.dataset.face }));
+}
+for (const key of ["blink", "jokes"]) {
+  $(key).addEventListener("change", () => chrome.storage.local.set({ [key]: $(key).checked }));
+}
+$("hatFile").addEventListener("change", () => {
+  const file = $("hatFile").files[0];
+  $("hatError").hidden = true;
+  if (!file) return;
+  if (file.type !== "image/png" || file.size > 500_000) {
+    $("hatError").textContent = "Pick a PNG picture under 500 KB.";
+    $("hatError").hidden = false;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => chrome.storage.local.set({ hat: reader.result });
+  reader.readAsDataURL(file);
+});
+$("removeHat").addEventListener("click", () => chrome.storage.local.set({ hat: "" }));
+
 $("google").href = `${CLOCK_BALL_SITE}/app/clock-ball`;
-$("open").href = `${CLOCK_BALL_SITE}/app/punch`;
+// Known before the click: Chrome only opens the panel straight from the click itself.
+let windowId = chrome.windows.WINDOW_ID_CURRENT;
+chrome.windows.getCurrent().then((win) => (windowId = win.id));
+$("open").addEventListener("click", () => {
+  chrome.sidePanel.open({ windowId }).then(() => {
+    if (!document.body.classList.contains("page")) window.close();
+  });
+});
 $("reset").addEventListener("click", () => chrome.storage.local.remove("pos"));
 $("signout").addEventListener("click", async () => {
   await chrome.storage.session.remove("token");
@@ -164,10 +199,13 @@ $("form").addEventListener("submit", async (event) => {
   }
 });
 
-chrome.storage.local.get(["shift", "link", "synced", "color", "size"], (values) => {
-  saved = values;
-  render();
-});
+chrome.storage.local.get(
+  ["shift", "link", "synced", ...Object.keys(CLOCK_BALL_DEFAULTS)],
+  (values) => {
+    saved = values;
+    render();
+  },
+);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   for (const [key, { newValue }] of Object.entries(changes)) saved[key] = newValue;

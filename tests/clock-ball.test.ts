@@ -169,3 +169,15 @@ test("a sign-in that no longer works signs the extension out and hides the ball"
   assert.equal(shiftOf(worker).active, false);
   assert.match((worker.local.get("synced") as { error: string }).error, /sign in again/);
 });
+
+test("a fresh install wears the Ironbrij logo, and each pick overrides only itself", () => {
+  const fresh = ball.clockBallLook({});
+  assert.equal(fresh.face, "logo");
+  assert.equal(fresh.blink, true);
+  assert.equal(fresh.jokes, true);
+  const picked = ball.clockBallLook({ face: "robot", jokes: false });
+  assert.equal(picked.face, "robot");
+  assert.equal(picked.jokes, false);
+  assert.equal(picked.size, "medium");
+  assert.ok(ball.CLOCK_BALL_JOKES.length >= 10);
+});

@@ -35,8 +35,11 @@ chrome.runtime.onStartup.addListener(() => {
   sync();
 });
 chrome.alarms.onAlarm.addListener(() => sync());
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   if (message === "sync") sync();
+  // The ball was clicked: SavyTime itself opens beside the page. Called at once,
+  // while Chrome still counts the click as the employee's.
+  if (message === "panel" && sender.tab) chrome.sidePanel.open({ tabId: sender.tab.id });
 });
 
 async function idToken(link) {

@@ -93,8 +93,14 @@ const TIPS = [
     icon: Timer,
     text: "Appears when you start work and counts your worked time. Breaks pause it.",
   },
-  { icon: MousePointer2, text: "Drag it anywhere on the screen. It stays where you put it." },
-  { icon: Palette, text: "Click the extension icon to make it pink, purple, green and more." },
+  {
+    icon: MousePointer2,
+    text: "Click it to open SavyTime beside the page: start or stop work, SOD & EOD, notifications and feedback. Drag it to move it.",
+  },
+  {
+    icon: Palette,
+    text: "Click the toolbar icon to pick the Ironbrij logo or a robot face, its size and colour, blinking, jokes, or upload a PNG hat.",
+  },
   {
     icon: RotateCcw,
     text: "Linked to your punches: it keeps going if you close SavyTime or reopen Chrome, and vanishes as soon as you stop work, even from your phone, or when your shift ends.",

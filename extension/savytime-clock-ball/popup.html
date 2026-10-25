@@ -192,6 +192,35 @@
         font-weight: 600;
         cursor: pointer;
       }
+      .open {
+        margin-bottom: 14px;
+      }
+      #preview {
+        padding-top: 22px;
+      }
+      .hat-row {
+        margin-bottom: 10px;
+      }
+      .upload {
+        margin: 0;
+        font-size: 12px;
+      }
+      .toggles {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .toggles label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        cursor: pointer;
+      }
+      .toggles input {
+        width: auto;
+        margin: 0;
+      }
     </style>
   </head>
   <body>
@@ -218,14 +247,33 @@
       </main>
 
       <main id="signedin" hidden>
-        <h2>Ball size</h2>
-        <div class="sizes" id="sizes"></div>
-        <h2>Ball colour</h2>
-        <div class="swatches" id="swatches"></div>
-        <div class="row">
-          <button class="btn secondary" id="reset" type="button">Reset position</button>
-          <a class="btn primary" id="open" target="_blank">Open SavyTime</a>
+        <button class="btn primary open" id="open" type="button">
+          Open SavyTime beside this page
+        </button>
+        <h2>Face</h2>
+        <div class="sizes" id="faces">
+          <button type="button" data-face="logo">Ironbrij logo</button>
+          <button type="button" data-face="robot">Robot</button>
         </div>
+        <h2>Size</h2>
+        <div class="sizes" id="sizes"></div>
+        <div id="colours">
+          <h2>Colour</h2>
+          <div class="swatches" id="swatches"></div>
+        </div>
+        <h2>Hat</h2>
+        <div class="row hat-row">
+          <label class="btn secondary upload"
+            >Upload a PNG <input id="hatFile" type="file" accept="image/png" hidden
+          /></label>
+          <button class="btn secondary" id="removeHat" type="button">Take it off</button>
+        </div>
+        <p class="error" id="hatError" hidden></p>
+        <div class="toggles">
+          <label><input id="blink" type="checkbox" /> Blink</label>
+          <label><input id="jokes" type="checkbox" /> Tell jokes</label>
+        </div>
+        <button class="btn secondary" id="reset" type="button">Put it back in the corner</button>
         <p class="muted" id="synced"></p>
         <div class="account">
           <span>Signed in as <strong id="who"></strong></span>
