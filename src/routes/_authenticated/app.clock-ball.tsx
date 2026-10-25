@@ -1,0 +1,191 @@
+import { createFileRoute } from "@tanstack/react-router";
+import {
+  CheckCircle2,
+  Copy,
+  Download,
+  MousePointer2,
+  Palette,
+  RotateCcw,
+  Timer,
+} from "lucide-react";
+import { toast } from "sonner";
+import { ClockBallPreview } from "@/components/ClockBall";
+import { CLOCK_BALL_DOWNLOAD } from "@/lib/clock-ball";
+import { useClockBallInstalled } from "@/lib/use-clock-ball";
+
+export const Route = createFileRoute("/_authenticated/app/clock-ball")({
+  head: () => ({
+    meta: [
+      { title: "Clock Ball extension — SavyTime" },
+      {
+        name: "description",
+        content: "Download the Clock Ball Chrome extension to keep your shift time in view.",
+      },
+    ],
+  }),
+  component: ClockBallPage,
+});
+
+const STEPS: { title: string; body: React.ReactNode }[] = [
+  {
+    title: "Download the extension",
+    body: (
+      <>
+        Click <strong>Download extension</strong> above. You get a file called{" "}
+        <code>savytime-clock-ball.zip</code>.
+      </>
+    ),
+  },
+  {
+    title: "Unzip it",
+    body: (
+      <>
+        Right-click the zip and choose <strong>Extract All…</strong> (on a Mac, double-click it).
+        Keep the <code>savytime-clock-ball</code> folder somewhere safe, like Documents. Chrome uses
+        it from there, so don't delete it.
+      </>
+    ),
+  },
+  {
+    title: "Open Chrome's extensions page",
+    body: (
+      <>
+        Copy <code>chrome://extensions</code> with the button below, paste it into Chrome's address
+        bar and press Enter.
+      </>
+    ),
+  },
+  {
+    title: "Turn on Developer mode",
+    body: (
+      <>
+        Switch on <strong>Developer mode</strong> in the top-right corner of that page.
+      </>
+    ),
+  },
+  {
+    title: "Load the folder",
+    body: (
+      <>
+        Click <strong>Load unpacked</strong> and pick the <code>savytime-clock-ball</code> folder
+        you unzipped (the one with <code>manifest.json</code> inside).
+      </>
+    ),
+  },
+  {
+    title: "Pin it and refresh SavyTime",
+    body: (
+      <>
+        Click the puzzle-piece icon in Chrome's toolbar and pin <strong>SavyTime Clock Ball</strong>
+        . Then refresh this page. When you start work, the ball pops up.
+      </>
+    ),
+  },
+];
+
+const TIPS = [
+  {
+    icon: Timer,
+    text: "Appears when you start work and counts your worked time. Breaks pause it.",
+  },
+  { icon: MousePointer2, text: "Drag it anywhere on the screen. It stays where you put it." },
+  { icon: Palette, text: "Click the extension icon to make it pink, purple, green and more." },
+  {
+    icon: RotateCcw,
+    text: "Keeps counting if you close SavyTime, and comes back if you reopen Chrome mid-shift. It goes away when your shift ends or you stop work.",
+  },
+];
+
+function ClockBallPage() {
+  const installed = useClockBallInstalled();
+
+  async function copyExtensionsLink() {
+    try {
+      await navigator.clipboard.writeText("chrome://extensions");
+      toast.success("Copied. Paste it into Chrome's address bar.");
+    } catch {
+      toast.error("Couldn't copy. Type chrome://extensions into the address bar instead.");
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 pt-4">
+      <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#0b2a7a] via-[#123a9c] to-[#1d4ed8] p-6 text-white shadow-lift sm:p-8">
+        <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
+          <ClockBallPreview size={112} />
+          <div className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-white/70">
+              New · Chrome extension
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">Meet the Clock Ball</h1>
+            <p className="text-sm leading-relaxed text-white/85">
+              A little robot ball that sits on your screen and shows how long you've worked this
+              shift, on every website you open.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+              <a
+                href={CLOCK_BALL_DOWNLOAD}
+                download
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-[#0b2a7a] shadow-xs transition-colors hover:bg-white/90"
+              >
+                <Download className="h-4 w-4" /> Download extension
+              </a>
+              {installed && (
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">
+                  <CheckCircle2 className="h-4 w-4" /> Installed on this browser
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card p-6 shadow-xs sm:p-8">
+        <h2 className="text-lg font-semibold">How to install</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Takes about a minute. Works in Google Chrome, Microsoft Edge and Brave.
+        </p>
+        <ol className="mt-6 space-y-5">
+          {STEPS.map((step, index) => (
+            <li key={step.title} className="flex gap-4">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                {index + 1}
+              </span>
+              <div className="space-y-2 pt-1 text-sm">
+                <div className="font-semibold text-foreground">{step.title}</div>
+                <p className="leading-relaxed text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-foreground">
+                  {step.body}
+                </p>
+                {index === 2 && (
+                  <button
+                    type="button"
+                    onClick={copyExtensionsLink}
+                    className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-secondary/80"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy chrome://extensions
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        {TIPS.map(({ icon: Icon, text }) => (
+          <div key={text} className="flex gap-3 rounded-2xl border bg-card p-4 text-sm shadow-xs">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Icon className="h-4 w-4" />
+            </div>
+            <p className="leading-relaxed text-muted-foreground">{text}</p>
+          </div>
+        ))}
+      </section>
+
+      <p className="pb-6 text-center text-xs text-muted-foreground">
+        The ball can't appear on Chrome's own pages (new tab, settings, the extensions page). Open
+        any website and it's there.
+      </p>
+    </div>
+  );
+}

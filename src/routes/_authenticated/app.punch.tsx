@@ -101,6 +101,7 @@ import {
 } from "@/lib/company-context";
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { LunchBreakCard } from "@/components/lunch/LunchBreakCard";
+import { ClockBallBanner } from "@/components/ClockBall";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -1156,6 +1157,7 @@ function PunchPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <ClockBallBanner />
       {/* Top Welcome Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>

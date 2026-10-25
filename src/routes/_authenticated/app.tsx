@@ -4,19 +4,22 @@ import { AppShell } from "@/components/AppShell";
 import { usePunchOutReminder } from "@/lib/use-punch-out-reminder";
 import { useLunchBreakReminder } from "@/lib/use-lunch-break-reminder";
 import { useShiftAutoPunchOut } from "@/lib/use-shift-auto-punch-out";
+import { useClockBallBridge } from "@/lib/use-clock-ball";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: EmployeeLayout,
 });
 
 function EmployeeLayout() {
-  const { isAdmin, user, employee, company, activeCompanyId } = useAuth();
+  const { isAdmin, user, employee, company, companies, activeCompanyId } = useAuth();
   usePunchOutReminder({ user, employee, company, activeCompanyId });
   useLunchBreakReminder({ user, employee, company, activeCompanyId });
   useShiftAutoPunchOut({ employee, company, activeCompanyId });
+  useClockBallBridge({ employee, companies });
 
   const nav = [
     { to: "/app/punch", label: "Start/Stop Work" },
+    { to: "/app/clock-ball", label: "Clock Ball" },
     { to: "/app/leave", label: "Leave" },
     { to: "/app/sod-eod", label: "SOD & EOD" },
     { to: "/app/notices", label: "Notifications" },
