@@ -103,7 +103,6 @@ $("hatFile").addEventListener("change", () => {
 });
 $("removeHat").addEventListener("click", () => chrome.storage.local.set({ hat: "" }));
 
-$("google").href = `${CLOCK_BALL_SITE}/app/clock-ball`;
 // Known before the click: Chrome only opens the panel straight from the click itself.
 let windowId = chrome.windows.WINDOW_ID_CURRENT;
 chrome.windows.getCurrent().then((win) => (windowId = win.id));
@@ -111,6 +110,12 @@ $("open").addEventListener("click", () => {
   chrome.sidePanel.open({ windowId }).then(() => {
     if (!document.body.classList.contains("page")) window.close();
   });
+});
+// Google sign-in happens in SavyTime itself, in the side panel; once signed in
+// there, SavyTime connects the extension to that account (see bridge.js).
+$("google").addEventListener("click", () => {
+  chrome.sidePanel.open({ windowId });
+  $("googleHint").hidden = false;
 });
 $("reset").addEventListener("click", () => chrome.storage.local.remove("pos"));
 $("signout").addEventListener("click", async () => {

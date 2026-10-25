@@ -79,10 +79,10 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "Sign in to the extension",
     body: (
       <>
-        A sign-in page opens by itself. Use your SavyTime email and password. If you sign in to
-        SavyTime with Google, come back to this page and click{" "}
-        <strong>Connect the extension</strong> above instead. Then pin it from the puzzle-piece icon
-        in the toolbar. If you're already clocked in, the ball pops up straight away.
+        A sign-in page opens by itself. Click <strong>Continue with Google</strong>: SavyTime opens
+        in the side panel, you sign in there as usual, and the extension connects to your account by
+        itself. Then pin it from the puzzle-piece icon in the toolbar. If you're already clocked in,
+        the ball pops up straight away.
       </>
     ),
   },

@@ -1,9 +1,17 @@
 // Runs on SavyTime only. The ball follows the account signed in to the
 // extension, never whoever is signed in to this page, so this page can only:
 // - say "a punch was just made", so the ball checks the database at once;
-// - connect the extension to this page's account when the employee clicks
-//   "Connect" (the way in for people who sign in to SavyTime with Google);
+// - connect the extension to this page's account: by itself when it is open in
+//   the extension's own side panel and the extension isn't signed in yet (the
+//   "Continue with Google" way in), or when the employee clicks "Connect" on
+//   the Clock Ball page;
 // - ask whether the extension is installed, and as whom.
+
+// The extension's side panel, which only the employee can open.
+const inPanel =
+  window.top !== window &&
+  location.ancestorOrigins?.[0] === `chrome-extension://${chrome.runtime.id}`;
+
 async function announce() {
   const { link } = await chrome.storage.local.get("link");
   window.postMessage(
@@ -11,6 +19,7 @@ async function announce() {
       source: "savytime-clock-ball-extension",
       version: chrome.runtime.getManifest().version,
       connectedAs: link ? link.email : "",
+      askToConnect: inPanel && !link,
     },
     location.origin,
   );
@@ -47,5 +56,9 @@ window.addEventListener("message", (event) => {
     // The extension was reloaded or updated; the new copy takes over.
   }
 });
+
+// The side panel opens whichever SavyTime this browser uses (the live site, or a
+// copy running on this computer while testing).
+if (!inPanel && window.top === window) chrome.storage.local.set({ site: location.origin });
 
 announce();
