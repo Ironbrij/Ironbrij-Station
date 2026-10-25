@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useClockBallInstalled } from "@/lib/use-clock-ball";
+import { useClockBallExtension } from "@/lib/use-clock-ball";
 
 /** A still picture of the extension's ball, in Ironbrij blue. */
 export function ClockBallPreview({
@@ -58,7 +58,7 @@ export function ClockBallPreview({
 
 /** "New: get the Clock Ball", shown until the extension is installed. */
 export function ClockBallBanner() {
-  if (useClockBallInstalled() !== false) return null;
+  if (useClockBallExtension() !== false) return null;
   return (
     <Link
       to="/app/clock-ball"

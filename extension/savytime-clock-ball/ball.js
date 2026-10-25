@@ -1,12 +1,13 @@
 // Draws the clock ball on every page while the shift runs. It reads only the
-// extension's storage, so it keeps counting with SavyTime closed and comes back
-// by itself when Chrome is reopened mid-shift.
+// extension's storage, which the background worker keeps in step with the
+// signed-in employee's punches, so no SavyTime tab needs to be open.
 (() => {
   if (window.top !== window) return;
 
   const GAP = 24;
   let shift = null;
   let colorKey = "blue";
+  let size = CLOCK_BALL_SIZES.medium;
   let pos = null;
   let host = null;
   let parts = null;
@@ -14,9 +15,9 @@
   const sheet = new CSSStyleSheet();
 
   function place() {
-    const max = (size) => Math.max(8, size - CLOCK_BALL_SIZE - 8);
-    const x = pos ? pos.x : window.innerWidth - CLOCK_BALL_SIZE - GAP;
-    const y = pos ? pos.y : window.innerHeight - CLOCK_BALL_SIZE - GAP;
+    const max = (space) => Math.max(8, space - size - 8);
+    const x = pos ? pos.x : window.innerWidth - size - GAP;
+    const y = pos ? pos.y : window.innerHeight - size - GAP;
     parts.ball.style.left = `${Math.min(Math.max(8, x), max(window.innerWidth))}px`;
     parts.ball.style.top = `${Math.min(Math.max(8, y), max(window.innerHeight))}px`;
   }
@@ -39,7 +40,7 @@
       window.clearInterval(timer);
       return;
     }
-    const view = clockBallView(shift, Date.now() + ((shift && shift.clockOffset) || 0));
+    const view = clockBallView(shift, Date.now());
     if (!view) {
       host?.remove();
       host = parts = null;
@@ -81,23 +82,24 @@
     ball.addEventListener("pointercancel", drop);
   }
 
-  function setColor(key) {
-    colorKey = CLOCK_BALL_COLORS[key] ? key : "blue";
-    sheet.replaceSync(clockBallCss(CLOCK_BALL_COLORS[colorKey]));
+  function setLook(colorName, sizeName) {
+    if (colorName !== undefined) colorKey = CLOCK_BALL_COLORS[colorName] ? colorName : "blue";
+    if (sizeName !== undefined) size = CLOCK_BALL_SIZES[sizeName] || CLOCK_BALL_SIZES.medium;
+    sheet.replaceSync(clockBallCss(CLOCK_BALL_COLORS[colorKey], size));
   }
 
-  setColor(colorKey);
-  chrome.storage.local.get(["shift", "color", "pos"], (saved) => {
+  setLook();
+  chrome.storage.local.get(["shift", "color", "size", "pos"], (saved) => {
     shift = saved.shift || null;
     pos = saved.pos || null;
-    setColor(saved.color);
+    setLook(saved.color, saved.size);
     render();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes.shift) shift = changes.shift.newValue || null;
     if (changes.pos && !drag) pos = changes.pos.newValue || null;
-    if (changes.color) setColor(changes.color.newValue);
+    if (changes.color || changes.size) setLook(changes.color?.newValue, changes.size?.newValue);
     render();
   });
   window.addEventListener("resize", () => parts && place());

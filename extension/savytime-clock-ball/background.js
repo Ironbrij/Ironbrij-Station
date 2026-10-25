@@ -1,10 +1,11 @@
-// Keeps the ball true to the database. Once a minute, and when Chrome starts,
-// it reads the employee's new punches with the sign-in SavyTime handed over,
-// so a punch-in or punch-out made anywhere (another device, an admin,
-// automatic punch-out) shows up even with no SavyTime tab open.
+// Keeps the ball true to the database for the account signed in to the
+// extension. Once a minute, when Chrome starts, and the moment SavyTime says a
+// punch was made, it reads that employee's new punches, so a punch-in or
+// punch-out made anywhere (another device, an admin, automatic punch-out)
+// shows up with or without a SavyTime tab open.
 importScripts("shared.js");
 
-const SAVYTIME = ["https://station.savykids.com/*", "http://localhost:5173/*"];
+const SAVYTIME = [`${CLOCK_BALL_SITE}/*`, "http://localhost:5173/*"];
 const LOOKBACK_MS = 36 * 60 * 60 * 1000;
 // New punches are read every minute (1 read when nothing changed). The whole
 // recent window is re-read now and then to catch corrected or voided punches.
@@ -17,8 +18,8 @@ function schedule() {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   schedule();
   if (reason !== "install" && reason !== "update") return;
-  // Content scripts only reach pages opened after install, so connect the
-  // tabs already open: someone already clocked in sees the ball straight away.
+  // Content scripts only reach pages opened after install, so give the tabs
+  // already open the ball and SavyTime's punch notices straight away.
   const inject = (tab, files) =>
     chrome.scripting.executeScript({ target: { tabId: tab.id }, files }).catch(() => {
       // Pages Chrome keeps to itself (web store, settings) refuse; that's fine.
@@ -26,11 +27,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   for (const tab of await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] })) {
     inject(tab, ["shared.js", "ball.js"]);
   }
-  const savytimeTabs = await chrome.tabs.query({ url: SAVYTIME });
-  for (const tab of savytimeTabs) inject(tab, ["bridge.js"]);
-  if (reason === "install" && !savytimeTabs.length) {
-    chrome.tabs.create({ url: "https://station.savykids.com/app/punch" });
-  }
+  for (const tab of await chrome.tabs.query({ url: SAVYTIME })) inject(tab, ["bridge.js"]);
+  if (reason === "install") chrome.tabs.create({ url: "popup.html?welcome" });
 });
 chrome.runtime.onStartup.addListener(() => {
   schedule();
@@ -47,7 +45,7 @@ async function idToken(link) {
     return token.value;
   }
   const response = await fetch(
-    `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(link.apiKey)}`,
+    `https://securetoken.googleapis.com/v1/token?key=${CLOCK_BALL_FIREBASE.apiKey}`,
     {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -55,8 +53,8 @@ async function idToken(link) {
     },
   );
   if (!response.ok) {
-    // 400 means the sign-in was revoked or the password changed: forget it.
-    throw Object.assign(new Error(`sign-in ${response.status}`), {
+    // 400 means the sign-in was revoked or the password changed: sign out.
+    throw Object.assign(new Error("Your sign-in has expired. Please sign in again."), {
       signedOut: response.status === 400,
     });
   }
@@ -71,47 +69,34 @@ async function idToken(link) {
   return body.id_token;
 }
 
-async function punchesSince(link, token, since) {
-  const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(link.projectId)}/databases/(default)/documents:runQuery`,
-    {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: "punches" }],
-          where: {
-            compositeFilter: {
-              op: "AND",
-              filters: [
-                {
-                  fieldFilter: {
-                    field: { fieldPath: "employeeId" },
-                    op: "IN",
-                    value: {
-                      arrayValue: { values: link.employeeIds.map((id) => ({ stringValue: id })) },
-                    },
-                  },
-                },
-                {
-                  fieldFilter: {
-                    field: { fieldPath: "timestamp" },
-                    op: "GREATER_THAN",
-                    value: { timestampValue: new Date(since).toISOString() },
-                  },
-                },
-              ],
+function punchesSince(link, token, since) {
+  return clockBallQuery(token, {
+    from: [{ collectionId: "punches" }],
+    where: {
+      compositeFilter: {
+        op: "AND",
+        filters: [
+          {
+            fieldFilter: {
+              field: { fieldPath: "employeeId" },
+              op: "IN",
+              value: {
+                arrayValue: { values: link.employeeIds.map((id) => ({ stringValue: id })) },
+              },
             },
           },
-          orderBy: [{ field: { fieldPath: "timestamp" }, direction: "ASCENDING" }],
-        },
-      }),
+          {
+            fieldFilter: {
+              field: { fieldPath: "timestamp" },
+              op: "GREATER_THAN",
+              value: { timestampValue: new Date(since).toISOString() },
+            },
+          },
+        ],
+      },
     },
-  );
-  if (!response.ok) throw new Error(`punches ${response.status}`);
-  return (await response.json())
-    .filter((row) => row.document)
-    .map((row) => clockBallPunch(row.document));
+    orderBy: [{ field: { fieldPath: "timestamp" }, direction: "ASCENDING" }],
+  }).then((docs) => docs.map(clockBallPunch));
 }
 
 let syncing = null;
@@ -123,9 +108,9 @@ function sync() {
 async function runSync() {
   const { link, cache, shift } = await chrome.storage.local.get(["link", "cache", "shift"]);
   if (!link) return;
+  const now = Date.now();
   try {
     const token = await idToken(link);
-    const now = Date.now();
     const who = link.employeeIds.join();
     const full = !cache || cache.who !== who || now - cache.fullAt > FULL_READ_MS;
     const since = full ? now - LOOKBACK_MS : cache.lastAt;
@@ -134,7 +119,7 @@ async function runSync() {
     const punches = [...known.values()]
       .filter((p) => p.at > now - LOOKBACK_MS)
       .sort((a, b) => a.at - b.at);
-    const next = { ...clockBallFromPunches(punches), clockOffset: shift?.clockOffset || 0 };
+    const next = clockBallFromPunches(punches);
     await chrome.storage.local.set({
       cache: {
         who,
@@ -142,11 +127,16 @@ async function runSync() {
         lastAt: Math.max(since, ...punches.map((p) => p.at)),
         punches,
       },
+      synced: { at: now, error: "" },
       // Rewritten only on a change, so tabs aren't woken every minute for nothing.
       ...(JSON.stringify(next) !== JSON.stringify(shift) ? { shift: next } : {}),
     });
   } catch (error) {
-    // Offline or SavyTime unreachable: the ball keeps its last known state.
-    if (error.signedOut) await chrome.storage.local.remove(["link", "cache"]);
+    if (error.signedOut) {
+      await chrome.storage.local.remove(["link", "cache"]);
+      await chrome.storage.local.set({ shift: { active: false } });
+    }
+    // Otherwise (offline, SavyTime unreachable) the ball keeps its last known state.
+    await chrome.storage.local.set({ synced: { at: now, error: String(error.message || error) } });
   }
 }

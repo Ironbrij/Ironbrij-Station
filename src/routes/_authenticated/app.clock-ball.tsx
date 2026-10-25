@@ -11,7 +11,8 @@ import {
 import { toast } from "sonner";
 import { ClockBallPreview } from "@/components/ClockBall";
 import { CLOCK_BALL_DOWNLOAD } from "@/lib/clock-ball";
-import { useClockBallInstalled } from "@/lib/use-clock-ball";
+import { useAuth } from "@/lib/auth-context";
+import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
 
 export const Route = createFileRoute("/_authenticated/app/clock-ball")({
   head: () => ({
@@ -75,12 +76,13 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     ),
   },
   {
-    title: "Pin it, and you're done",
+    title: "Sign in to the extension",
     body: (
       <>
-        Click the puzzle-piece icon in Chrome's toolbar and pin <strong>SavyTime Clock Ball</strong>
-        . It connects to your SavyTime sign-in by itself. If you're already clocked in, the ball
-        pops up straight away.
+        A sign-in page opens by itself. Use your SavyTime email and password. If you sign in to
+        SavyTime with Google, come back to this page and click{" "}
+        <strong>Connect the extension</strong> above instead. Then pin it from the puzzle-piece icon
+        in the toolbar. If you're already clocked in, the ball pops up straight away.
       </>
     ),
   },
@@ -100,7 +102,8 @@ const TIPS = [
 ];
 
 function ClockBallPage() {
-  const installed = useClockBallInstalled();
+  const { employee } = useAuth();
+  const extension = useClockBallExtension();
 
   async function copyExtensionsLink() {
     try {
@@ -133,10 +136,21 @@ function ClockBallPage() {
               >
                 <Download className="h-4 w-4" /> Download extension
               </a>
-              {installed && (
+              {extension && extension.connectedAs && (
                 <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">
-                  <CheckCircle2 className="h-4 w-4" /> Installed on this browser
+                  <CheckCircle2 className="h-4 w-4" /> Installed · signed in as{" "}
+                  {extension.connectedAs}
                 </span>
+              )}
+              {extension && !extension.connectedAs && employee && (
+                // For Google sign-ins: the extension's own form only takes a password.
+                <button
+                  type="button"
+                  onClick={() => connectClockBall(employee)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold hover:bg-white/25"
+                >
+                  <CheckCircle2 className="h-4 w-4" /> Connect the extension as {employee.name}
+                </button>
               )}
             </div>
           </div>

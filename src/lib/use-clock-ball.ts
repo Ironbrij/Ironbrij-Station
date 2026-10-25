@@ -1,81 +1,63 @@
 import { useEffect, useState } from "react";
-import { attendanceNow } from "./attendance-clock";
 import { useAppRuntime } from "./app-runtime";
-import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY, clockBallState } from "./clock-ball";
-import { auth, firebaseConfig } from "./firebase";
-import {
-  activePunchesInOrder,
-  employeeRecordIds,
-  isSettled,
-  useEmployeePunchesLive,
-} from "./live-data";
-import type { Company, Employee } from "./types";
+import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY } from "./clock-ball";
+import { auth } from "./firebase";
+import { employeeRecordIds, isSettled, useEmployeePunchesLive } from "./live-data";
+import type { Employee } from "./types";
+
+function postToExtension(message: Record<string, unknown>) {
+  window.postMessage({ source: CLOCK_BALL_MESSAGE, ...message }, window.location.origin);
+}
 
 /**
- * Tells the Clock Ball extension, when installed, whether this employee is
- * clocked in, straight away. It also hands over this sign-in, so the extension
- * can keep checking the punches itself once this tab is closed: a punch-out
- * from the phone, an admin or automatic punch-out still hides the ball.
- * The extension listens on this page only.
+ * Tells the Clock Ball extension, when installed, that this employee's punches
+ * changed, so it checks the database at once instead of at its next minute.
+ * The extension only ever reads punches for the account signed in to it.
  */
-export function useClockBallBridge({
-  employee,
-  companies,
-}: {
-  employee: Employee | null;
-  companies: Company[];
-}) {
+export function useClockBallBridge(employee: Employee | null) {
   const { ready } = useAppRuntime();
   // The same punches the punch page and automatic punch-out read.
   const punchesLive = useEmployeePunchesLive(ready ? employee : null);
   const punches = isSettled(punchesLive) ? punchesLive.data : undefined;
-
   useEffect(() => {
-    if (!employee || !punches) return;
-    const ordered = activePunchesInOrder(punches);
-    function send() {
-      const now = attendanceNow();
-      window.postMessage(
-        {
-          source: CLOCK_BALL_MESSAGE,
-          state: clockBallState(ordered, employee, now, companies),
-          // The ball counts on the computer's clock; this corrects it to SavyTime's.
-          clockOffset: now.getTime() - Date.now(),
-          link: {
-            refreshToken: auth().currentUser?.refreshToken,
-            apiKey: firebaseConfig.apiKey,
-            projectId: firebaseConfig.projectId,
-            employeeIds: employeeRecordIds(employee),
-          },
-        },
-        window.location.origin,
-      );
-    }
-    // An extension installed while this page is open says hello: tell it now.
-    function onMessage(event: MessageEvent) {
-      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) send();
-    }
-    send();
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [employee, punches, companies]);
+    if (punches) postToExtension({ nudge: true });
+  }, [punches]);
 }
 
-/** Whether the Clock Ball extension answers on this page; null while still asking. */
-export function useClockBallInstalled(): boolean | null {
-  const [installed, setInstalled] = useState<boolean | null>(null);
+/** Signs the extension in as this employee: the way in for Google sign-ins. */
+export function connectClockBall(employee: Employee) {
+  const user = auth().currentUser;
+  if (!user?.email) return;
+  postToExtension({
+    connect: {
+      refreshToken: user.refreshToken,
+      email: user.email,
+      name: employee.name,
+      employeeIds: employeeRecordIds(employee),
+    },
+  });
+}
+
+/**
+ * The extension on this browser: null while still asking, false when it is not
+ * installed, otherwise who it is signed in as ("" when nobody).
+ */
+export function useClockBallExtension(): { connectedAs: string } | false | null {
+  const [extension, setExtension] = useState<{ connectedAs: string } | false | null>(null);
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) setInstalled(true);
+      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) {
+        setExtension({ connectedAs: String(event.data.connectedAs || "") });
+      }
     }
     window.addEventListener("message", onMessage);
-    window.postMessage({ source: CLOCK_BALL_MESSAGE, ping: true }, window.location.origin);
+    postToExtension({ ping: true });
     // The extension answers within milliseconds; silence means it is not there.
-    const timer = window.setTimeout(() => setInstalled((value) => value ?? false), 600);
+    const timer = window.setTimeout(() => setExtension((value) => value ?? false), 600);
     return () => {
       window.removeEventListener("message", onMessage);
       window.clearTimeout(timer);
     };
   }, []);
-  return installed;
+  return extension;
 }

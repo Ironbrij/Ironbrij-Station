@@ -11,11 +11,11 @@ export const Route = createFileRoute("/_authenticated/app")({
 });
 
 function EmployeeLayout() {
-  const { isAdmin, user, employee, company, companies, activeCompanyId } = useAuth();
+  const { isAdmin, user, employee, company, activeCompanyId } = useAuth();
   usePunchOutReminder({ user, employee, company, activeCompanyId });
   useLunchBreakReminder({ user, employee, company, activeCompanyId });
   useShiftAutoPunchOut({ employee, company, activeCompanyId });
-  useClockBallBridge({ employee, companies });
+  useClockBallBridge(employee);
 
   const nav = [
     { to: "/app/punch", label: "Start/Stop Work" },
