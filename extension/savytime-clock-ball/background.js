@@ -34,9 +34,31 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 });
 chrome.runtime.onStartup.addListener(() => {
   schedule();
+  updateBadge();
   sync();
 });
-chrome.alarms.onAlarm.addListener(() => sync(true));
+chrome.alarms.onAlarm.addListener(() => {
+  updateBadge();
+  sync(true);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.shift || changes.link)) updateBadge();
+});
+
+/**
+ * The shift time on the toolbar icon. Pages the browser keeps to itself (the
+ * new tab page, settings) can't show the ball, so after reopening the browser
+ * this is where the time shows first. Updated every minute.
+ */
+async function updateBadge() {
+  const { shift, link } = await chrome.storage.local.get(["shift", "link"]);
+  const view = link ? clockBallView(shift, Date.now()) : null;
+  // Hours and minutes; the badge has room for about four characters.
+  await chrome.action.setBadgeText({ text: view ? view.time.replace(/:\d\d$/, "") : "" });
+  if (view) {
+    await chrome.action.setBadgeBackgroundColor({ color: view.paused ? "#b45309" : "#1d4ed8" });
+  }
+}
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message === "sync") sync();
   // The ball was clicked: SavyTime itself opens beside the page. Called at once,

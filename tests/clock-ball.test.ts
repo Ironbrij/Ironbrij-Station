@@ -90,13 +90,18 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     urls: [] as string[],
     appIds: [] as string[],
     noIndex: false,
+    badge: "",
   };
   const context = vm.createContext({
     console,
     URLSearchParams,
     chrome: {
-      storage: { local: area(local), session: area(session) },
+      storage: { local: area(local), session: area(session), onChanged: listener },
       alarms: { create() {}, onAlarm: listener },
+      action: {
+        setBadgeText: async ({ text }: { text: string }) => void (net.badge = text),
+        setBadgeBackgroundColor: async () => {},
+      },
       runtime: { onInstalled: listener, onStartup: listener, onMessage: listener },
     },
     importScripts: () => vm.runInContext(extensionFile("shared.js"), context),
@@ -164,6 +169,7 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     sync: () => context.sync() as Promise<void>,
     // The minute alarm.
     tick: () => context.sync(true) as Promise<void>,
+    badge: () => context.updateBadge() as Promise<void>,
     local,
     net,
   };
@@ -287,4 +293,16 @@ test("while clocked in every minute is checked; otherwise every 5 minutes", asyn
   // A punch made on SavyTime ("sync") still checks at once.
   await idle.sync();
   assert.equal(idle.net.queries.length, before + 1);
+});
+
+test("the toolbar icon shows hours and minutes while clocked in, and nothing otherwise", async () => {
+  const db = [stored("in", 134)];
+  const worker = backgroundWorker(db);
+  await worker.sync();
+  await worker.badge();
+  assert.equal(worker.net.badge, "2:14");
+  db.push(stored("out", 0));
+  await worker.sync();
+  await worker.badge();
+  assert.equal(worker.net.badge, "");
 });
