@@ -43,6 +43,10 @@ function render() {
 
   $("signin").hidden = Boolean(link);
   $("signedin").hidden = !link;
+  // Loaded once signed in, from whichever SavyTime this browser uses.
+  if (link && !$("punch").src) {
+    $("punch").src = `${saved.site || CLOCK_BALL_SITE}/app/punch?embed=1`;
+  }
   if (!link) {
     $("title").textContent = "Sign in to start";
     $("detail").textContent = "Use your Ironbrij SavyTime account.";
@@ -213,7 +217,7 @@ $("form").addEventListener("submit", async (event) => {
 });
 
 chrome.storage.local.get(
-  ["shift", "link", "synced", ...Object.keys(CLOCK_BALL_DEFAULTS)],
+  ["shift", "link", "synced", "site", ...Object.keys(CLOCK_BALL_DEFAULTS)],
   (values) => {
     saved = values;
     render();

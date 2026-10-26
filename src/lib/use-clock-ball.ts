@@ -1,9 +1,30 @@
 import { useEffect, useState } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { useAppRuntime } from "./app-runtime";
 import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY } from "./clock-ball";
 import { auth, firebaseConfig } from "./firebase";
 import { employeeRecordIds, isSettled, useEmployeePunchesLive } from "./live-data";
 import type { Employee } from "./types";
+
+/**
+ * SavyTime opened inside the Clock Ball extension's popup (`?embed=1`): pages
+ * show only their main card, so the popup's Start/Stop buttons are SavyTime's
+ * own, with all its checks.
+ */
+export function useClockBallEmbed(): boolean {
+  const asked = useRouterState({
+    select: (state) => Boolean((state.location.search as { embed?: unknown }).embed),
+  });
+  if (typeof window === "undefined") return asked;
+  // Remembered for this frame only, so signing in or moving between pages
+  // inside the popup keeps the compact view; normal tabs never set it.
+  try {
+    if (asked) sessionStorage.setItem("clockBallEmbed", "1");
+    return asked || sessionStorage.getItem("clockBallEmbed") === "1";
+  } catch {
+    return asked;
+  }
+}
 
 function postToExtension(message: Record<string, unknown>) {
   window.postMessage({ source: CLOCK_BALL_MESSAGE, ...message }, window.location.origin);

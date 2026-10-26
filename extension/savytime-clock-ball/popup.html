@@ -6,7 +6,7 @@
     <style>
       body {
         margin: 0;
-        width: 280px;
+        width: 340px;
         font:
           13px/1.4 system-ui,
           -apple-system,
@@ -192,6 +192,15 @@
         font-weight: 600;
         cursor: pointer;
       }
+      #punch {
+        display: block;
+        width: 100%;
+        height: 320px;
+        margin-bottom: 10px;
+        border: 1px solid #d6deef;
+        border-radius: 12px;
+        background: #fff;
+      }
       .open,
       .desktop {
         margin-bottom: 6px;
@@ -304,6 +313,8 @@
       </main>
 
       <main id="signedin" hidden>
+        <!-- SavyTime's own Web Punch card (start, stop, breaks), not a copy: same checks and records. -->
+        <iframe id="punch" title="Start or stop work" allow="clipboard-write"></iframe>
         <button class="btn primary open" id="open" type="button">
           Open SavyTime beside this page
         </button>
