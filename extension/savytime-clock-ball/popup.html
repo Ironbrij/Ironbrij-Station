@@ -192,8 +192,9 @@
         font-weight: 600;
         cursor: pointer;
       }
-      .open {
-        margin-bottom: 4px;
+      .open,
+      .desktop {
+        margin-bottom: 6px;
       }
       .google {
         display: flex;
@@ -305,6 +306,9 @@
       <main id="signedin" hidden>
         <button class="btn primary open" id="open" type="button">
           Open SavyTime beside this page
+        </button>
+        <button class="btn secondary desktop" id="desktop" type="button">
+          Show the ball on my desktop too
         </button>
         <p class="muted" id="synced"></p>
         <details class="customise">

@@ -42,15 +42,29 @@
     wirePointer(parts.ball);
     document.documentElement.append(host);
     nextJokeAt = Date.now() + JOKE_FIRST_MS;
+    greet();
+  }
+
+  function say(text) {
+    parts.bubble.textContent = text;
+    parts.bubble.classList.add("show");
+    setTimeout(() => parts?.bubble.classList.remove("show"), JOKE_SHOWN_MS);
+  }
+
+  // The first time the ball shows up for a newly signed-in employee, it introduces itself.
+  function greet() {
+    if (document.visibilityState !== "visible") return;
+    chrome.storage.local.get(["link", "greetedFor"], ({ link, greetedFor }) => {
+      if (!parts || !link || greetedFor === link.email) return;
+      chrome.storage.local.set({ greetedFor: link.email });
+      say(CLOCK_BALL_HELLO);
+    });
   }
 
   function joke() {
     if (!look.jokes || document.visibilityState !== "visible" || Date.now() < nextJokeAt) return;
     nextJokeAt = Date.now() + JOKE_EVERY_MS;
-    parts.bubble.textContent =
-      CLOCK_BALL_JOKES[Math.floor(Math.random() * CLOCK_BALL_JOKES.length)];
-    parts.bubble.classList.add("show");
-    setTimeout(() => parts?.bubble.classList.remove("show"), JOKE_SHOWN_MS);
+    say(CLOCK_BALL_JOKES[Math.floor(Math.random() * CLOCK_BALL_JOKES.length)]);
   }
 
   function render() {

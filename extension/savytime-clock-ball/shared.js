@@ -53,6 +53,9 @@ var CLOCK_BALL_DEFAULTS = {
   jokes: true,
   hat: "",
 };
+// What it says the first time it appears after someone signs in.
+var CLOCK_BALL_HELLO =
+  "Hi! I'm the SavyTime bot from Ironbrij. I'll keep your shift time right here. Click me for SavyTime, drag me anywhere.";
 // Its own little jokes, shown now and then in a speech bubble.
 var CLOCK_BALL_JOKES = [
   "Fun fact: I have never dropped the ball. I am the ball.",
