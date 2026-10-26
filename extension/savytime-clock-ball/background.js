@@ -36,7 +36,7 @@ chrome.runtime.onStartup.addListener(() => {
   schedule();
   sync();
 });
-chrome.alarms.onAlarm.addListener(() => sync());
+chrome.alarms.onAlarm.addListener(() => sync(true));
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message === "sync") sync();
   // The ball was clicked: SavyTime itself opens beside the page. Called at once,
@@ -145,16 +145,30 @@ function punchesSince(link, token, since) {
   ).then((docs) => docs.map(clockBallPunch));
 }
 
+// While clocked in the minute alarm checks every time, so a punch-out made
+// anywhere hides the ball within a minute. Otherwise it checks every 5 minutes
+// to spare the database's daily reads; a punch on SavyTime in this browser
+// still checks at once (it sends "sync"), and the ball hides itself exactly at
+// the shift's end without any check.
+const IDLE_CHECK_MS = 5 * 60 * 1000;
+
 let syncing = null;
-function sync() {
-  syncing ??= runSync().finally(() => (syncing = null));
+/** `routine` is the minute alarm; everything else (punches, sign-in, start-up) checks now. */
+function sync(routine = false) {
+  syncing ??= runSync(routine).finally(() => (syncing = null));
   return syncing;
 }
 
-async function runSync() {
-  const { link, cache, shift } = await chrome.storage.local.get(["link", "cache", "shift"]);
+async function runSync(routine) {
+  const { link, cache, shift, synced } = await chrome.storage.local.get([
+    "link",
+    "cache",
+    "shift",
+    "synced",
+  ]);
   if (!link) return;
   const now = Date.now();
+  if (routine && !shift?.active && synced && now - synced.at < IDLE_CHECK_MS) return;
   try {
     const token = await idToken(link);
     const who = link.employeeIds.join();

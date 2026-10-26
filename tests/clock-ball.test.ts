@@ -160,7 +160,13 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     email: "va@x.com",
     employeeIds: ["va", "va-login"],
   });
-  return { sync: () => context.sync() as Promise<void>, local, net };
+  return {
+    sync: () => context.sync() as Promise<void>,
+    // The minute alarm.
+    tick: () => context.sync(true) as Promise<void>,
+    local,
+    net,
+  };
 }
 
 const stored = (type: string, minutesAgo: number, extra: Record<string, unknown> = {}) => ({
@@ -261,4 +267,24 @@ test("without the database index the extension still finds the punch-in, by date
   db.push(stored("out", 0));
   await worker.sync();
   assert.equal(shiftOf(worker).active, false);
+});
+
+test("while clocked in every minute is checked; otherwise every 5 minutes", async () => {
+  const db = [stored("in", 30)];
+  const working = backgroundWorker(db);
+  await working.sync();
+  const asked = working.net.queries.length;
+  await working.tick();
+  // Clocked in: the next minute checks again, so a punch-out elsewhere shows within a minute.
+  assert.equal(working.net.queries.length, asked + 1);
+
+  const idle = backgroundWorker([stored("in", 300), stored("out", 120)]);
+  await idle.sync();
+  const before = idle.net.queries.length;
+  await idle.tick();
+  // Not clocked in and checked moments ago: the minute alarm waits.
+  assert.equal(idle.net.queries.length, before);
+  // A punch made on SavyTime ("sync") still checks at once.
+  await idle.sync();
+  assert.equal(idle.net.queries.length, before + 1);
 });
