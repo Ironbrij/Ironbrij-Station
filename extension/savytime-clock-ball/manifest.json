@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SavyTime Clock Ball",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Your SavyTime shift timer on every website, with SavyTime itself one click away in the side panel.",
   "permissions": ["storage", "scripting", "alarms", "sidePanel"],
   "host_permissions": ["<all_urls>"],
@@ -24,7 +24,7 @@
   "web_accessible_resources": [{ "resources": ["logo.png"], "matches": ["<all_urls>"] }],
   "content_scripts": [
     {
-      "matches": ["https://station.savykids.com/*", "http://localhost:5173/*"],
+      "matches": ["https://station.savykids.com/*"],
       "js": ["bridge.js"],
       "run_at": "document_start",
       "all_frames": true

@@ -5,7 +5,7 @@
 // shows up with or without a SavyTime tab open.
 importScripts("shared.js");
 
-const SAVYTIME = [`${CLOCK_BALL_SITE}/*`, "http://localhost:5173/*"];
+const SAVYTIME = [`${CLOCK_BALL_SITE}/*`];
 const LOOKBACK_MS = 36 * 60 * 60 * 1000;
 // New punches are read every minute (1 read when nothing changed). The whole
 // recent window is re-read now and then to catch corrected or voided punches.

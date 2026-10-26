@@ -74,9 +74,8 @@ window.addEventListener("message", (event) => {
     // The extension was reloaded or updated; the new copy takes over.
   }
 });
-
-// The side panel opens whichever SavyTime this browser uses (the live site, or a
-// copy running on this computer while testing).
+// The side panel and popup open the SavyTime this browser uses (a developer can add
+// their local copy to the bridge's matches in manifest.json to try changes).
 if (!inPanel && window.top === window) chrome.storage.local.set({ site: location.origin });
 
 announce();
