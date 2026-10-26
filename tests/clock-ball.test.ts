@@ -95,9 +95,10 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
   const context = vm.createContext({
     console,
     URLSearchParams,
+    setTimeout: () => {},
     chrome: {
       storage: { local: area(local), session: area(session), onChanged: listener },
-      alarms: { create() {}, onAlarm: listener },
+      alarms: { create() {}, get: async () => ({ name: "sync" }), onAlarm: listener },
       action: {
         setBadgeText: async ({ text }: { text: string }) => void (net.badge = text),
         setBadgeBackgroundColor: async () => {},

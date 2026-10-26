@@ -116,8 +116,6 @@ $("removeHat").addEventListener("click", () => chrome.storage.local.set({ hat: "
 // Known before the click: Chrome only opens the panel straight from the click itself.
 let windowId = chrome.windows.WINDOW_ID_CURRENT;
 chrome.windows.getCurrent().then((win) => (windowId = win.id));
-// Over every app, not just web pages: a small pinned tab opens it in an always-on-top window.
-$("desktop").addEventListener("click", () => chrome.tabs.create({ url: "desktop.html" }));
 $("open").addEventListener("click", () => {
   chrome.sidePanel.open({ windowId }).then(() => {
     if (!document.body.classList.contains("page")) window.close();

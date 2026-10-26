@@ -15,6 +15,15 @@ function schedule() {
   chrome.alarms.create("sync", { periodInMinutes: 1 });
 }
 
+// Every time this worker wakes (browser reopened, alarm, message), not only on
+// Chrome's start-up signal, which doesn't always arrive: browsers may drop
+// alarms on restart, and the toolbar time should be right straight away.
+chrome.alarms.get("sync").then((alarm) => alarm || schedule());
+setTimeout(() => {
+  updateBadge();
+  sync(true);
+});
+
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   schedule();
   if (reason !== "install" && reason !== "update") return;
