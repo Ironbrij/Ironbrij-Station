@@ -60,7 +60,8 @@ function render() {
   $("detail").textContent = !view
     ? "Start work on SavyTime and the ball pops up."
     : [shift.company, until].filter(Boolean).join(" · ") || "The ball is counting your time.";
-  $("who").textContent = link.name || link.email;
+  // The email too, so it is clear which Google account the ball follows.
+  $("who").textContent = link.name ? `${link.name} (${link.email})` : link.email;
   $("synced").textContent = !synced
     ? "Checking your punches…"
     : synced.error

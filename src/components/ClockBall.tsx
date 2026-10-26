@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { useClockBallExtension } from "@/lib/use-clock-ball";
-import { DEFAULT_LOGO } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
+import { DEFAULT_LOGO, type Employee } from "@/lib/types";
 
 /** A still picture of the extension's ball with its default face, the Ironbrij logo. */
 export function ClockBallPreview({
@@ -63,5 +64,46 @@ export function ClockBallBanner() {
         Get it
       </span>
     </Link>
+  );
+}
+
+/**
+ * Shown in the extension's side panel when the extension isn't signed in yet:
+ * the employee sees exactly which account it will follow, and can switch.
+ */
+export function ClockBallConnectPrompt({ employee }: { employee: Employee }) {
+  const { user, logout } = useAuth();
+  return (
+    <div
+      role="dialog"
+      aria-label="Connect the Clock Ball"
+      className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-2xl border bg-card p-4 shadow-lift"
+    >
+      <div className="flex items-center gap-3">
+        <ClockBallPreview size={48} time="0:00:00" />
+        <p className="text-sm leading-snug">
+          Connect the Clock Ball to <strong>{employee.name}</strong>
+          <br />
+          <span className="text-muted-foreground">{user?.email}</span>?
+        </p>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => connectClockBall(employee)}
+          className="flex-1 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          Connect
+        </button>
+        <button
+          type="button"
+          // Signing out here brings up the sign-in page, where Google offers its account picker.
+          onClick={() => void logout()}
+          className="flex-1 rounded-xl border bg-secondary px-3 py-2 text-sm font-semibold text-secondary-foreground hover:bg-secondary/80"
+        >
+          Use another account
+        </button>
+      </div>
+    </div>
   );
 }

@@ -77,6 +77,40 @@ async function idToken(link) {
   return body.id_token;
 }
 
+/**
+ * Without the (employee, time) index the database refuses punchesSince. Every
+ * punch SavyTime writes carries its shift's `date`, and equality lookups need
+ * no special index, so read the few days around today instead.
+ * shortcut: reads those days in full every minute (about 10 reads); creating the
+ * index from firestore.indexes.json brings it back to 1 read when nothing changed.
+ */
+function punchesAroundToday(link, token, now) {
+  const days = [-2, -1, 0, 1].map((d) => new Date(now + d * 86400e3).toISOString().slice(0, 10));
+  const any = (values) => ({ arrayValue: { values: values.map((v) => ({ stringValue: v })) } });
+  return clockBallQuery(
+    token,
+    {
+      from: [{ collectionId: "punches" }],
+      where: {
+        compositeFilter: {
+          op: "AND",
+          filters: [
+            {
+              fieldFilter: {
+                field: { fieldPath: "employeeId" },
+                op: "IN",
+                value: any(link.employeeIds),
+              },
+            },
+            { fieldFilter: { field: { fieldPath: "date" }, op: "IN", value: any(days) } },
+          ],
+        },
+      },
+    },
+    link.firebase,
+  ).then((docs) => docs.map(clockBallPunch));
+}
+
 function punchesSince(link, token, since) {
   return clockBallQuery(
     token,
@@ -127,7 +161,11 @@ async function runSync() {
     const full = !cache || cache.who !== who || now - cache.fullAt > FULL_READ_MS;
     const since = full ? now - LOOKBACK_MS : cache.lastAt;
     const known = new Map(full ? [] : cache.punches.map((p) => [p.id, p]));
-    for (const punch of await punchesSince(link, token, since)) known.set(punch.id, punch);
+    const fresh = await punchesSince(link, token, since).catch((error) => {
+      if (!error.needsIndex) throw error;
+      return punchesAroundToday(link, token, now);
+    });
+    for (const punch of fresh) known.set(punch.id, punch);
     const punches = [...known.values()]
       .filter((p) => p.at > now - LOOKBACK_MS)
       .sort((a, b) => a.at - b.at);

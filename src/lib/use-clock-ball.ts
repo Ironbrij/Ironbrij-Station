@@ -14,11 +14,11 @@ function postToExtension(message: Record<string, unknown>) {
  * changed, so it checks the database at once instead of at its next minute.
  * The extension only ever reads punches for the account signed in to it.
  *
- * When this page is open in the extension's own side panel and the extension
- * isn't signed in yet, it connects the extension to this employee: that is how
- * "Continue with Google" in the extension ends.
+ * Returns true when this page is open in the extension's own side panel and the
+ * extension isn't signed in yet: the page then asks the employee whether to
+ * connect it to this account (how "Continue with Google" in the extension ends).
  */
-export function useClockBallBridge(employee: Employee | null) {
+export function useClockBallBridge(employee: Employee | null): boolean {
   const { ready } = useAppRuntime();
   // The same punches the punch page and automatic punch-out read.
   const punchesLive = useEmployeePunchesLive(ready ? employee : null);
@@ -27,18 +27,19 @@ export function useClockBallBridge(employee: Employee | null) {
     if (punches) postToExtension({ nudge: true });
   }, [punches]);
 
+  const [askToConnect, setAskToConnect] = useState(false);
   useEffect(() => {
     if (!employee) return;
-    const signedIn = employee;
     function onMessage(event: MessageEvent) {
       if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) {
-        if (event.data.askToConnect) connectClockBall(signedIn);
+        setAskToConnect(Boolean(event.data.askToConnect));
       }
     }
     window.addEventListener("message", onMessage);
     postToExtension({ ping: true });
     return () => window.removeEventListener("message", onMessage);
   }, [employee]);
+  return askToConnect;
 }
 
 /** Signs the extension in as this employee: the way in for Google sign-ins. */

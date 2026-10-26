@@ -105,7 +105,13 @@ async function clockBallQuery(idToken, structuredQuery, firebase = CLOCK_BALL_FI
       body: JSON.stringify({ structuredQuery }),
     },
   );
-  if (!response.ok) throw new Error(`SavyTime answered ${response.status}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const reason = (Array.isArray(body) ? body[0] : body)?.error?.message || "";
+    throw Object.assign(new Error(`SavyTime answered ${response.status}`), {
+      needsIndex: reason.includes("requires an index"),
+    });
+  }
   return (await response.json()).filter((row) => row.document).map((row) => row.document);
 }
 

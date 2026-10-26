@@ -89,6 +89,7 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     employeeIds: [] as string[],
     urls: [] as string[],
     appIds: [] as string[],
+    noIndex: false,
   };
   const context = vm.createContext({
     console,
@@ -115,14 +116,42 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
       net.employeeIds = filters[0].fieldFilter.value.arrayValue.values.map(
         (value: { stringValue: string }) => value.stringValue,
       );
+      const asRows = (docs: typeof db) =>
+        new Response(
+          JSON.stringify(
+            docs.length
+              ? docs.map((doc) => ({
+                  document: { name: `projects/p/documents/punches/${doc.id}`, ...doc },
+                }))
+              : [{ readTime: "now" }],
+          ),
+        );
+      const stamp = (doc: (typeof db)[number]) =>
+        (doc.fields.timestamp as { timestampValue: string }).timestampValue;
+      // The index-free lookup by the shift's date.
+      if (filters[1].fieldFilter.field.fieldPath === "date") {
+        const days = filters[1].fieldFilter.value.arrayValue.values.map(
+          (value: { stringValue: string }) => value.stringValue,
+        );
+        net.queries.push(`days:${days.join(",")}`);
+        return asRows(db.filter((doc) => days.includes(stamp(doc).slice(0, 10))));
+      }
+      if (net.noIndex) {
+        return new Response(
+          JSON.stringify([
+            {
+              error: {
+                code: 400,
+                message: "The query requires an index. You can create it here: …",
+              },
+            },
+          ]),
+          { status: 400 },
+        );
+      }
       const since = filters[1].fieldFilter.value.timestampValue;
       net.queries.push(since);
-      const rows = db
-        .filter(
-          (doc) => (doc.fields.timestamp as { timestampValue: string }).timestampValue > since,
-        )
-        .map((doc) => ({ document: { name: `projects/p/documents/punches/${doc.id}`, ...doc } }));
-      return new Response(JSON.stringify(rows.length ? rows : [{ readTime: "now" }]));
+      return asRows(db.filter((doc) => stamp(doc) > since));
     },
   });
   vm.runInContext(extensionFile("background.js"), context);
@@ -218,4 +247,18 @@ test("the sign-in is checked against the Firebase project it came from", async (
   assert.ok(local.net.urls[0].endsWith("key=dev-key"));
   assert.equal(local.net.appIds[0], "1:42:web:abc");
   assert.match(local.net.urls[1], /\/projects\/dev-project\//);
+});
+
+test("without the database index the extension still finds the punch-in, by date", async () => {
+  const db = [stored("in", 120)];
+  const worker = backgroundWorker(db);
+  worker.net.noIndex = true;
+  await worker.sync();
+  assert.equal(shiftOf(worker).active, true);
+  assert.equal((worker.local.get("synced") as { error: string }).error, "");
+  assert.match(worker.net.queries.at(-1)!, /^days:/);
+  // And it still notices the punch-out made elsewhere.
+  db.push(stored("out", 0));
+  await worker.sync();
+  assert.equal(shiftOf(worker).active, false);
 });
