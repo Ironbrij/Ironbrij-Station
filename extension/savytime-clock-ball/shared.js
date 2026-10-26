@@ -3,11 +3,23 @@
 // `var` so a second injection into the same page (after an update) cannot fail on redeclaring.
 
 var CLOCK_BALL_SITE = "https://station.savykids.com";
-// SavyTime's public web settings, the same ones its own pages ship with.
+// The live SavyTime's public web settings, the same ones its own pages ship with.
+// A sign-in handed over by a SavyTime page brings that page's own settings instead
+// (a copy running on a developer's computer may use another project).
 var CLOCK_BALL_FIREBASE = {
-  apiKey: "AIzaSyB9AGWeDsY3qEzFQaoZvIK9vDAkExpIXpY",
-  projectId: "runner-man-634be",
+  apiKey: "AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw",
+  projectId: "ironbrij-timestation",
+  appId: "1:1094579363471:web:87518314d7de1779d85afa",
 };
+
+/**
+ * Headers for Google's sign-in service. Firebase's own code sends the app ID, which
+ * tells Google the project; without it Google goes by the key alone and can refuse
+ * the sign-in as PROJECT_NUMBER_MISMATCH when the key was made in another project.
+ */
+function clockBallAuthHeaders(firebase, contentType) {
+  return { "content-type": contentType, "X-Firebase-gmpid": firebase.appId };
+}
 
 var CLOCK_BALL_COLORS = {
   blue: {
@@ -84,9 +96,9 @@ function clockBallView(shift, now) {
 }
 
 /** Runs a Firestore query as the signed-in employee; rows come back as plain documents. */
-async function clockBallQuery(idToken, structuredQuery) {
+async function clockBallQuery(idToken, structuredQuery, firebase = CLOCK_BALL_FIREBASE) {
   const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${CLOCK_BALL_FIREBASE.projectId}/databases/(default)/documents:runQuery`,
+    `https://firestore.googleapis.com/v1/projects/${firebase.projectId}/databases/(default)/documents:runQuery`,
     {
       method: "POST",
       headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },

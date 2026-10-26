@@ -83,7 +83,13 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
     remove: async (keys: string | string[]) => [keys].flat().forEach((key) => store.delete(key)),
   });
   const listener = { addListener() {} };
-  const net = { tokenStatus: 200, queries: [] as string[], employeeIds: [] as string[] };
+  const net = {
+    tokenStatus: 200,
+    queries: [] as string[],
+    employeeIds: [] as string[],
+    urls: [] as string[],
+    appIds: [] as string[],
+  };
   const context = vm.createContext({
     console,
     URLSearchParams,
@@ -93,7 +99,9 @@ function backgroundWorker(db: { id: string; fields: Record<string, unknown> }[])
       runtime: { onInstalled: listener, onStartup: listener, onMessage: listener },
     },
     importScripts: () => vm.runInContext(extensionFile("shared.js"), context),
-    fetch: async (url: string, init: { body: string }) => {
+    fetch: async (url: string, init: { body: string; headers: Record<string, string> }) => {
+      net.urls.push(url);
+      net.appIds.push(init.headers["X-Firebase-gmpid"]);
       if (url.startsWith("https://securetoken.googleapis.com/")) {
         const body =
           net.tokenStatus === 200
@@ -189,4 +197,25 @@ test("a fresh install wears the Ironbrij logo, and each pick overrides only itse
   assert.equal(picked.jokes, false);
   assert.equal(picked.size, "medium");
   assert.ok(ball.CLOCK_BALL_JOKES.length >= 10);
+});
+
+test("the sign-in is checked against the Firebase project it came from", async () => {
+  // Email and password, or anything without its own settings: the live SavyTime project.
+  const live = backgroundWorker([stored("in", 10)]);
+  await live.sync();
+  assert.ok(live.net.urls[0].endsWith("key=AIzaSyBytpwetTMCahmXnEc-Dv1qNhEINX9T9Uw"));
+  // The app ID tells Google the project, as Firebase's own code does.
+  assert.equal(live.net.appIds[0], "1:1094579363471:web:87518314d7de1779d85afa");
+  assert.match(live.net.urls[1], /\/projects\/ironbrij-timestation\//);
+
+  // Handed over by a SavyTime running on another project (a developer's copy).
+  const local = backgroundWorker([stored("in", 10)]);
+  local.local.set("link", {
+    ...(local.local.get("link") as object),
+    firebase: { apiKey: "dev-key", projectId: "dev-project", appId: "1:42:web:abc" },
+  });
+  await local.sync();
+  assert.ok(local.net.urls[0].endsWith("key=dev-key"));
+  assert.equal(local.net.appIds[0], "1:42:web:abc");
+  assert.match(local.net.urls[1], /\/projects\/dev-project\//);
 });

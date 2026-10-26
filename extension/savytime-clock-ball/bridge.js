@@ -51,6 +51,17 @@ window.addEventListener("message", (event) => {
               email: connect.email,
               name: text(connect.name, 200),
               employeeIds,
+              // The Firebase project this page signed in to.
+              firebase:
+                text(connect.firebase?.apiKey, 100) &&
+                /^[a-z0-9-]{4,40}$/.test(connect.firebase?.projectId) &&
+                /^1:\d+:web:[0-9a-f]+$/.test(connect.firebase?.appId)
+                  ? {
+                      apiKey: connect.firebase.apiKey,
+                      projectId: connect.firebase.projectId,
+                      appId: connect.firebase.appId,
+                    }
+                  : undefined,
             },
           }),
         )

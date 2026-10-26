@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppRuntime } from "./app-runtime";
 import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY } from "./clock-ball";
-import { auth } from "./firebase";
+import { auth, firebaseConfig } from "./firebase";
 import { employeeRecordIds, isSettled, useEmployeePunchesLive } from "./live-data";
 import type { Employee } from "./types";
 
@@ -51,6 +51,12 @@ export function connectClockBall(employee: Employee) {
       email: user.email,
       name: employee.name,
       employeeIds: employeeRecordIds(employee),
+      // The project this page signed in to; the extension's sign-in only works there.
+      firebase: {
+        apiKey: firebaseConfig.apiKey,
+        projectId: firebaseConfig.projectId,
+        appId: firebaseConfig.appId,
+      },
     },
   });
 }

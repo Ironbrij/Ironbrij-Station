@@ -18,6 +18,8 @@ function schedule() {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   schedule();
   if (reason !== "install" && reason !== "update") return;
+  // A new version may accept a sign-in an older one refused.
+  chrome.storage.local.remove("refused");
   // Content scripts only reach pages opened after install, so give the tabs
   // already open the ball and SavyTime's punch notices straight away.
   const inject = (tab, files) =>
@@ -47,11 +49,12 @@ async function idToken(link) {
   if (token && token.refreshToken === link.refreshToken && token.expiresAt > Date.now() + 60e3) {
     return token.value;
   }
+  const firebase = link.firebase || CLOCK_BALL_FIREBASE;
   const response = await fetch(
-    `https://securetoken.googleapis.com/v1/token?key=${CLOCK_BALL_FIREBASE.apiKey}`,
+    `https://securetoken.googleapis.com/v1/token?key=${firebase.apiKey}`,
     {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: clockBallAuthHeaders(firebase, "application/x-www-form-urlencoded"),
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: link.refreshToken }),
     },
   );
@@ -75,33 +78,37 @@ async function idToken(link) {
 }
 
 function punchesSince(link, token, since) {
-  return clockBallQuery(token, {
-    from: [{ collectionId: "punches" }],
-    where: {
-      compositeFilter: {
-        op: "AND",
-        filters: [
-          {
-            fieldFilter: {
-              field: { fieldPath: "employeeId" },
-              op: "IN",
-              value: {
-                arrayValue: { values: link.employeeIds.map((id) => ({ stringValue: id })) },
+  return clockBallQuery(
+    token,
+    {
+      from: [{ collectionId: "punches" }],
+      where: {
+        compositeFilter: {
+          op: "AND",
+          filters: [
+            {
+              fieldFilter: {
+                field: { fieldPath: "employeeId" },
+                op: "IN",
+                value: {
+                  arrayValue: { values: link.employeeIds.map((id) => ({ stringValue: id })) },
+                },
               },
             },
-          },
-          {
-            fieldFilter: {
-              field: { fieldPath: "timestamp" },
-              op: "GREATER_THAN",
-              value: { timestampValue: new Date(since).toISOString() },
+            {
+              fieldFilter: {
+                field: { fieldPath: "timestamp" },
+                op: "GREATER_THAN",
+                value: { timestampValue: new Date(since).toISOString() },
+              },
             },
-          },
-        ],
+          ],
+        },
       },
+      orderBy: [{ field: { fieldPath: "timestamp" }, direction: "ASCENDING" }],
     },
-    orderBy: [{ field: { fieldPath: "timestamp" }, direction: "ASCENDING" }],
-  }).then((docs) => docs.map(clockBallPunch));
+    link.firebase,
+  ).then((docs) => docs.map(clockBallPunch));
 }
 
 let syncing = null;

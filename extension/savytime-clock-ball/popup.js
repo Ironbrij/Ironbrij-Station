@@ -144,7 +144,7 @@ async function signIn(email, password) {
     `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${CLOCK_BALL_FIREBASE.apiKey}`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: clockBallAuthHeaders(CLOCK_BALL_FIREBASE, "application/json"),
       body: JSON.stringify({ email, password, returnSecureToken: true }),
     },
   );
