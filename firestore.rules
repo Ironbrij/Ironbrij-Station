@@ -214,8 +214,11 @@ service cloud.firestore {
     }
 
     // Personal automation status
+    // /api/automation-status reads one profile by its random 64-hex token with
+    // no sign-in, like an invite link. Listing them still needs a login.
     match /automationProfiles/{token} {
-      allow read: if isAuthed();
+      allow get: if true;
+      allow list: if isAuthed();
       allow create, update, delete: if isAuthed();
     }
 
