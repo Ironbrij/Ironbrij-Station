@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { CLOCK_BALL_STORE } from "@/lib/clock-ball";
 import { useAuth } from "@/lib/auth-context";
 import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
@@ -63,32 +64,74 @@ function useStorePromoWindow(): boolean {
   return inWindow;
 }
 
-/** "Add the Clock Ball to Chrome", on the main screen for the first two days only. */
+const BANNER =
+  "flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-[#0b2a7a] to-[#1d4ed8] p-4 text-white shadow-xs sm:flex-row sm:items-center";
+const BANNER_BUTTON =
+  "inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#0b2a7a] hover:bg-white/90";
+
+/**
+ * The Clock Ball on the main screen, where people actually look. Not installed:
+ * how to add it, for the first two days on each browser. Installed but not
+ * signed in: a Connect button until it is. Set up: nothing.
+ */
 export function ClockBallBanner() {
   const inWindow = useStorePromoWindow();
   const extension = useClockBallExtension();
+  const { employee } = useAuth();
+
+  if (extension && !extension.connectedAs && employee) {
+    return (
+      <div className={BANNER}>
+        <ClockBallPreview size={56} />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">Your Clock Ball isn't connected yet</div>
+          <p className="text-sm text-white/80">
+            Connect it to see your shift time on every website and start or stop work from the
+            toolbar.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => connectClockBall(employee)}
+          className={`${BANNER_BUTTON} shrink-0`}
+        >
+          Connect as {employee.name}
+        </button>
+      </div>
+    );
+  }
+
   if (!inWindow || extension !== false) return null;
   return (
-    <a
-      href={CLOCK_BALL_STORE}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[#0b2a7a] to-[#1d4ed8] p-4 text-white shadow-xs transition-opacity hover:opacity-95"
-    >
+    <div className={BANNER}>
       <ClockBallPreview size={56} />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-white/75">
           New · Chrome extension
         </div>
-        <div className="font-semibold">Add the Clock Ball to Chrome</div>
-        <p className="text-sm text-white/80">
-          Your shift time on every website, and start or stop work from the toolbar.
-        </p>
+        <div className="font-semibold">Add the Clock Ball: your shift time on every website</div>
+        <ol className="list-decimal space-y-0.5 pl-4 text-sm text-white/85">
+          <li>
+            Click <strong>Add to Chrome</strong>, then <strong>Add extension</strong>.
+          </li>
+          <li>
+            Click the Clock Ball icon in the toolbar, then <strong>Continue with Google</strong> and{" "}
+            <strong>Connect</strong>.
+          </li>
+        </ol>
       </div>
-      <span className="ml-auto hidden shrink-0 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold sm:block">
-        Add to Chrome
-      </span>
-    </a>
+      <div className="flex shrink-0 gap-2 sm:flex-col">
+        <a href={CLOCK_BALL_STORE} target="_blank" rel="noreferrer" className={BANNER_BUTTON}>
+          Add to Chrome
+        </a>
+        <Link
+          to="/app/clock-ball"
+          className="inline-flex items-center justify-center rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/25"
+        >
+          How it works
+        </Link>
+      </div>
+    </div>
   );
 }
 
