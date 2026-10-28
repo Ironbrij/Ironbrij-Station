@@ -27,18 +27,21 @@ export function ClockBallPreview({
         boxShadow: "0 10px 24px rgba(11,42,122,.45)",
       }}
     >
-      <span
-        className="font-mono font-bold text-white tabular-nums"
-        style={{
-          fontSize: 11.5 * scale,
-          padding: `${3 * scale}px ${6 * scale}px`,
-          borderRadius: 7 * scale,
-          background: "rgba(3,22,66,.82)",
-          boxShadow: "0 0 0 1px rgba(255,255,255,.35)",
-        }}
-      >
-        {time}
-      </span>
+      {/* Too small to read at icon sizes, so those pass no time. */}
+      {time && (
+        <span
+          className="font-mono font-bold text-white tabular-nums"
+          style={{
+            fontSize: 11.5 * scale,
+            padding: `${3 * scale}px ${6 * scale}px`,
+            borderRadius: 7 * scale,
+            background: "rgba(3,22,66,.82)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,.35)",
+          }}
+        >
+          {time}
+        </span>
+      )}
     </div>
   );
 }
@@ -64,10 +67,11 @@ function useStorePromoWindow(): boolean {
   return inWindow;
 }
 
+// One slim strip, so the punch card right below stays the first thing people see.
 const BANNER =
-  "flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-[#0b2a7a] to-[#1d4ed8] p-4 text-white shadow-xs sm:flex-row sm:items-center";
+  "flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#0b2a7a] to-[#1d4ed8] px-3 py-2 text-sm text-white shadow-xs";
 const BANNER_BUTTON =
-  "inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#0b2a7a] hover:bg-white/90";
+  "inline-flex shrink-0 items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#0b2a7a] hover:bg-white/90";
 
 /**
  * The Clock Ball on the main screen, where people actually look. Not installed:
@@ -82,20 +86,13 @@ export function ClockBallBanner() {
   if (extension && !extension.connectedAs && employee) {
     return (
       <div className={BANNER}>
-        <ClockBallPreview size={56} />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold">Your Clock Ball isn't connected yet</div>
-          <p className="text-sm text-white/80">
-            Connect it to see your shift time on every website and start or stop work from the
-            toolbar.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => connectClockBall(employee)}
-          className={`${BANNER_BUTTON} shrink-0`}
-        >
-          Connect as {employee.name}
+        <ClockBallPreview size={32} time="" />
+        <p className="min-w-0 flex-1 leading-snug">
+          <strong>Your Clock Ball isn't connected.</strong> Connect it to see your shift time on
+          every website.
+        </p>
+        <button type="button" onClick={() => connectClockBall(employee)} className={BANNER_BUTTON}>
+          Connect
         </button>
       </div>
     );
@@ -104,33 +101,17 @@ export function ClockBallBanner() {
   if (!inWindow || extension !== false) return null;
   return (
     <div className={BANNER}>
-      <ClockBallPreview size={56} />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-white/75">
-          New · Chrome extension
-        </div>
-        <div className="font-semibold">Add the Clock Ball: your shift time on every website</div>
-        <ol className="list-decimal space-y-0.5 pl-4 text-sm text-white/85">
-          <li>
-            Click <strong>Add to Chrome</strong>, then <strong>Add extension</strong>.
-          </li>
-          <li>
-            Click the Clock Ball icon in the toolbar, then <strong>Continue with Google</strong> and{" "}
-            <strong>Connect</strong>.
-          </li>
-        </ol>
-      </div>
-      <div className="flex shrink-0 gap-2 sm:flex-col">
-        <a href={CLOCK_BALL_STORE} target="_blank" rel="noreferrer" className={BANNER_BUTTON}>
-          Add to Chrome
-        </a>
-        <Link
-          to="/app/clock-ball"
-          className="inline-flex items-center justify-center rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold hover:bg-white/25"
-        >
+      <ClockBallPreview size={32} time="" />
+      <p className="min-w-0 flex-1 leading-snug">
+        <strong>New: the Clock Ball.</strong> Your shift time on every website. Add it, then click
+        its icon → <strong>Continue with Google</strong> → <strong>Connect</strong>.{" "}
+        <Link to="/app/clock-ball" className="whitespace-nowrap text-white/80 underline">
           How it works
         </Link>
-      </div>
+      </p>
+      <a href={CLOCK_BALL_STORE} target="_blank" rel="noreferrer" className={BANNER_BUTTON}>
+        Add to Chrome
+      </a>
     </div>
   );
 }
