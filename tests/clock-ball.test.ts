@@ -237,7 +237,7 @@ test("a fresh install wears the Ironbrij logo, and each pick overrides only itse
   const picked = ball.clockBallLook({ face: "robot", jokes: false });
   assert.equal(picked.face, "robot");
   assert.equal(picked.jokes, false);
-  assert.equal(picked.size, "medium");
+  assert.equal(picked.size, "tiny");
   assert.ok(ball.CLOCK_BALL_JOKES.length >= 10);
 });
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SavyTime Clock Ball",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Your SavyTime shift timer on every website, with SavyTime itself one click away in the side panel.",
   "permissions": ["storage", "scripting", "alarms", "sidePanel"],
   "host_permissions": ["<all_urls>"],

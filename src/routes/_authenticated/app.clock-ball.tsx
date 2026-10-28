@@ -1,16 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  CheckCircle2,
-  Copy,
-  Download,
-  MousePointer2,
-  Palette,
-  RotateCcw,
-  Timer,
-} from "lucide-react";
-import { toast } from "sonner";
+import { CheckCircle2, Download, MousePointer2, Palette, RotateCcw, Timer } from "lucide-react";
 import { ClockBallPreview } from "@/components/ClockBall";
-import { CLOCK_BALL_DOWNLOAD } from "@/lib/clock-ball";
+import { CLOCK_BALL_STORE } from "@/lib/clock-ball";
 import { useAuth } from "@/lib/auth-context";
 import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
 
@@ -20,7 +11,7 @@ export const Route = createFileRoute("/_authenticated/app/clock-ball")({
       { title: "Clock Ball extension — SavyTime" },
       {
         name: "description",
-        content: "Download the Clock Ball Chrome extension to keep your shift time in view.",
+        content: "Add the Clock Ball Chrome extension to keep your shift time in view.",
       },
     ],
   }),
@@ -29,49 +20,11 @@ export const Route = createFileRoute("/_authenticated/app/clock-ball")({
 
 const STEPS: { title: string; body: React.ReactNode }[] = [
   {
-    title: "Download the extension",
+    title: "Add it to Chrome",
     body: (
       <>
-        Click <strong>Download extension</strong> above. You get a file called{" "}
-        <code>savytime-clock-ball.zip</code>.
-      </>
-    ),
-  },
-  {
-    title: "Unzip it",
-    body: (
-      <>
-        Right-click the zip and choose <strong>Extract All…</strong> (on a Mac, double-click it).
-        Keep the <code>savytime-clock-ball</code> folder somewhere safe, like Documents. Chrome uses
-        it from there, so don't delete it.
-      </>
-    ),
-  },
-  {
-    title: "Open Chrome's extensions page",
-    body: (
-      <>
-        Copy <code>chrome://extensions</code> with the button below, paste it into Chrome's address
-        bar and press Enter.
-      </>
-    ),
-  },
-  {
-    title: "Turn on Developer mode",
-    body: (
-      <>
-        Switch on <strong>Developer mode</strong> in the top-right corner of that page.
-      </>
-    ),
-  },
-  {
-    title: "Load the folder",
-    body: (
-      <>
-        Click <strong>Load unpacked</strong>. Go to the folder that <em>holds</em>{" "}
-        <code>savytime-clock-ball</code>, click <code>savytime-clock-ball</code> once, then click{" "}
-        <strong>Select Folder</strong>. Don't open it first: inside, the <code>icons</code> folder
-        gets picked by mistake and Chrome says "Manifest file is missing".
+        Click <strong>Add to Chrome</strong> above, then <strong>Add extension</strong> in the box
+        that opens. It works in Chrome, Edge and Brave, and updates itself.
       </>
     ),
   },
@@ -79,10 +32,10 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "Sign in to the extension",
     body: (
       <>
-        A sign-in page opens by itself. Click <strong>Continue with Google</strong>: SavyTime opens
-        in the side panel, you sign in there as usual, and the extension connects to your account by
-        itself. Then pin it from the puzzle-piece icon in the toolbar. If you're already clocked in,
-        the ball pops up straight away.
+        Click the Clock Ball icon in the toolbar, then <strong>Continue with Google</strong>.
+        SavyTime opens in the side panel: sign in there as usual, then click{" "}
+        <strong>Connect</strong>. Pin the icon from the puzzle-piece menu so it stays visible. If
+        you're already clocked in, the ball pops up straight away.
       </>
     ),
   },
@@ -111,15 +64,6 @@ function ClockBallPage() {
   const { employee } = useAuth();
   const extension = useClockBallExtension();
 
-  async function copyExtensionsLink() {
-    try {
-      await navigator.clipboard.writeText("chrome://extensions");
-      toast.success("Copied. Paste it into Chrome's address bar.");
-    } catch {
-      toast.error("Couldn't copy. Type chrome://extensions into the address bar instead.");
-    }
-  }
-
   return (
     <div className="mx-auto max-w-3xl space-y-6 pt-4">
       <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#0b2a7a] via-[#123a9c] to-[#1d4ed8] p-6 text-white shadow-lift sm:p-8">
@@ -136,11 +80,12 @@ function ClockBallPage() {
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
               <a
-                href={CLOCK_BALL_DOWNLOAD}
-                download
+                href={CLOCK_BALL_STORE}
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-[#0b2a7a] shadow-xs transition-colors hover:bg-white/90"
               >
-                <Download className="h-4 w-4" /> Download extension
+                <Download className="h-4 w-4" /> Add to Chrome
               </a>
               {extension && extension.connectedAs && (
                 <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">
@@ -179,15 +124,6 @@ function ClockBallPage() {
                 <p className="leading-relaxed text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-foreground">
                   {step.body}
                 </p>
-                {index === 2 && (
-                  <button
-                    type="button"
-                    onClick={copyExtensionsLink}
-                    className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-secondary/80"
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copy chrome://extensions
-                  </button>
-                )}
               </div>
             </li>
           ))}

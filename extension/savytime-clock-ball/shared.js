@@ -48,7 +48,7 @@ var CLOCK_BALL_SIZES = { tiny: 52, small: 68, medium: 84, large: 108 };
 var CLOCK_BALL_DEFAULTS = {
   face: "logo",
   color: "blue",
-  size: "medium",
+  size: "tiny",
   blink: true,
   jokes: true,
   hat: "",

@@ -1,4 +1,5 @@
-import { Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { CLOCK_BALL_STORE } from "@/lib/clock-ball";
 import { useAuth } from "@/lib/auth-context";
 import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
 import { DEFAULT_LOGO, type Employee } from "@/lib/types";
@@ -41,29 +42,53 @@ export function ClockBallPreview({
   );
 }
 
-/** "New: get the Clock Ball", shown until the extension is installed. */
+const PROMO_DAYS = 2;
+const PROMO_KEY = "clockBallPromoSince";
+
+/** Whether the store prompt is still in its first two days on this browser. */
+function useStorePromoWindow(): boolean {
+  const [inWindow] = useState(() => {
+    try {
+      const since = Number(localStorage.getItem(PROMO_KEY));
+      if (!since) {
+        localStorage.setItem(PROMO_KEY, String(Date.now()));
+        return true;
+      }
+      return Date.now() - since < PROMO_DAYS * 24 * 60 * 60 * 1000;
+    } catch {
+      // Private windows and blocked storage: show it rather than hide it for good.
+      return true;
+    }
+  });
+  return inWindow;
+}
+
+/** "Add the Clock Ball to Chrome", on the main screen for the first two days only. */
 export function ClockBallBanner() {
-  if (useClockBallExtension() !== false) return null;
+  const inWindow = useStorePromoWindow();
+  const extension = useClockBallExtension();
+  if (!inWindow || extension !== false) return null;
   return (
-    <Link
-      to="/app/clock-ball"
+    <a
+      href={CLOCK_BALL_STORE}
+      target="_blank"
+      rel="noreferrer"
       className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[#0b2a7a] to-[#1d4ed8] p-4 text-white shadow-xs transition-opacity hover:opacity-95"
     >
       <ClockBallPreview size={56} />
       <div className="min-w-0">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-white/75">
-          New update
+          New · Chrome extension
         </div>
-        <div className="font-semibold">Keep your time in view with the Clock Ball</div>
+        <div className="font-semibold">Add the Clock Ball to Chrome</div>
         <p className="text-sm text-white/80">
-          Download the Chrome extension: a little robot ball that counts your shift on every
-          website.
+          Your shift time on every website, and start or stop work from the toolbar.
         </p>
       </div>
       <span className="ml-auto hidden shrink-0 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold sm:block">
-        Get it
+        Add to Chrome
       </span>
-    </Link>
+    </a>
   );
 }
 
