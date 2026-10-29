@@ -152,6 +152,18 @@ export function weeklyReportSubject(clientName: string): string {
 }
 
 /**
+ * Headers that keep every report with this subject in one conversation: Gmail
+ * follows References and In-Reply-To, Outlook groups by Thread-Topic. They all
+ * point at one made-up id per subject; a fixed Message-ID would instead get
+ * later weeks dropped as duplicates.
+ */
+export function reportThreadHeaders(subject: string): Record<string, string> {
+  const key = subject.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
+  const root = `<${key}@station.savykids.com>`;
+  return { References: root, "In-Reply-To": root, "Thread-Topic": subject };
+}
+
+/**
  * The report email itself: subject, HTML and plain text. Kept apart from
  * sending so a report in the history can be shown again exactly as it was sent.
  */
@@ -322,6 +334,7 @@ export async function deliverReportEmail(
           subject,
           text: plaintext,
           html,
+          headers: reportThreadHeaders(subject),
         },
       }),
     });

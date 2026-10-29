@@ -57,3 +57,47 @@ test("every weekly report to a client has the same subject, so they share one th
   assert.equal(weeklyReportSubject(" Northwind "), weeklyReportSubject("Northwind"));
   assert.equal(weeklyReportSubject(""), "All Clients VAs Weekly Attendance Report");
 });
+
+test("every week's report to a client points at the same thread", async () => {
+  const { reportThreadHeaders, weeklyReportSubject } = await import("../src/lib/report-email.ts");
+  const headers = reportThreadHeaders(weeklyReportSubject("Northwind"));
+  assert.deepEqual(headers, {
+    References: "<northwind-vas-weekly-attendance-report@station.savykids.com>",
+    "In-Reply-To": "<northwind-vas-weekly-attendance-report@station.savykids.com>",
+    "Thread-Topic": "Northwind VAs Weekly Attendance Report",
+  });
+  assert.notEqual(
+    reportThreadHeaders(weeklyReportSubject("Contoso")).References,
+    headers.References,
+  );
+});
+
+test("the report workflow puts the thread headers into the email it sends", async () => {
+  const { readFileSync } = await import("node:fs");
+  const workflow = JSON.parse(readFileSync("n8n/report-email.workflow.json", "utf8"));
+  const code = workflow.nodes.find((n: { type: string }) => n.type === "n8n-nodes-base.code")
+    .parameters.jsCode;
+  const email = {
+    to: "a@client.com, b@client.com",
+    subject: "Café Ltd VAs Weekly Attendance Report",
+    html: "<p>Mon 21 Sep - Fri 25 Sep 2026</p>",
+    headers: { References: "<x@station.savykids.com>", "Thread-Topic": "Café\r\nBcc: evil@x.com" },
+  };
+  // Stand-ins for n8n's $ and $input; nothing is sent.
+  const run = new Function("$", "$input", "Buffer", code);
+  const [{ json }] = run(
+    () => ({ first: () => ({ json: { body: { email } } }) }),
+    { first: () => ({ json: { emailAddress: "reports@savykids.com" } }) },
+    Buffer,
+  );
+  const mime = Buffer.from(json.raw, "base64url").toString("utf8");
+  const [head, body] = mime.split("\r\n\r\n");
+  const lines = head.split("\r\n");
+  assert.ok(lines.includes("From: SavyTime <reports@savykids.com>"));
+  assert.ok(lines.includes("To: a@client.com, b@client.com"));
+  assert.ok(lines.includes("References: <x@station.savykids.com>"));
+  assert.ok(lines.includes(`Subject: =?UTF-8?B?${Buffer.from(email.subject).toString("base64")}?=`));
+  // A line break in a value cannot start a header of its own.
+  assert.ok(!lines.some((l) => l.startsWith("Bcc:")));
+  assert.equal(Buffer.from(body.replace(/\r\n/g, ""), "base64").toString("utf8"), email.html);
+});

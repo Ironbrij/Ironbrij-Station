@@ -89,7 +89,9 @@ Reports screen and the weekly automation below. Without it, `/api/send-report`
 has nowhere to post and reports are never delivered.
 
 1. Import `report-email.workflow.json` into n8n.
-2. Connect the Gmail credential on **Send Report with Gmail**.
+2. Connect the Gmail OAuth2 credential on **Get Sender Address** and **Send Report with Gmail**.
+   Both call the Gmail API directly: the Gmail node cannot set the `References`,
+   `In-Reply-To` and `Thread-Topic` headers that keep a client's weekly reports in one thread.
 3. Activate the workflow.
 4. Set `N8N_REPORT_WEBHOOK_URL` in the SavyTime deployment to its production
    webhook URL, e.g. `https://your-n8n-instance.com/webhook/time-station-report-email`.

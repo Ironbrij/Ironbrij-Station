@@ -12,27 +12,64 @@
       "name": "Report Email Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "time-station-report-email",
       "notes": "Called by /api/send-report, both from the Reports screen's Send button and from the weekly automation."
     },
     {
       "parameters": {
-        "sendTo": "={{ $json.body.email.to }}",
-        "subject": "={{ $json.body.email.subject }}",
-        "emailType": "html",
-        "message": "={{ $json.body.email.html }}",
-        "options": {
-          "appendAttribution": false,
-          "senderName": "SavyTime"
-        }
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "options": {}
+      },
+      "id": "report-email-sender",
+      "name": "Get Sender Address",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Connect the Gmail OAuth2 credential. The sending Gmail address, for the From line."
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n's Gmail node cannot set mail headers, so the email is built here and sent\n// through the Gmail API. The app's headers keep a client's weekly reports in one thread.\nconst email = $('Report Email Webhook').first().json.body.email;\nconst from = $input.first().json.emailAddress;\nconst b64 = (s) => Buffer.from(String(s), 'utf8').toString('base64');\n// One line per header, and anything outside plain ASCII encoded so mail apps read it.\nconst header = (v) => {\n  const s = String(v).replace(/[\\r\\n]+/g, ' ');\n  return /^[\\x20-\\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`;\n};\nconst lines = [\n  `From: SavyTime <${from}>`,\n  `To: ${header(email.to)}`,\n  `Subject: ${header(email.subject)}`,\n  ...Object.entries(email.headers || {}).map(\n    ([name, value]) => `${name.replace(/[^A-Za-z-]/g, '')}: ${header(value)}`,\n  ),\n  'MIME-Version: 1.0',\n  'Content-Type: text/html; charset=UTF-8',\n  'Content-Transfer-Encoding: base64',\n  '',\n  b64(email.html).replace(/.{76}/g, '$&\\r\\n'),\n];\nreturn [{ json: { raw: Buffer.from(lines.join('\\r\\n'), 'utf8').toString('base64url') } }];"
+      },
+      "id": "report-email-build",
+      "name": "Build Email With Thread Headers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "email.headers (References, In-Reply-To, Thread-Topic) come from the app."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ raw: $json.raw }) }}",
+        "options": {}
       },
       "id": "send-report-email",
       "name": "Send Report with Gmail",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
-      "position": [260, 0],
-      "notes": "email.to is already a comma separated list of validated addresses."
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "notes": "Connect the same Gmail OAuth2 credential. email.to is already a comma separated list of validated addresses."
     },
     {
       "parameters": {
@@ -44,15 +81,56 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [520, 0]
+      "position": [
+        880,
+        0
+      ]
     }
   ],
   "connections": {
     "Report Email Webhook": {
-      "main": [[{ "node": "Send Report with Gmail", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Sender Address",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sender Address": {
+      "main": [
+        [
+          {
+            "node": "Build Email With Thread Headers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email With Thread Headers": {
+      "main": [
+        [
+          {
+            "node": "Send Report with Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Send Report with Gmail": {
-      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
