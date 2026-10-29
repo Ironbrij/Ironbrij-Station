@@ -20,7 +20,7 @@ function EmployeeLayout() {
 
   const nav = [
     { to: "/app/punch", label: "Start/Stop Work" },
-    { to: "/app/clock-ball", label: "Clock Ball" },
+    { to: "/app/clock-ball", label: "Extension" },
     { to: "/app/leave", label: "Leave" },
     { to: "/app/sod-eod", label: "SOD & EOD" },
     { to: "/app/notices", label: "Notifications" },

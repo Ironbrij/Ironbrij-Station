@@ -1,10 +1,10 @@
-# Publishing the SavyTime Clock Ball on the Chrome Web Store
+# Publishing the SavyTime extension on the Chrome Web Store
 
 Everything to copy and paste is in the boxes below. Do the steps in order.
 
 ## What it is (one line)
 
-> SavyTime Clock Ball, by Ironbrij: your SavyTime shift timer on every website, with
+> SavyTime, by Ironbrij: your SavyTime shift timer on every website, with
 > SavyTime itself one click away.
 
 **Why publish it:** employees install it with one click, with no Developer mode. Every
@@ -65,14 +65,14 @@ The images are in **`D:\time station\SavyTime-Clock-Ball-store-images\`**.
 | Official URL | `https://station.savykids.com` (or leave empty) |
 | Support URL | `https://station.savykids.com/app/automation` |
 
-The name and the short summary come from the extension itself ("SavyTime Clock Ball";
+The name and the short summary come from the extension itself ("SavyTime";
 "Your SavyTime shift timer on every website, with SavyTime itself one click away in the
 side panel.").
 
 **Description:**
 
 ```
-SavyTime Clock Ball, by Ironbrij, keeps your shift time in view while you work.
+SavyTime, by Ironbrij, keeps your shift time in view while you work.
 
 Sign in with your Ironbrij SavyTime account (Continue with Google) and a small ball with
 the Ironbrij logo sits on every website while you're clocked in, counting your worked time.
@@ -152,7 +152,7 @@ Then **Submit for review**.
 
 1. Copy the store link (`https://chromewebstore.google.com/detail/...`).
 2. Send it to Claude (or a developer) to point the **Download extension** button on the
-   Clock Ball page at it, so the page says "Add to Chrome" instead of the zip steps.
+   Extension page at it, so the page says "Add to Chrome" instead of the zip steps.
 3. Tell employees: open the link, click **Add to Chrome** (Brave works too), then
    **Continue with Google**.
 4. Anyone who loaded the zip version should **Remove** it first, so they don't get two

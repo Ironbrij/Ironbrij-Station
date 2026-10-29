@@ -8,10 +8,10 @@ import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
 export const Route = createFileRoute("/_authenticated/app/clock-ball")({
   head: () => ({
     meta: [
-      { title: "Clock Ball extension — SavyTime" },
+      { title: "Chrome extension — SavyTime" },
       {
         name: "description",
-        content: "Add the Clock Ball Chrome extension to keep your shift time in view.",
+        content: "Add the SavyTime Chrome extension to keep your shift time in view.",
       },
     ],
   }),
@@ -32,10 +32,10 @@ const STEPS: { title: string; body: React.ReactNode }[] = [
     title: "Sign in to the extension",
     body: (
       <>
-        Click the Clock Ball icon in the toolbar, then <strong>Continue with Google</strong>.
-        SavyTime opens in the side panel: sign in there as usual, then click{" "}
-        <strong>Connect</strong>. Pin the icon from the puzzle-piece menu so it stays visible. If
-        you're already clocked in, the ball pops up straight away.
+        Click the SavyTime icon in the toolbar, then <strong>Continue with Google</strong>. SavyTime
+        opens in the side panel: sign in there as usual, then click <strong>Connect</strong>. Pin
+        the icon from the puzzle-piece menu so it stays visible. If you're already clocked in, the
+        ball pops up straight away.
       </>
     ),
   },
@@ -73,7 +73,7 @@ function ClockBallPage() {
             <div className="text-xs font-semibold uppercase tracking-wider text-white/70">
               New · Chrome extension
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Meet the Clock Ball</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Meet the SavyTime extension</h1>
             <p className="text-sm leading-relaxed text-white/85">
               A little robot ball that sits on your screen and shows how long you've worked this
               shift, on every website you open.

@@ -88,8 +88,8 @@ export function ClockBallBanner() {
       <div className={BANNER}>
         <ClockBallPreview size={32} time="" />
         <p className="min-w-0 flex-1 leading-snug">
-          <strong>Your Clock Ball isn't connected.</strong> Connect it to see your shift time on
-          every website.
+          <strong>Your SavyTime extension isn't connected.</strong> Connect it to see your shift
+          time on every website.
         </p>
         <button type="button" onClick={() => connectClockBall(employee)} className={BANNER_BUTTON}>
           Connect
@@ -103,8 +103,8 @@ export function ClockBallBanner() {
     <div className={BANNER}>
       <ClockBallPreview size={32} time="" />
       <p className="min-w-0 flex-1 leading-snug">
-        <strong>New: the Clock Ball.</strong> Your shift time on every website. Add it, then click
-        its icon → <strong>Continue with Google</strong> → <strong>Connect</strong>.{" "}
+        <strong>New: the SavyTime extension.</strong> Your shift time on every website. Add it, then
+        click its icon → <strong>Continue with Google</strong> → <strong>Connect</strong>.{" "}
         <Link to="/app/clock-ball" className="whitespace-nowrap text-white/80 underline">
           How it works
         </Link>
@@ -125,13 +125,13 @@ export function ClockBallConnectPrompt({ employee }: { employee: Employee }) {
   return (
     <div
       role="dialog"
-      aria-label="Connect the Clock Ball"
+      aria-label="Connect the SavyTime extension"
       className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-2xl border bg-card p-4 shadow-lift"
     >
       <div className="flex items-center gap-3">
         <ClockBallPreview size={48} time="0:00:00" />
         <p className="text-sm leading-snug">
-          Connect the Clock Ball to <strong>{employee.name}</strong>
+          Connect the SavyTime extension to <strong>{employee.name}</strong>
           <br />
           <span className="text-muted-foreground">{user?.email}</span>?
         </p>

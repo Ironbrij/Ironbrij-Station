@@ -7,10 +7,10 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy — SavyTime Clock Ball" },
+      { title: "Privacy — SavyTime extension" },
       {
         name: "description",
-        content: "What the SavyTime Clock Ball browser extension stores and why.",
+        content: "What the SavyTime browser extension stores and why.",
       },
     ],
   }),
@@ -21,7 +21,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
   {
     title: "Who we are",
     body: [
-      "SavyTime is Ironbrij's time-tracking system. The SavyTime Clock Ball extension is made by Ironbrij for Ironbrij employees who have a SavyTime account.",
+      "SavyTime is Ironbrij's time-tracking system. The SavyTime browser extension is made by Ironbrij for Ironbrij employees who have a SavyTime account.",
     ],
   },
   {
@@ -60,7 +60,7 @@ function PrivacyPage() {
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-4 py-12 text-foreground">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">SavyTime Clock Ball: privacy</h1>
+        <h1 className="text-2xl font-bold tracking-tight">SavyTime extension: privacy</h1>
         <p className="mt-1 text-sm text-muted-foreground">Last updated 26 October 2026</p>
       </div>
       {SECTIONS.map((section) => (
