@@ -1,57 +1,108 @@
 import { useEffect, useState } from "react";
-import { attendanceNow } from "./attendance-clock";
+import { useRouterState } from "@tanstack/react-router";
 import { useAppRuntime } from "./app-runtime";
-import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY, clockBallState } from "./clock-ball";
-import { activePunchesInOrder, isSettled, useEmployeePunchesLive } from "./live-data";
-import type { Company, Employee } from "./types";
+import { CLOCK_BALL_MESSAGE, CLOCK_BALL_REPLY } from "./clock-ball";
+import { auth, firebaseConfig } from "./firebase";
+import { employeeRecordIds, isSettled, useEmployeePunchesLive } from "./live-data";
+import type { Employee } from "./types";
 
 /**
- * Tells the Clock Ball extension, when installed, whether this employee is
- * clocked in. The extension listens on this page only and keeps the ball
- * going on every other tab from what it was last told.
+ * SavyTime opened inside the Clock Ball extension's popup (`?embed=1`): pages
+ * show only their main card, so the popup's Start/Stop buttons are SavyTime's
+ * own, with all its checks.
  */
-export function useClockBallBridge({
-  employee,
-  companies,
-}: {
-  employee: Employee | null;
-  companies: Company[];
-}) {
+export function useClockBallEmbed(): boolean {
+  const asked = useRouterState({
+    select: (state) => Boolean((state.location.search as { embed?: unknown }).embed),
+  });
+  if (typeof window === "undefined") return asked;
+  // Remembered for this frame only, so signing in or moving between pages
+  // inside the popup keeps the compact view; normal tabs never set it.
+  try {
+    if (asked) sessionStorage.setItem("clockBallEmbed", "1");
+    return asked || sessionStorage.getItem("clockBallEmbed") === "1";
+  } catch {
+    return asked;
+  }
+}
+
+function postToExtension(message: Record<string, unknown>) {
+  window.postMessage({ source: CLOCK_BALL_MESSAGE, ...message }, window.location.origin);
+}
+
+/**
+ * Tells the Clock Ball extension, when installed, that this employee's punches
+ * changed, so it checks the database at once instead of at its next minute.
+ * The extension only ever reads punches for the account signed in to it.
+ *
+ * Returns true when this page is open in the extension's own side panel and the
+ * extension isn't signed in yet: the page then asks the employee whether to
+ * connect it to this account (how "Continue with Google" in the extension ends).
+ */
+export function useClockBallBridge(employee: Employee | null): boolean {
   const { ready } = useAppRuntime();
   // The same punches the punch page and automatic punch-out read.
   const punchesLive = useEmployeePunchesLive(ready ? employee : null);
   const punches = isSettled(punchesLive) ? punchesLive.data : undefined;
-
   useEffect(() => {
-    if (!employee || !punches) return;
-    const now = attendanceNow();
-    window.postMessage(
-      {
-        source: CLOCK_BALL_MESSAGE,
-        state: clockBallState(activePunchesInOrder(punches), employee, now, companies),
-        // The ball counts on the computer's clock; this corrects it to SavyTime's.
-        clockOffset: now.getTime() - Date.now(),
-      },
-      window.location.origin,
-    );
-  }, [employee, punches, companies]);
-}
+    if (punches) postToExtension({ nudge: true });
+  }, [punches]);
 
-/** Whether the Clock Ball extension answers on this page; null while still asking. */
-export function useClockBallInstalled(): boolean | null {
-  const [installed, setInstalled] = useState<boolean | null>(null);
+  const [askToConnect, setAskToConnect] = useState(false);
   useEffect(() => {
+    if (!employee) return;
     function onMessage(event: MessageEvent) {
-      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) setInstalled(true);
+      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) {
+        setAskToConnect(Boolean(event.data.askToConnect));
+      }
     }
     window.addEventListener("message", onMessage);
-    window.postMessage({ source: CLOCK_BALL_MESSAGE, ping: true }, window.location.origin);
+    postToExtension({ ping: true });
+    return () => window.removeEventListener("message", onMessage);
+  }, [employee]);
+  return askToConnect;
+}
+
+/** Signs the extension in as this employee: the way in for Google sign-ins. */
+export function connectClockBall(employee: Employee) {
+  const user = auth().currentUser;
+  if (!user?.email) return;
+  postToExtension({
+    connect: {
+      refreshToken: user.refreshToken,
+      email: user.email,
+      name: employee.name,
+      employeeIds: employeeRecordIds(employee),
+      // The project this page signed in to; the extension's sign-in only works there.
+      firebase: {
+        apiKey: firebaseConfig.apiKey,
+        projectId: firebaseConfig.projectId,
+        appId: firebaseConfig.appId,
+      },
+    },
+  });
+}
+
+/**
+ * The extension on this browser: null while still asking, false when it is not
+ * installed, otherwise who it is signed in as ("" when nobody).
+ */
+export function useClockBallExtension(): { connectedAs: string } | false | null {
+  const [extension, setExtension] = useState<{ connectedAs: string } | false | null>(null);
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.source === window && event.data?.source === CLOCK_BALL_REPLY) {
+        setExtension({ connectedAs: String(event.data.connectedAs || "") });
+      }
+    }
+    window.addEventListener("message", onMessage);
+    postToExtension({ ping: true });
     // The extension answers within milliseconds; silence means it is not there.
-    const timer = window.setTimeout(() => setInstalled((value) => value ?? false), 600);
+    const timer = window.setTimeout(() => setExtension((value) => value ?? false), 600);
     return () => {
       window.removeEventListener("message", onMessage);
       window.clearTimeout(timer);
     };
   }, []);
-  return installed;
+  return extension;
 }

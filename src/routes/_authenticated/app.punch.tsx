@@ -102,6 +102,7 @@ import {
 import { calculateAttendanceSession, formatWorkMinutes } from "@/lib/attendance-calculation";
 import { LunchBreakCard } from "@/components/lunch/LunchBreakCard";
 import { ClockBallBanner } from "@/components/ClockBall";
+import { useClockBallEmbed } from "@/lib/use-clock-ball";
 
 export const Route = createFileRoute("/_authenticated/app/punch")({
   head: () => ({
@@ -117,6 +118,8 @@ export const Route = createFileRoute("/_authenticated/app/punch")({
 
 function PunchPage() {
   const runtime = useAppRuntime();
+  // Inside the Clock Ball extension's popup: only the Web Punch card and its dialogs.
+  const embed = useClockBallEmbed();
   const { user, employee, company, companies, activeCompanyId, setActiveCompanyId, isAdmin } =
     useAuth();
   // The same live punches the header, reminders and automatic punch-out read.
@@ -1157,8 +1160,9 @@ function PunchPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <ClockBallBanner />
+      {!embed && <ClockBallBanner />}
       {/* Top Welcome Header */}
+      {!embed && (
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
@@ -1178,6 +1182,7 @@ function PunchPage() {
           {employee.jobTitle || "Team Member"} · {deptName || "General"}
         </div>
       </div>
+      )}
 
       {/* Company holiday status */}
       {isHoliday && (
@@ -1217,7 +1222,7 @@ function PunchPage() {
       )}
 
       {/* Active 24-Hour HR Announcements Banner */}
-      {active24hNotices.length > 0 && (
+      {!embed && active24hNotices.length > 0 && (
         <div className="space-y-3">
           {active24hNotices.map((n) => {
             let touchStartX = 0;
@@ -1275,6 +1280,7 @@ function PunchPage() {
       )}
 
       {/* Shift shown as one real instant in every supported region */}
+      {!embed && (
       <div className="order-last space-y-4 rounded-xl border bg-card p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
@@ -1310,9 +1316,11 @@ function PunchPage() {
           ))}
         </div>
       </div>
+      )}
       {/* Main Side-by-Side Grid Layout */}
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-12">
         {/* Left Column: Recent Activity Card (7 cols) */}
+        {!embed && (
         <div className="order-2 flex flex-col overflow-hidden rounded-xl border bg-card shadow-lift md:order-1 md:col-span-7">
           {/* Blue Header Bar */}
           <div className="bg-sky-600 text-white font-bold text-base px-5 py-3 flex items-center justify-between shadow-sm">
@@ -1384,6 +1392,7 @@ function PunchPage() {
             </table>
           </div>
         </div>
+        )}
 
         {/* Right Column: Web Punch Card (5 cols) */}
         <div className="order-1 flex flex-col justify-between overflow-hidden rounded-xl border bg-card md:order-2 md:col-span-5">

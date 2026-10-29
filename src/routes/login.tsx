@@ -31,6 +31,8 @@ function LoginPage() {
     setGoogleBusy(true);
     try {
       const provider = new GoogleAuthProvider();
+      // Always let people pick the account, not silently reuse the last one.
+      provider.setCustomParameters({ prompt: "select_account" });
       await signInWithPopup(auth(), provider);
       toast.success("Signed in with Google");
       navigate({ to: "/" });

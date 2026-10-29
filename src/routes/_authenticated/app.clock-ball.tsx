@@ -1,25 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  CheckCircle2,
-  Copy,
-  Download,
-  MousePointer2,
-  Palette,
-  RotateCcw,
-  Timer,
-} from "lucide-react";
-import { toast } from "sonner";
+import { CheckCircle2, Download, MousePointer2, Palette, RotateCcw, Timer } from "lucide-react";
 import { ClockBallPreview } from "@/components/ClockBall";
-import { CLOCK_BALL_DOWNLOAD } from "@/lib/clock-ball";
-import { useClockBallInstalled } from "@/lib/use-clock-ball";
+import { CLOCK_BALL_STORE } from "@/lib/clock-ball";
+import { useAuth } from "@/lib/auth-context";
+import { connectClockBall, useClockBallExtension } from "@/lib/use-clock-ball";
 
 export const Route = createFileRoute("/_authenticated/app/clock-ball")({
   head: () => ({
     meta: [
-      { title: "Clock Ball extension — SavyTime" },
+      { title: "Chrome extension — SavyTime" },
       {
         name: "description",
-        content: "Download the Clock Ball Chrome extension to keep your shift time in view.",
+        content: "Add the SavyTime Chrome extension to keep your shift time in view.",
       },
     ],
   }),
@@ -28,56 +20,22 @@ export const Route = createFileRoute("/_authenticated/app/clock-ball")({
 
 const STEPS: { title: string; body: React.ReactNode }[] = [
   {
-    title: "Download the extension",
+    title: "Add it to Chrome",
     body: (
       <>
-        Click <strong>Download extension</strong> above. You get a file called{" "}
-        <code>savytime-clock-ball.zip</code>.
+        Click <strong>Add to Chrome</strong> above, then <strong>Add extension</strong> in the box
+        that opens. It works in Chrome, Edge and Brave, and updates itself.
       </>
     ),
   },
   {
-    title: "Unzip it",
+    title: "Sign in to the extension",
     body: (
       <>
-        Right-click the zip and choose <strong>Extract All…</strong> (on a Mac, double-click it).
-        Keep the <code>savytime-clock-ball</code> folder somewhere safe, like Documents. Chrome uses
-        it from there, so don't delete it.
-      </>
-    ),
-  },
-  {
-    title: "Open Chrome's extensions page",
-    body: (
-      <>
-        Copy <code>chrome://extensions</code> with the button below, paste it into Chrome's address
-        bar and press Enter.
-      </>
-    ),
-  },
-  {
-    title: "Turn on Developer mode",
-    body: (
-      <>
-        Switch on <strong>Developer mode</strong> in the top-right corner of that page.
-      </>
-    ),
-  },
-  {
-    title: "Load the folder",
-    body: (
-      <>
-        Click <strong>Load unpacked</strong> and pick the <code>savytime-clock-ball</code> folder
-        you unzipped (the one with <code>manifest.json</code> inside).
-      </>
-    ),
-  },
-  {
-    title: "Pin it and refresh SavyTime",
-    body: (
-      <>
-        Click the puzzle-piece icon in Chrome's toolbar and pin <strong>SavyTime Clock Ball</strong>
-        . Then refresh this page. When you start work, the ball pops up.
+        Click the SavyTime icon in the toolbar, then <strong>Continue with Google</strong>. SavyTime
+        opens in the side panel: sign in there as usual, then click <strong>Connect</strong>. Pin
+        the icon from the puzzle-piece menu so it stays visible. If you're already clocked in, the
+        ball pops up straight away.
       </>
     ),
   },
@@ -88,25 +46,23 @@ const TIPS = [
     icon: Timer,
     text: "Appears when you start work and counts your worked time. Breaks pause it.",
   },
-  { icon: MousePointer2, text: "Drag it anywhere on the screen. It stays where you put it." },
-  { icon: Palette, text: "Click the extension icon to make it pink, purple, green and more." },
+  {
+    icon: MousePointer2,
+    text: "Click it to open SavyTime beside the page: start or stop work, SOD & EOD, notifications and feedback. Drag it to move it.",
+  },
+  {
+    icon: Palette,
+    text: "Click the toolbar icon to pick the Ironbrij logo or a robot face, its size and colour, blinking, jokes, or upload a PNG hat.",
+  },
   {
     icon: RotateCcw,
-    text: "Keeps counting if you close SavyTime, and comes back if you reopen Chrome mid-shift. It goes away when your shift ends or you stop work.",
+    text: "Linked to your punches: it keeps going if you close SavyTime or reopen Chrome, and vanishes as soon as you stop work, even from your phone, or when your shift ends.",
   },
 ];
 
 function ClockBallPage() {
-  const installed = useClockBallInstalled();
-
-  async function copyExtensionsLink() {
-    try {
-      await navigator.clipboard.writeText("chrome://extensions");
-      toast.success("Copied. Paste it into Chrome's address bar.");
-    } catch {
-      toast.error("Couldn't copy. Type chrome://extensions into the address bar instead.");
-    }
-  }
+  const { employee } = useAuth();
+  const extension = useClockBallExtension();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pt-4">
@@ -117,23 +73,35 @@ function ClockBallPage() {
             <div className="text-xs font-semibold uppercase tracking-wider text-white/70">
               New · Chrome extension
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Meet the Clock Ball</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Meet the SavyTime extension</h1>
             <p className="text-sm leading-relaxed text-white/85">
               A little robot ball that sits on your screen and shows how long you've worked this
               shift, on every website you open.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
               <a
-                href={CLOCK_BALL_DOWNLOAD}
-                download
+                href={CLOCK_BALL_STORE}
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-[#0b2a7a] shadow-xs transition-colors hover:bg-white/90"
               >
-                <Download className="h-4 w-4" /> Download extension
+                <Download className="h-4 w-4" /> Add to Chrome
               </a>
-              {installed && (
+              {extension && extension.connectedAs && (
                 <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold">
-                  <CheckCircle2 className="h-4 w-4" /> Installed on this browser
+                  <CheckCircle2 className="h-4 w-4" /> Installed · signed in as{" "}
+                  {extension.connectedAs}
                 </span>
+              )}
+              {extension && !extension.connectedAs && employee && (
+                // For Google sign-ins: the extension's own form only takes a password.
+                <button
+                  type="button"
+                  onClick={() => connectClockBall(employee)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold hover:bg-white/25"
+                >
+                  <CheckCircle2 className="h-4 w-4" /> Connect the extension as {employee.name}
+                </button>
               )}
             </div>
           </div>
@@ -156,15 +124,6 @@ function ClockBallPage() {
                 <p className="leading-relaxed text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-foreground">
                   {step.body}
                 </p>
-                {index === 2 && (
-                  <button
-                    type="button"
-                    onClick={copyExtensionsLink}
-                    className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-secondary/80"
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copy chrome://extensions
-                  </button>
-                )}
               </div>
             </li>
           ))}

@@ -14,6 +14,7 @@ import {
 } from "@/lib/company-context";
 import { getActiveWorkingSession, getLiveAttendanceStatus } from "@/lib/attendance";
 import { CompanySelector } from "@/components/CompanySelector";
+import { useClockBallEmbed } from "@/lib/use-clock-ball";
 
 interface NavItem {
   to: string;
@@ -41,6 +42,7 @@ export function AppShell({
     setActiveCompanyId,
   } = useAuth();
   const navigate = useNavigate();
+  const embedded = useClockBallEmbed();
   // The same live punches the punch page reads, so the header never disagrees.
   const employeePunchData = useEmployeePunchesLive(employee).data;
   const employeePunches = useMemo(
@@ -65,6 +67,9 @@ export function AppShell({
   const companySwitcher = (
     <CompanySelector variant="header" allowAll={isAdmin && title.includes("Admin")} activeShiftCompanyIds={activeAttendanceCompanyIds} />
   );
+
+  // Inside the Clock Ball extension's popup: just the page, no header or menu.
+  if (embedded) return <main className="bg-background p-3 text-foreground">{children}</main>;
 
   return (
     <div className="min-h-screen flex flex-col bg-muted/20 text-foreground antialiased selection:bg-primary/15 selection:text-foreground">

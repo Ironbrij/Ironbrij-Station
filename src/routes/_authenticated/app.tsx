@@ -5,21 +5,22 @@ import { usePunchOutReminder } from "@/lib/use-punch-out-reminder";
 import { useLunchBreakReminder } from "@/lib/use-lunch-break-reminder";
 import { useShiftAutoPunchOut } from "@/lib/use-shift-auto-punch-out";
 import { useClockBallBridge } from "@/lib/use-clock-ball";
+import { ClockBallConnectPrompt } from "@/components/ClockBall";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: EmployeeLayout,
 });
 
 function EmployeeLayout() {
-  const { isAdmin, user, employee, company, companies, activeCompanyId } = useAuth();
+  const { isAdmin, user, employee, company, activeCompanyId } = useAuth();
   usePunchOutReminder({ user, employee, company, activeCompanyId });
   useLunchBreakReminder({ user, employee, company, activeCompanyId });
   useShiftAutoPunchOut({ employee, company, activeCompanyId });
-  useClockBallBridge({ employee, companies });
+  const askToConnectClockBall = useClockBallBridge(employee);
 
   const nav = [
     { to: "/app/punch", label: "Start/Stop Work" },
-    { to: "/app/clock-ball", label: "Clock Ball" },
+    { to: "/app/clock-ball", label: "Extension" },
     { to: "/app/leave", label: "Leave" },
     { to: "/app/sod-eod", label: "SOD & EOD" },
     { to: "/app/notices", label: "Notifications" },
@@ -32,6 +33,7 @@ function EmployeeLayout() {
 
   return (
     <AppShell title="SavyTime" nav={nav}>
+      {askToConnectClockBall && employee && <ClockBallConnectPrompt employee={employee} />}
       {company && activeCompanyId && activeCompanyId !== "all" ? <Outlet /> : (
         <p role="status" className="rounded-lg border bg-background p-6 text-sm">
           No assigned company is available yet. Please ask your administrator to check your company assignment.
