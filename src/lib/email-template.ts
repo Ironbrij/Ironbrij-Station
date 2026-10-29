@@ -1,4 +1,8 @@
 import type { CompanyEmailBranding } from "@/lib/email-branding";
+import { DEFAULT_PRODUCTION_APP_URL } from "./app-url.ts";
+
+// Shown in every email when the company has no logo of its own.
+const IRONBRIJ_LOGO_URL = `${DEFAULT_PRODUCTION_APP_URL}/ironbrij-logo.png`;
 
 export function escapeEmailHtml(value: string) {
   return value.replace(
@@ -86,12 +90,9 @@ export function renderCompanyEmail({
   repliesWelcome?: boolean;
 }) {
   const companyName = company?.name?.trim() || "SavyTime";
-  const logoUrl = safeLogoUrl(company?.logoUrl?.trim());
-  const initial = companyName.charAt(0).toUpperCase() || "S";
+  const logoUrl = safeLogoUrl(company?.logoUrl?.trim()) || IRONBRIJ_LOGO_URL;
   const safeCompanyName = escapeEmailHtml(companyName);
-  const logoHtml = logoUrl
-    ? `<img src="${escapeEmailHtml(logoUrl)}" width="48" height="48" alt="${safeCompanyName} logo" style="display: block; width: 48px; height: 48px; border: 0; border-radius: 10px; object-fit: contain; background: #ffffff;">`
-    : `<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td width="48" height="48" align="center" valign="middle" style="width: 48px; height: 48px; border-radius: 10px; background-color: ${accentColor}; color: #ffffff; font-size: 22px; line-height: 48px; font-weight: 800;">${escapeEmailHtml(initial)}</td></tr></table>`;
+  const logoHtml = `<img src="${escapeEmailHtml(logoUrl)}" width="48" height="48" alt="${safeCompanyName} logo" style="display: block; width: 48px; height: 48px; border: 0; border-radius: 10px; object-fit: contain; background: #ffffff;">`;
   const ctaHtml = cta
     ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 28px 0 4px;"><tr><td bgcolor="${accentColor}" style="border-radius: 8px;"><a href="${escapeEmailHtml(cta.url)}" style="display: inline-block; padding: 13px 20px; color: #ffffff; font-size: 14px; line-height: 18px; font-weight: 700; text-decoration: none;">${escapeEmailHtml(cta.label)}</a></td></tr></table>`
     : "";
