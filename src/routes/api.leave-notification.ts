@@ -8,6 +8,7 @@ import {
   renderEmailDetails,
 } from "@/lib/email-template";
 import { resolveAppUrl } from "@/lib/app-url";
+import { validAttachments } from "@/lib/leave-attachments";
 
 type LeaveNotificationInput = {
   company?: CompanyEmailBranding;
@@ -22,6 +23,7 @@ type LeaveNotificationInput = {
   startTime?: string;
   endTime?: string;
   reason: string;
+  attachments?: string[];
 };
 
 function validText(value: unknown, maxLength = 500): value is string {
@@ -111,6 +113,15 @@ export const Route = createFileRoute("/api/leave-notification")({
           );
         }
 
+        const attachments = validAttachments(body.attachments);
+        const attachmentsHtml = attachments.length
+          ? `<div style="margin-top: 12px; color: #718096; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Attachments</div>${attachments
+              .map(
+                (src) =>
+                  `<img src="${src}" alt="Attachment" style="display: block; max-width: 100%; margin-top: 8px; border-radius: 8px; border: 1px solid #dbe4ee;" />`,
+              )
+              .join("")}`
+          : "";
         const company = body.company || { name: "SavyTime" };
         const companyName = company.name?.trim() || "SavyTime";
         const managerEmail = process.env.LEAVE_MANAGER_EMAIL ?? "pabibek9@gmail.com";
@@ -144,7 +155,7 @@ export const Route = createFileRoute("/api/leave-notification")({
             <div style="margin-top: 12px; padding: 16px; border: 1px solid #dbe4ee; border-radius: 10px; background-color: #f8fafc;">
               <div style="margin-bottom: 7px; color: #718096; font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Reason</div>
               <div style="color: #243447; font-size: 15px; line-height: 24px; white-space: pre-wrap;">${escapeEmailHtml(body.reason)}</div>
-            </div>`,
+            </div>${attachmentsHtml}`,
           cta: { label: "Review leave request", url: `${appUrl}/admin/leaves` },
         });
 
@@ -166,6 +177,7 @@ export const Route = createFileRoute("/api/leave-notification")({
             startTime: body.startTime,
             endTime: body.endTime,
             reason: body.reason,
+            attachments,
             requestedAt: new Date().toISOString(),
             email: { to: managerEmail, subject, text, html },
           }),

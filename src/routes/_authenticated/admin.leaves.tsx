@@ -1,3 +1,4 @@
+import { AttachmentThumbs } from "@/components/LeaveAttachments";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { collection, doc, onSnapshot } from "firebase/firestore";
@@ -609,6 +610,11 @@ function LeaveRequestsPage() {
                     <dd className="mt-0.5 leading-relaxed text-foreground">
                       {leave.reason?.trim() || "No reason was provided."}
                     </dd>
+                    {leave.attachments && (
+                      <dd className="mt-2">
+                        <AttachmentThumbs images={leave.attachments} />
+                      </dd>
+                    )}
                   </div>
                 </dl>
 

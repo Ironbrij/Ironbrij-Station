@@ -335,6 +335,8 @@ export interface LeaveRequest {
   decidedBy?: string;
   decisionSource?: "admin" | "automatic";
   decisionReason?: string;
+  /** Screenshots or photos the employee attached, as small JPEG data URLs. */
+  attachments?: string[];
   /**
    * Recorded by an admin from the late log for a day already gone. The team and
    * clients were never told about it, so approving or revoking it tells nobody.

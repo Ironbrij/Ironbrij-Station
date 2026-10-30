@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, Clock3, Plus, Trash2, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { toDate } from "@/lib/time";
+import { AttachmentPicker, AttachmentThumbs } from "@/components/LeaveAttachments";
+import { uploadAttachments } from "@/lib/leave-attachments";
 
 export const Route = createFileRoute("/_authenticated/app/leave")({
   head: () => ({
@@ -50,6 +52,7 @@ function LeavePage() {
   const [newDateCategory, setNewDateCategory] =
     useState<NonNullable<LeaveDayItem["leaveCategory"]>>("annual");
   const [reason, setReason] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   // A second click lands before React re-renders with busy set; this cannot,
   // so one application is never filed twice.
@@ -116,6 +119,7 @@ function LeavePage() {
     setBusy(true);
     try {
       const companyId = activeCompanyId || employee.companyId || employee.companyIds?.[0] || "";
+      const uploaded = await uploadAttachments(attachments, employee.id);
 
       if (selectionMode === "custom") {
         if (customDates.length === 0) {
@@ -158,6 +162,7 @@ function LeavePage() {
           status: "pending",
           createdAt: serverTimestamp(),
         };
+        if (uploaded.length) payload.attachments = uploaded;
 
         if (sorted[0]?.leaveType === "half_day" && sorted[0]?.halfDayPeriod) {
           payload.halfDayPeriod = sorted[0].halfDayPeriod;
@@ -187,6 +192,7 @@ function LeavePage() {
                 leaveCategory: sorted[0]?.leaveCategory || "annual",
                 paymentStatus: sorted[0]?.paymentStatus || "paid",
                 reason,
+                attachments: uploaded,
               }),
             });
           }
@@ -195,6 +201,7 @@ function LeavePage() {
         }
         setCustomDates([]);
         setReason("");
+        setAttachments([]);
         setBusy(false);
         return;
       }
@@ -218,6 +225,7 @@ function LeavePage() {
         status: "pending",
         createdAt: serverTimestamp(),
       };
+      if (uploaded.length) payload.attachments = uploaded;
       if (leaveType === "half_day" && halfDayPeriod) {
         payload.halfDayPeriod = halfDayPeriod;
       }
@@ -253,6 +261,7 @@ function LeavePage() {
               startTime: leaveType === "timed_break" ? startTime : undefined,
               endTime: leaveType === "timed_break" ? endTime : undefined,
               reason,
+              attachments: uploaded,
             }),
           });
         }
@@ -262,6 +271,7 @@ function LeavePage() {
       setDateFrom("");
       setDateTo("");
       setReason("");
+      setAttachments([]);
       setStartTime("");
       setEndTime("");
     } catch (e) {
@@ -652,6 +662,8 @@ function LeavePage() {
             />
           </div>
 
+          <AttachmentPicker images={attachments} onChange={setAttachments} />
+
           <button
             type="submit"
             disabled={busy}
@@ -745,6 +757,11 @@ function LeavePage() {
                       )}
 
                       <div className="mt-1 text-xs text-muted-foreground">{leave.reason}</div>
+                      {leave.attachments && (
+                        <div className="mt-2">
+                          <AttachmentThumbs images={leave.attachments} />
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={leave.status} />
